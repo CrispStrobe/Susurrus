@@ -1,17 +1,18 @@
 # Susurrus: Audio Transcription GUI
 
-Susurrus is an attempt at a flexible audio transcription frontend that leverages various AI models, mostly based on OpenAI Whisper, and backends to convert speech to text. It transcribes audio files, also from online content, using a number of optional models and pipelines. 
+Susurrus is a flexible audio transcription frontend that leverages various AI models, mostly based on OpenAI Whisper, and backends to convert speech to text. It transcribes audio files, including online content, using a number of optional models and pipelines.
 
 ## Features
 
-- Support for multiple transcription backends (mlx-whisper, OpenAI Whisper, faster-whisper, transformers, whisper.cpp, ctranslate2)
+- Support for multiple transcription backends (mlx-whisper, OpenAI Whisper, faster-whisper, transformers, whisper.cpp, ctranslate2, whisper-jax)
 - Audio file upload and URL input support
 - YouTube audio extraction and transcription
 - Proxy support for network requests
 - Language selection for targeted transcription
 - Word-level timestamp option
 - Transcription metrics and progress tracking
-- Graphical interface
+- Graphical user interface
+- Advanced options including start/end time, max chunk length, and output format selection
 
 ## Installation
 
@@ -49,23 +50,12 @@ Susurrus is an attempt at a flexible audio transcription frontend that leverages
    pip install -r requirements.txt
    ```
 
-4. Install MLX-Whisper:
+4. Install additional backend-specific packages:
    ```
-   git clone https://github.com/ml-explore/mlx-examples.git
-   cd mlx-examples/whisper
-   pip install -e .
-   cd ../..
+   pip install openai-whisper faster-whisper transformers ctranslate2 whisper-jax soundfile
    ```
 
-5. Install Faster Whisper:
-   ```
-   git clone https://github.com/guillaumekln/faster-whisper.git
-   cd faster-whisper
-   pip install -e .
-   cd ..
-   ```
-
-6. Install whisper.cpp:
+5. Install whisper.cpp:
    ```
    git clone https://github.com/ggerganov/whisper.cpp.git
    cd whisper.cpp
@@ -75,7 +65,7 @@ Susurrus is an attempt at a flexible audio transcription frontend that leverages
    cd ../..
    ```
 
-7. Install FFmpeg:
+6. Install FFmpeg:
    - macOS:
      ```
      brew install ffmpeg
@@ -120,12 +110,12 @@ Susurrus is an attempt at a flexible audio transcription frontend that leverages
 The transcription worker script can be run separately for debugging or advanced usage:
 
 ```
-python transcribe_worker.py <audio_input> <model_id> <word_timestamps> <language> <backend> <device> <pipeline_type>
+python transcribe_worker.py --audio-input <audio_file> --audio-url <url> --model-id <model_id> --word-timestamps --language <lang> --backend <backend> --device <device> --pipeline-type <type> --max-chunk-length <length> --output-format <format>
 ```
 
 Example:
 ```
-python transcribe_worker.py input.wav mlx-community/whisper-large-v3-mlx true en mlx-whisper auto default
+python transcribe_worker.py --audio-input input.wav --model-id mlx-community/whisper-large-v3-mlx --word-timestamps --language en --backend mlx-whisper --device auto --pipeline-type default
 ```
 
 ## Contributing
@@ -144,4 +134,5 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 - [Transformers](https://github.com/huggingface/transformers)
 - [whisper.cpp](https://github.com/ggerganov/whisper.cpp)
 - [CTranslate2](https://github.com/OpenNMT/CTranslate2)
+- [whisper-jax](https://github.com/sanchit-gandhi/whisper-jax)
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp)
