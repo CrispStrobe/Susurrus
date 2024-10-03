@@ -1,1 +1,147 @@
-# Susurrus
+# Susurrus: Audio Transcription GUI
+
+Susurrus is an attempt at a flexible audio transcription frontend that leverages various AI models, mostly based on OpenAI Whisper, and backends to convert speech to text. It transcribes audio files, also from online content, using a number of optional models and pipelines. 
+
+## Features
+
+- Support for multiple transcription backends (mlx-whisper, OpenAI Whisper, faster-whisper, transformers, whisper.cpp, ctranslate2)
+- Audio file upload and URL input support
+- YouTube audio extraction and transcription
+- Proxy support for network requests
+- Language selection for targeted transcription
+- Word-level timestamp option
+- Transcription metrics and progress tracking
+- Graphical interface
+
+## Installation
+
+### Prerequisites
+
+- Python 3.8 or higher
+- pip (Python package manager)
+- Git
+- C++ compiler (for whisper.cpp)
+- CMake (for whisper.cpp)
+- FFmpeg
+
+### Common Steps (macOS, Linux, and Windows)
+
+1. Clone the repository:
+   ```
+   git clone https://github.com/yourusername/susurrus.git
+   cd susurrus
+   ```
+
+2. Create and activate a virtual environment:
+   - macOS/Linux:
+     ```
+     python3 -m venv venv
+     source venv/bin/activate
+     ```
+   - Windows:
+     ```
+     python -m venv venv
+     venv\Scripts\activate
+     ```
+
+3. Install the required packages:
+   ```
+   pip install -r requirements.txt
+   ```
+
+4. Install MLX-Whisper:
+   ```
+   git clone https://github.com/ml-explore/mlx-examples.git
+   cd mlx-examples/whisper
+   pip install -e .
+   cd ../..
+   ```
+
+5. Install Faster Whisper:
+   ```
+   git clone https://github.com/guillaumekln/faster-whisper.git
+   cd faster-whisper
+   pip install -e .
+   cd ..
+   ```
+
+6. Install whisper.cpp:
+   ```
+   git clone https://github.com/ggerganov/whisper.cpp.git
+   cd whisper.cpp
+   mkdir build && cd build
+   cmake ..
+   cmake --build . --config Release
+   cd ../..
+   ```
+
+7. Install FFmpeg:
+   - macOS:
+     ```
+     brew install ffmpeg
+     ```
+   - Linux (Ubuntu/Debian):
+     ```
+     sudo apt-get update
+     sudo apt-get install ffmpeg
+     ```
+   - Windows:
+     - Download FFmpeg from [https://ffmpeg.org/download.html](https://ffmpeg.org/download.html)
+     - Extract the downloaded archive and add the `bin` folder to your system PATH
+
+### Additional Steps for Windows
+
+- Ensure you have a C++ compiler installed. You can use Visual Studio with C++ support or MinGW-w64.
+- Install CMake from [https://cmake.org/download/](https://cmake.org/download/) and add it to your system PATH.
+
+## Usage
+
+1. Activate the virtual environment (if not already activated):
+   - macOS/Linux: `source venv/bin/activate`
+   - Windows: `venv\Scripts\activate`
+
+2. Run the main application:
+   ```
+   python main.py
+   ```
+
+3. Use the graphical interface to:
+   - Upload an audio file or provide a URL
+   - Select the desired transcription backend and model
+   - Configure advanced options if needed
+   - Start the transcription process
+
+4. View the transcription results and metrics in the application window
+
+5. Save the transcription to a text file using the "Download Transcription" button
+
+### Running the Transcription Worker Script
+
+The transcription worker script can be run separately for debugging or advanced usage:
+
+```
+python transcribe_worker.py <audio_input> <model_id> <word_timestamps> <language> <backend> <device> <pipeline_type>
+```
+
+Example:
+```
+python transcribe_worker.py input.wav mlx-community/whisper-large-v3-mlx true en mlx-whisper auto default
+```
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+## Acknowledgements
+
+- [OpenAI Whisper](https://github.com/openai/whisper)
+- [MLX Community](https://github.com/ml-explore/mlx-examples)
+- [Faster Whisper](https://github.com/guillaumekln/faster-whisper)
+- [Transformers](https://github.com/huggingface/transformers)
+- [whisper.cpp](https://github.com/ggerganov/whisper.cpp)
+- [CTranslate2](https://github.com/OpenNMT/CTranslate2)
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp)
