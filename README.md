@@ -92,7 +92,7 @@ Susurrus is a flexible audio transcription frontend that leverages various AI mo
 
 2. Run the main application:
    ```
-   python main.py
+   python susurrus.py
    ```
 
 3. Use the graphical interface to:
