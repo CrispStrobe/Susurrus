@@ -1,0 +1,15 @@
+PyQt6
+torch
+torchaudio
+requests
+pydub
+yt-dlp
+transformers
+soundfile
+numpy
+ctranslate2
+openai-whisper
+mlx
+faster-whisper
+ffmpeg-python
+sentencepiece
