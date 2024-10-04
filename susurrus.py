@@ -564,7 +564,7 @@ class MainWindow(QWidget):
 
         # Audio Input (file path display and button to select file)
         self.audio_input_path = QLineEdit()
-        self.audio_input_path.setPlaceholderText("Upload or Record Audio")
+        self.audio_input_path.setPlaceholderText("Select (or Drop) Audio file")
         self.audio_input_button = QPushButton("Browse")
         self.audio_input_button.clicked.connect(self.select_audio_file)
 
