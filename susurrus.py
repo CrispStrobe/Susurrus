@@ -520,8 +520,12 @@ class MainWindow(QWidget):
                 ("large-v3-turbo-q5_0", "openai/whisper-large-v3"),
                 ("large-v3-turbo", "openai/whisper-large-v3"),
                 ("small", "openai/whisper-small"),
+                ("large-v3-q5_0", "openai/whisper-large-v3"),
+                ("medium-q5_0", "openai/whisper-mediem"),
+                ("small-q5_1", "openai/whisper-small"),
                 ("base", "openai/whisper-base"),
                 ("tiny", "openai/whisper-tiny"),
+                ("tiny-q5_1", "openai/whisper-tiny"),
                 ("tiny.en", "openai/whisper-tiny.en")
             ],
             'ctranslate2': [
