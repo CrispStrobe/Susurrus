@@ -1,4 +1,6 @@
 # transcribe_worker.py
+# handled from Susurrus main script or run manually
+
 import argparse
 import sys
 import os
@@ -13,6 +15,75 @@ import yt_dlp
 from urllib.parse import urlparse
 
 from pydub.utils import mediainfo
+from pydub.silence import split_on_silence
+
+def get_original_model_id(model_id):
+    # Define a mapping of known models to their original IDs
+    known_models = {
+        'mlx-community/whisper-large-v3-turbo': 'openai/whisper-large-v3-turbo',
+        'mlx-community/whisper-large-v3-turbo-q4': 'openai/whisper-large-v3-turbo',
+        'mlx-community/whisper-tiny-mlx-4bit': 'openai/whisper-tiny',
+        'mlx-community/whisper-base-mlx-4bit': 'openai/whisper-base',
+        'mlx-community/whisper-small-mlx-q4': 'openai/whisper-small',
+        'mlx-community/whisper-medium-mlx-4bit': 'openai/whisper-medium',
+        'mlx-community/whisper-large-v3-mlx-4bit': 'openai/whisper-large-v3',
+        'mlx-community/whisper-large-v3-mlx': 'openai/whisper-large-v3',
+        'cstr/whisper-large-v3-turbo-int8_float32': 'openai/whisper-large-v3-turbo',
+        'SYSTRAN/faster-whisper-large-v1': 'openai/whisper-large-v2',
+        'GalaktischeGurke/primeline-whisper-large-v3-german-ct2': 'openai/whisper-large-v3'
+    }
+
+    # Check if the model_id is in the known models mapping
+    if model_id in known_models:
+        return known_models[model_id]
+
+    # If not found in known models, use heuristics
+    model_id_lower = model_id.lower()
+
+    # Handle special cases first
+    if model_id.startswith("openai/whisper-"):
+        return model_id  # It's already an OpenAI Whisper model
+    
+    if "endpoint" in model_id_lower:
+        return "openai/whisper-large-v2"  # Default for endpoints
+
+    # Check for specific version numbers and turbo variant
+    if "v3_turbo" in model_id_lower or "v3-turbo" in model_id_lower:
+        base = "openai/whisper-large-v3-turbo"
+    elif "v3" in model_id_lower:
+        base = "openai/whisper-large-v3"
+    elif "v2" in model_id_lower:
+        base = "openai/whisper-large-v2"
+    elif "v1" in model_id_lower:
+        base = "openai/whisper-large-v1"
+    else:
+        base = "openai/whisper"
+
+    # Check for model size (only if base is just "openai/whisper")
+    if base == "openai/whisper":
+        if "large" in model_id_lower:
+            size = "large"
+        elif "medium" in model_id_lower:
+            size = "medium"
+        elif "small" in model_id_lower:
+            size = "small"
+        elif "base" in model_id_lower:
+            size = "base"
+        elif "tiny" in model_id_lower:
+            size = "tiny"
+        else:
+            # Default to large if size is not specified
+            size = "large"
+        base = f"{base}-{size}"
+
+    # Check for language specificity
+    if "_en" in model_id_lower or ".en" in model_id_lower:
+        lang = ".en"
+    else:
+        lang = ""
+
+    # Construct the original model ID
+    return f"{base}{lang}"
 
 def download_audio(url):
     parsed_url = urlparse(url)
@@ -174,16 +245,18 @@ def main():
         parser = argparse.ArgumentParser(description='Transcription worker script')
         parser.add_argument('--audio-input', help='Path to the audio input file')
         parser.add_argument('--audio-url', help='URL to the audio file')
-        parser.add_argument('--model-id', required=True, help='Model ID to use')
+        parser.add_argument('--model-id', type=str, required=True, help='Model ID to use')
         parser.add_argument('--word-timestamps', action='store_true', help='Enable word timestamps')
         parser.add_argument('--language', default=None, help='Language code')
-        parser.add_argument('--backend', default='mlx-whisper', help='Backend to use')
-        parser.add_argument('--device', default='auto', help='Device to use (auto, cpu, gpu, mps)')
+        parser.add_argument('--backend', type=str, default='mlx-whisper', help='Backend to use')
+        parser.add_argument('--device', type=str, default='auto', help='Device to use (auto, cpu, gpu, mps)')
         parser.add_argument('--pipeline-type', default='default', help='Pipeline type')
         parser.add_argument('--max-chunk-length', type=float, default=0.0, help='Max chunk length in seconds')
         parser.add_argument('--output-format', default='txt', help='Output format for whisper.cpp')
         parser.add_argument('--quantization', default=None, help='Quantization type for ctranslate2 or faster-whisper (e.g., int8, float16)')
         parser.add_argument('--batch-size', type=int, default=16, help='Batch size for batched inference')
+        parser.add_argument('--preprocessor-path', type=str, required=False, help='Path to preprocessor files (tokenizer and processor)')
+        parser.add_argument('--original-model-id', type=str, required=False, help='Original model ID to use for loading tokenizer and processor if necessary')
 
         args = parser.parse_args()
 
@@ -413,11 +486,8 @@ def main():
             
             
             logging.info(f"Running whisper.cpp with command: {' '.join(cmd)}")
-
-            print (f"Running whisper.cpp with command: {' '.join(cmd)}")
+            #print (f"Running whisper.cpp with command: {' '.join(cmd)}")
             
-
-            logging.info("Starting transcription with whisper.cpp")
             # Start the subprocess
             process = subprocess.Popen(
                 cmd,
@@ -446,43 +516,157 @@ def main():
                     print(f"OUTPUT FILE: {output_file}", flush=True)
     
         elif backend == 'ctranslate2':
-            import soundfile as sf
-            import numpy as np
-            from transformers import WhisperProcessor
+
             import ctranslate2
+            from transformers import WhisperProcessor, WhisperTokenizer
+            import numpy as np
+            import librosa
+            from pydub import AudioSegment
+            from pydub.silence import split_on_silence  # for segmenting
+            
+            if torch.backends.mps.is_available():
+                device = "cpu"
+                print("Defaulting to CPU on Apple Metal (MPS) architecture for ctranslate2")
 
             quantization = args.quantization if args.quantization else 'int8_float16'
 
-            logging.info("Loading model...")
+            logging.info(f"Loading model from {args.model_id}...")
 
-            # Set model path
-            model_dir = os.path.join(os.getcwd(), 'ctranslate2_models', model_id.replace('/', '_'))
-            if not os.path.exists(model_dir):
-                os.makedirs(model_dir, exist_ok=True)
-                convert_to_ctranslate2_model(model_id, model_dir, quantization)
+            model_dir = args.model_id  # args.model_id now contains the path to the converted model
+            preprocessor_path = args.preprocessor_path
 
-            translator = ctranslate2.models.Whisper(model_dir, device=device)
-            processor = WhisperProcessor.from_pretrained(model_id)
+            if not os.path.exists(os.path.join(model_dir, 'model.bin')):
+                logging.error(f"model.bin not found in {model_dir}. Model conversion may have failed.")
+                sys.exit(1)
+            else:
+                logging.info(f"Using existing model in {model_dir}")
 
-            # Load and preprocess audio
-            speech, sample_rate = sf.read(audio_input)
-            input_features = processor(speech, sampling_rate=sample_rate, return_tensors="np").input_features[0]
+            # Check if the preprocessor files exist
+            preprocessor_files = ["tokenizer.json", "vocabulary.json", "tokenizer_config.json"]
+            preprocessor_missing = not all(os.path.exists(os.path.join(preprocessor_path, f)) for f in preprocessor_files)
 
-            settings = {
-                "beam_size": 5,
-                "best_of": 5,
-            }
+            if preprocessor_missing:
+                logging.info("Preprocessor files not found locally. Attempting to download from original model.")
 
-            if language:
-                settings["language"] = language
+                if original_model_id is None:
+                    logging.error("Original model ID is not specified. Cannot load tokenizer and processor.")
+                    sys.exit(1)
 
-            logging.info("Starting transcription")
+                logging.info(f"Original model ID determined as: {original_model_id}")
 
-            result = translator.generate([input_features], **settings)
-            transcription = processor.tokenizer.decode(result.sequences_ids[0])
+                try:
+                    tokenizer = WhisperTokenizer.from_pretrained(original_model_id)
+                    processor = WhisperProcessor.from_pretrained(original_model_id)
+                    logging.info("WhisperTokenizer and WhisperProcessor loaded successfully from original model.")
+                except Exception as e:
+                    logging.error(f"Failed to load tokenizer and processor from original model: {str(e)}")
+                    sys.exit(1)
+            else:
+                try:
+                    # Load the tokenizer and processor from the preprocessor_path
+                    tokenizer = WhisperTokenizer.from_pretrained(preprocessor_path)
+                    processor = WhisperProcessor.from_pretrained(preprocessor_path)
+                    logging.info("WhisperTokenizer and WhisperProcessor loaded successfully.")
+                except Exception as e:
+                    logging.error(f"Failed to load tokenizer and processor from preprocessor path: {str(e)}")
+                    sys.exit(1)
 
-            print(transcription, flush=True)
+            try:
+                # Load the CTranslate2 model
+                model = ctranslate2.models.Whisper(model_dir, device=device)
+                logging.info("CTranslate2 model loaded successfully.")
+
+                # Load audio
+                logging.info(f"Loading audio from {audio_input}")
+                if audio_input is None:
+                    raise ValueError("audio_input is None. Please provide a valid audio file path.")
                 
+                if not os.path.exists(audio_input):
+                    raise FileNotFoundError(f"Audio file not found: {audio_input}")
+                
+                audio_segment = AudioSegment.from_file(audio_input)
+                logging.info(f"Audio loaded. Duration: {len(audio_segment)/1000:.2f} seconds")
+
+                # Split audio on silence
+                chunks = split_on_silence(
+                    audio_segment,
+                    min_silence_len=500,
+                    silence_thresh=audio_segment.dBFS - 14,
+                    keep_silence=250
+                )
+
+                # Merge chunks to respect the max_chunk_length (30 seconds)
+                max_chunk_length = 30 * 1000  # 30 seconds in milliseconds
+                merged_chunks = []
+                current_chunk = AudioSegment.empty()
+                for chunk in chunks:
+                    if len(current_chunk) + len(chunk) <= max_chunk_length:
+                        current_chunk += chunk
+                    else:
+                        merged_chunks.append(current_chunk)
+                        current_chunk = chunk
+                merged_chunks.append(current_chunk)
+
+                total_offset = 0.0
+                for chunk_index, chunk in enumerate(merged_chunks):
+                    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_audio_file:
+                        chunk.export(temp_audio_file.name, format="wav")
+                        
+                        # Load audio chunk as numpy array
+                        audio_array, sr = librosa.load(temp_audio_file.name, sr=16000, mono=True)
+                        
+                        # Compute features
+                        inputs = processor(audio_array, return_tensors="np", sampling_rate=16000)
+                        features = ctranslate2.StorageView.from_array(inputs.input_features)
+
+                        # Detect language (only for the first chunk)
+                        if chunk_index == 0 and not language:
+                            results = model.detect_language(features)
+                            detected_language, probability = results[0][0]
+                            print(f"Detected language {detected_language} with probability {probability:.4f}")
+                            language = detected_language
+
+                        # Prepare prompt
+                        prompt = tokenizer.convert_tokens_to_ids([
+                            "<|startoftranscript|>",
+                            language,
+                            "<|transcribe|>",
+                            "<|notimestamps|>" if not word_timestamps else "",
+                        ])
+
+                        # Generate transcription
+                        results = model.generate(features, [prompt], beam_size=5)
+
+                        """ or try with more parameters:
+                        results = model.generate(
+                            features,
+                            [prompt],  # Make sure this is a list of lists
+                            beam_size=5,
+                            num_hypotheses=5,  # Replace best_of with num_hypotheses
+                            length_penalty=1.0,
+                            repetition_penalty=1.0,
+                            return_scores=True,
+                            return_no_speech_prob=True
+                        )
+                        """
+
+                        transcription = tokenizer.decode(results[0].sequences_ids[0])
+
+                        # Print transcription for this chunk
+                        chunk_start_time = total_offset
+                        print(f"[{chunk_start_time:.2f}s] {transcription}", flush=True)
+
+                    total_offset += len(chunk) / 1000.0  # Convert milliseconds to seconds
+
+                logging.info("Transcription completed successfully.")
+
+            except Exception as e:
+                logging.error(f"Transcription failed: {str(e)}")
+                logging.error(f"Error details: {type(e).__name__}")
+                import traceback
+                logging.error(traceback.format_exc())
+                sys.exit(1)
+
         elif backend == 'whisper-jax':
             try:
                 import jax
@@ -542,7 +726,7 @@ def main():
                 logging.error(f"An error occurred while using whisper-jax: {str(e)}")
                 sys.exit(1)
         
-        elif backend == 'OpenAI Whisper':
+        elif backend == 'openai whisper':
             import whisper
             from pydub import AudioSegment
             from pydub.silence import split_on_silence
@@ -610,20 +794,23 @@ def main():
             transcription_oaw_time = end_oaw_time - start_oaw_time
             print(f"Transcription time with OpenAI Whisper: {transcription_oaw_time:.2f} seconds", flush=True)
 
+        else:
+            logging.error(f"Unsupported backend: {backend}")
+            sys.exit(1)
 
         end_time = time.time()
         transcription_time = end_time - start_time
-        print(f"Transcription time: {transcription_time:.2f} seconds", flush=True)
+        logging.info(f"Transcription completed in {transcription_time:.2f} seconds")
     
     except Exception as e:
-        error_msg = f"An error occurred during transcription: {str(e)}"
-        logging.error(error_msg)
+        logging.error(f"An error occurred during transcription: {str(e)}", exc_info=True)
         sys.exit(1)
 
     finally:
         # Clean up temporary audio files
-        if 'audio_path' in locals() and is_temp_file and os.path.exists(audio_path):
+        if is_temp_file and os.path.exists(audio_path):
             os.remove(audio_path)
+            logging.info(f"Removed temporary file: {audio_path}")
 
 if __name__ == "__main__":
     main()
