@@ -4,7 +4,7 @@ Susurrus is a flexible audio transcription frontend that leverages various AI mo
 
 ## Features
 
-- Support for multiple transcription backends (mlx-whisper, OpenAI Whisper, faster-whisper, transformers, whisper.cpp, ctranslate2, whisper-jax)
+- Support for multiple transcription backends (mlx-whisper, OpenAI Whisper, faster-whisper, transformers, whisper.cpp, ctranslate2, whisper-jax, insanely-fast-whisper)
 - Audio file upload and URL input support
 - YouTube audio extraction and transcription
 - Proxy support for network requests
@@ -12,6 +12,7 @@ Susurrus is a flexible audio transcription frontend that leverages various AI mo
 - Transcription metrics and progress tracking
 - Graphical user interface
 - Advanced options including start/end time for transcription, max chunk length, and output format selection for whisper.cpp (enabling subtitle export)
+- Audio trimming functionality
 
 ## Installation
 
@@ -51,7 +52,7 @@ Susurrus is a flexible audio transcription frontend that leverages various AI mo
 
 4. Install additional backend-specific packages:
    ```
-   pip install openai-whisper faster-whisper transformers ctranslate2 whisper-jax soundfile
+   pip install openai-whisper faster-whisper transformers ctranslate2 whisper-jax soundfile insanely-fast-whisper
    ```
 
 5. Install whisper.cpp:
@@ -102,19 +103,19 @@ Susurrus is a flexible audio transcription frontend that leverages various AI mo
 
 4. View the transcription results and metrics in the application window
 
-5. Save the transcription to a text file using the "Download Transcription" button
+5. Save the transcription to a text file using the "Save" button
 
 ### Running the Transcription Worker Script
 
 The transcription worker script can be run separately for debugging or advanced usage:
 
 ```
-python transcribe_worker.py --audio-input <audio_file> --audio-url <url> --model-id <model_id> --word-timestamps --language <lang> --backend <backend> --device <device> --pipeline-type <type> --max-chunk-length <length> --output-format <format>
+python transcribe_worker.py --audio-input <audio_file> --audio-url <url> --model-id <model_id> --word-timestamps --language <lang> --backend <backend> --device <device> --pipeline-type <type> --max-chunk-length <length> --output-format <format> --quantization <quant_type> --batch-size <size> --preprocessor-path <path> --original-model-id <orig_id> --start-time <start> --end-time <end>
 ```
 
 Example:
 ```
-python transcribe_worker.py --audio-input input.wav --model-id mlx-community/whisper-large-v3-mlx --word-timestamps --language en --backend mlx-whisper --device auto --pipeline-type default
+python transcribe_worker.py --audio-input input.wav --model-id mlx-community/whisper-large-v3-mlx --word-timestamps --language en --backend mlx-whisper --device auto --pipeline-type default --start-time 10 --end-time 60
 ```
 
 ## Contributing
@@ -135,3 +136,4 @@ This project is licensed under the Apache 2.0 License. See the [LICENSE](LICENSE
 - [CTranslate2](https://github.com/OpenNMT/CTranslate2)
 - [whisper-jax](https://github.com/sanchit-gandhi/whisper-jax)
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+- [Insanely Fast Whisper](https://github.com/Vaibhavs10/insanely-fast-whisper)
