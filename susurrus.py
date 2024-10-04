@@ -109,6 +109,17 @@ class TranscriptionThread(QThread):
         self._is_running = True
         self.process = None
 
+    def format_time(self, time_str):
+        if not time_str:
+            return ''
+        try:
+            # Replace comma with period if present
+            time_str = time_str.replace(',', '.')
+            # Convert to float and format to 3 decimal places
+            return f"{float(time_str):.3f}"
+        except ValueError:
+            return None
+    
     def run(self):
         try:
             model_id = self.args['model_id']
@@ -120,7 +131,17 @@ class TranscriptionThread(QThread):
             max_chunk_length = float(self.args['max_chunk_length']) if self.args['max_chunk_length'] else 0.0
             output_format = self.args['output_format']
             quantization = self.args.get('quantization', None)
+            start_time = self.args.get('start_time', '')
+            end_time = self.args.get('end_time', '')
             
+            start_time = self.format_time(self.args.get('start_time', ''))
+            end_time = self.format_time(self.args.get('end_time', ''))
+            
+            if start_time is None or end_time is None:
+                print ("no valid trim times (in seconds) provided, defaulting to none.")
+                start_time = ''
+                end_time = ''
+
             python_executable = sys.executable
 
             cmd = [
@@ -155,6 +176,10 @@ class TranscriptionThread(QThread):
                 cmd.extend(['--output-format', output_format])
             if backend == 'ctranslate2' and quantization:
                 cmd.extend(['--quantization', quantization])
+            if start_time:
+                cmd.extend(['--start-time', start_time])
+            if end_time:
+                cmd.extend(['--end-time', end_time])
 
             self.process = subprocess.Popen(
                 cmd,
@@ -513,6 +538,13 @@ class MainWindow(QWidget):
                 ("medium.en", "openai/whisper-medium.en"),
                 ("large-v2", "openai/whisper-large-v2")
             ],
+            'insanely-fast-whisper': [
+                ("openai/whisper-large-v3", "openai/whisper-large-v3"),
+                ("openai/whisper-medium", "openai/whisper-medium"),
+                ("openai/whisper-small", "openai/whisper-small"),
+                ("openai/whisper-base", "openai/whisper-base"),
+                ("openai/whisper-tiny", "openai/whisper-tiny"),
+            ],
         }
         
         main_layout = QVBoxLayout()
@@ -611,6 +643,7 @@ class MainWindow(QWidget):
             "whisper.cpp",
             "ctranslate2",
             "whisper-jax",  
+            "insanely-fast-whisper", 
         ])
 
         self.backend_selection.setCurrentText("mlx-whisper")
