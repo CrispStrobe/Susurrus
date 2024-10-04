@@ -407,6 +407,7 @@ def main():
                 "language": language,
             }
             result = mlx_whisper.transcribe(audio_input, **transcribe_options)
+            #print("mlx-whisper transcription finished.")
         
         elif backend == 'faster-batched':
             
@@ -923,8 +924,12 @@ def main():
             logging.error(f"Unsupported backend: {backend}")
             sys.exit(1)
 
+        
         end_tr_time = time.time()
         transcription_time = end_tr_time - start_tr_time
+        #print("transcription finished.")
+        print(f"Total transcription time: {transcription_time:.2f} seconds", flush=True)
+        
         logging.info(f"Transcription completed in {transcription_time:.2f} seconds")
     
     except Exception as e:
