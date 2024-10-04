@@ -221,11 +221,101 @@ def find_whisper_cpp_executable():
                 return main_executable
     return None
 
+def find_file(filename, search_paths):
+    """
+    Search for a file in the given paths and their subfolders.
+    """
+    for base_path in search_paths:
+        if os.path.isdir(base_path):
+            for root, _, files in os.walk(base_path):
+                if filename in files:
+                    return os.path.join(root, filename)
+    return None
+
+def find_whisper_cpp_download_script():
+    """
+    Search for download-ggml-model.sh in home directory, current working directory,
+    all PATH locations, and their subfolders.
+    """
+    search_paths = [
+        os.path.expanduser('~'),  # Home directory
+        os.getcwd(),  # Current working directory
+    ] + os.environ.get('PATH', '').split(os.pathsep)  # All PATH locations
+
+    return find_file('download-ggml-model.sh', search_paths)
+
+def find_or_create_whisper_cpp_models_dir():
+    """
+    Find existing 'models' directory or create one in the current working directory.
+    """
+    # Check common locations for a 'models' directory
+    common_locations = [
+        os.getcwd(),  # Current working directory
+        os.path.expanduser('~'),  # Home directory
+        os.path.join(os.path.expanduser('~'), 'whisper.cpp'),  # Common whisper.cpp location
+    ]
+    
+    for location in common_locations:
+        models_dir = os.path.join(location, 'models')
+        if os.path.isdir(models_dir):
+            logging.info(f"Existing 'models' directory found at: {models_dir}")
+            return models_dir
+
+    # If not found, create in current working directory
+    models_dir = os.path.join(os.getcwd(), 'models')
+    os.makedirs(models_dir, exist_ok=True)
+    logging.info(f"Created 'models' directory at: {models_dir}")
+    return models_dir
+
+def find_or_download_whisper_cpp_model(model_id):
+    """
+    Search for the model file in various locations or download if not found.
+    """
+    # Generate model file name for local storage
+    model_file = model_id
+    if not model_file.startswith('ggml-'):
+        model_file = f'ggml-{model_file}'
+    if not model_file.endswith('.bin'):
+        model_file = f'{model_file}.bin'
+
+    # Define search paths
+    search_paths = [
+        os.path.expanduser('~'),  # Home directory
+        os.getcwd(),  # Current working directory
+    ] + os.environ.get('PATH', '').split(os.pathsep)  # All PATH locations
+
+    # Search for the model file
+    model_path = find_file(model_file, search_paths)
+
+    if model_path:
+        logging.info(f"Model file '{model_file}' found at: {model_path}")
+        return model_path
+
+    # If model not found, find or create 'models' directory
+    models_dir = find_or_create_whisper_cpp_models_dir()
+    new_model_path = os.path.join(models_dir, model_file)
+
+    # Check if the model already exists in the models directory
+    if os.path.exists(new_model_path):
+        logging.info(f"Model file '{model_file}' found in models directory: {new_model_path}")
+        return new_model_path
+
+    # If model not found, proceed with download
+    logging.info(f"Model file '{model_file}' not found. Proceeding with download.")
+
+    # Prepare model name for download script (without 'ggml-' prefix and '.bin' suffix)
+    download_model_name = model_id.replace('ggml-', '').replace('.bin', '')
+
+    # Download the model
+    download_whisper_cpp_model(download_model_name, new_model_path)
+
+    return new_model_path
+
 def download_whisper_cpp_model(model_name, model_path):
-    # Assume the script is located in ~/whisper.cpp/models/download-ggml-model.sh
-    script_path = os.path.expanduser('~/whisper.cpp/models/download-ggml-model.sh')
-    if not os.path.exists(script_path):
-        logging.error(f"download-ggml-model.sh script not found at {script_path}")
+    script_path = find_whisper_cpp_download_script()
+    
+    if not script_path:
+        logging.error("download-ggml-model.sh script not found in home directory, current working directory, PATH locations, or their subfolders.")
         sys.exit(1)
 
     # Ensure the script is executable
@@ -236,8 +326,23 @@ def download_whisper_cpp_model(model_name, model_path):
     try:
         subprocess.check_call([script_path, model_name], cwd=os.path.dirname(script_path))
         logging.info(f"Model '{model_name}' downloaded successfully.")
+        
+        # Check if the model file was actually created
+        expected_model_file = os.path.join(os.path.dirname(script_path), f"ggml-{model_name}.bin")
+        if not os.path.exists(expected_model_file):
+            raise FileNotFoundError(f"Expected model file {expected_model_file} not found after download.")
+        
+        # Move the downloaded model to the specified model_path
+        shutil.move(expected_model_file, model_path)
+        logging.info(f"Model moved to {model_path}")
     except subprocess.CalledProcessError as e:
         logging.error(f"Failed to download model using download-ggml-model.sh: {str(e)}")
+        sys.exit(1)
+    except FileNotFoundError as e:
+        logging.error(str(e))
+        sys.exit(1)
+    except Exception as e:
+        logging.error(f"An unexpected error occurred while downloading the model: {str(e)}")
         sys.exit(1)
 
 def trim_audio(audio_path, start_time, end_time):
@@ -563,31 +668,9 @@ def main():
                 print(f'[00:00.000 --> XX:XX.XXX] {text}', flush=True)
         
         elif backend == 'whisper.cpp':
-            
-            # Map model_id to model file names
-            model_file_map = {
-                'large-v3-turbo-q5_0': 'ggml-large-v3-turbo-q5_0.bin',
-                'large-v3-turbo': 'ggml-large-v3-turbo.bin',
-                'small': 'ggml-small.bin',
-                'base': 'ggml-base.bin',
-                'tiny': 'ggml-tiny.bin',
-                'tiny.en': 'ggml-tiny.en.bin',
-                # Add other models as needed
-            }
 
-            model_file = model_file_map.get(model_id)
-            if not model_file:
-                logging.error(f"Model '{model_id}' is not recognized for whisper.cpp backend.")
-                sys.exit(1)
-
-            # Ensure model directory exists
-            model_dir = os.path.join(os.getcwd(), 'models')
-            os.makedirs(model_dir, exist_ok=True)
-            model_path = os.path.join(model_dir, model_file)
-
-            # Download the model if it's not already present
-            if not os.path.exists(model_path):
-                download_whisper_cpp_model(model_file, model_path)
+            model_path = find_or_download_whisper_cpp_model(model_id)
+            logging.info(f"Using model at: {model_path}")
 
             # Convert audio to 16kHz WAV
             logging.info("Converting audio to 16-bit 16kHz WAV format")
@@ -609,7 +692,6 @@ def main():
                 '--threads', str(os.cpu_count()),
                 #'--quiet'  # Suppress progress logs
             ]
-            
             
             logging.info(f"Running whisper.cpp with command: {' '.join(cmd)}")
             #print (f"Running whisper.cpp with command: {' '.join(cmd)}")
