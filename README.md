@@ -14,6 +14,10 @@ Susurrus is a flexible audio transcription frontend that leverages various AI mo
 - Advanced options including start/end time for transcription, max chunk length, and output format selection for whisper.cpp (enabling subtitle export)
 - Audio trimming functionality
 
+## Screenshot
+
+![Susurrus Interface](susurrus.png)
+
 ## Installation
 
 ### Prerequisites
