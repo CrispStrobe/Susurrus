@@ -13,6 +13,8 @@ import tempfile
 import time
 import yt_dlp
 from urllib.parse import urlparse
+import json
+import shutil
 
 from pydub.utils import mediainfo
 from pydub.silence import split_on_silence
@@ -237,7 +239,59 @@ def download_whisper_cpp_model(model_name, model_path):
     except subprocess.CalledProcessError as e:
         logging.error(f"Failed to download model using download-ggml-model.sh: {str(e)}")
         sys.exit(1)
-                              
+
+def trim_audio(audio_path, start_time, end_time):
+    """
+    Trims an audio file to the specified start and end times.
+
+    Args:
+    audio_path (str): Path to the original audio file.
+    start_time (str): Start time in seconds, as a string with up to 3 decimal places, or an empty string.
+    end_time (str): End time in seconds, as a string with up to 3 decimal places, or an empty string.
+
+    Returns:
+    str: Path to the trimmed audio file (a temporary file), or the original audio path if no trimming is needed.
+    """
+    try:
+        # If both start_time and end_time are empty, return the original path
+        if not start_time and not end_time:
+            logging.info("No trimming required, using the original audio file.")
+            return audio_path
+
+        logging.info(f"Trimming audio from {start_time} to {end_time}")
+        audio = AudioSegment.from_file(audio_path)
+        audio_duration = len(audio) / 1000  # Duration in seconds
+
+        # Convert start_time and end_time to float, use 0 and audio_duration if empty
+        start_time = float(start_time) if start_time else 0
+        end_time = float(end_time) if end_time else audio_duration
+
+        # Validate times
+        start_time = max(0, start_time)
+        end_time = min(audio_duration, end_time)
+
+        if start_time >= end_time:
+            raise Exception("End time must be greater than start time.")
+
+        trimmed_audio = audio[int(start_time * 1000):int(end_time * 1000)]
+        temp_trimmed = tempfile.NamedTemporaryFile(delete=False, suffix='.wav').name
+        trimmed_audio.export(temp_trimmed, format="wav")
+        logging.info(f"Trimmed audio saved to: {temp_trimmed}")
+        return temp_trimmed
+    except Exception as e:
+        logging.error(f"Error trimming audio: {str(e)}")
+        raise Exception(f"Error trimming audio: {str(e)}")
+
+def is_valid_time(time_str):
+    """Check if the given string can be converted to a valid float time value."""
+    if not time_str:
+        return False
+    try:
+        float_time = float(time_str)
+        return float_time >= 0
+    except ValueError:
+        return False
+                                      
 def main():
     try:
         #print("transcription worker script started.")
@@ -257,6 +311,9 @@ def main():
         parser.add_argument('--batch-size', type=int, default=16, help='Batch size for batched inference')
         parser.add_argument('--preprocessor-path', type=str, required=False, help='Path to preprocessor files (tokenizer and processor)')
         parser.add_argument('--original-model-id', type=str, required=False, help='Original model ID to use for loading tokenizer and processor if necessary')
+        parser.add_argument('--start-time', type=float, default=None, help='Start time for audio trimming in seconds')
+        parser.add_argument('--end-time', type=float, default=None, help='End time for audio trimming in seconds')
+
 
         args = parser.parse_args()
 
@@ -274,6 +331,9 @@ def main():
         max_chunk_length = args.max_chunk_length
         output_format = args.output_format
         quantization = args.quantization
+        start_time = args.start_time
+        end_time = args.end_time
+        original_model_id = args.original_model_id
 
         # Handle empty or whitespace-only language input
         if language is not None and language.strip() == '':
@@ -303,15 +363,17 @@ def main():
         # Determine the audio source
         audio_path = None
         is_temp_file = False
+        original_audio_path = None
+        working_audio_path = None
 
         if audio_input and len(audio_input) > 0:
             # audio_input is a filepath to uploaded or recorded audio
-            audio_path = audio_input
+            original_audio_path = audio_input
             is_temp_file = False
         elif audio_url and len(audio_url.strip()) > 0:
             # audio_url is provided
-            audio_path, is_temp_file = download_audio(audio_url)
-            if not audio_path:
+            original_audio_path, is_temp_file = download_audio(audio_url)
+            if not original_audio_path:
                 error_msg = f"Error downloading audio from {audio_url}. Check logs for details."
                 logging.error(error_msg)
                 sys.exit(1)
@@ -320,10 +382,20 @@ def main():
             logging.error(error_msg)
             sys.exit(1)
 
-        # Now set audio_input to audio_path
-        audio_input = audio_path
+        # Trim the audio if necessary
+        if is_valid_time(start_time) or is_valid_time(end_time):
+            logging.info(f"Trimming audio from {start_time} to {end_time}")
+            working_audio_path = trim_audio(original_audio_path, start_time, end_time)
+            is_working_file_temp = working_audio_path != original_audio_path
+        else:
+            logging.info("No valid trim times provided, using the original audio file.")
+            working_audio_path = original_audio_path
+            is_working_file_temp = False
+
+        # Use working_audio_path for transcription
+        audio_input = working_audio_path
         
-        start_time = time.time()
+        start_tr_time = time.time()
 
         if backend == 'mlx-whisper':
             # Existing mlx-whisper code
@@ -399,6 +471,59 @@ def main():
                 start = segment.start
                 end = segment.end
                 print(f'[{start:0>5.3f} --> {end:0>5.3f}] {text}', flush=True)
+        
+        elif backend == 'insanely-fast-whisper':
+        
+            # Prepare the command for insanely-fast-whisper CLI
+            output_json = "output.json"
+            cmd = [
+                "insanely-fast-whisper",
+                "--file-name", audio_input,
+                "--device-id", "0" if device == "cuda" else device,
+                "--model-name", model_id,
+                "--task", "transcribe",
+                "--batch-size", "24",  # Using default batch size
+                "--timestamp", "chunk",
+                "--transcript-path", output_json
+            ]
+            
+            if language:
+                cmd.extend(["--language", language])
+            
+            # Run the command
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                bufsize=1,
+            )
+
+            # Wait for the process to complete
+            process.wait()
+
+            if process.returncode != 0:
+                error_output = process.stderr.read()
+                raise Exception(f"Insanely Fast Whisper failed with error: {error_output}")
+
+            # Read and parse the output JSON file
+            try:
+                with open(output_json, 'r') as json_file:
+                    transcription_data = json.load(json_file)
+                
+                # Print the transcription in the expected format
+                for chunk in transcription_data['chunks']:
+                    text = chunk['text'].strip()
+                    start = chunk['timestamp'][0]
+                    end = chunk['timestamp'][1]
+                    print(f'[{start:.3f} --> {end:.3f}] {text}', flush=True)
+
+                # Optionally, remove the output JSON file
+                os.remove(output_json)
+
+            except Exception as e:
+                raise Exception(f"Error parsing output JSON: {str(e)}")
+        
         
         elif backend == 'transformers':
             from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
@@ -798,8 +923,8 @@ def main():
             logging.error(f"Unsupported backend: {backend}")
             sys.exit(1)
 
-        end_time = time.time()
-        transcription_time = end_time - start_time
+        end_tr_time = time.time()
+        transcription_time = end_tr_time - start_tr_time
         logging.info(f"Transcription completed in {transcription_time:.2f} seconds")
     
     except Exception as e:
@@ -808,9 +933,13 @@ def main():
 
     finally:
         # Clean up temporary audio files
-        if is_temp_file and os.path.exists(audio_path):
-            os.remove(audio_path)
-            logging.info(f"Removed temporary file: {audio_path}")
+        # Clean up temporary audio files
+        if is_temp_file and os.path.exists(original_audio_path):
+            os.remove(original_audio_path)
+            logging.info(f"Removed temporary downloaded file: {original_audio_path}")
+        if is_working_file_temp and os.path.exists(working_audio_path):
+            os.remove(working_audio_path)
+            logging.info(f"Removed temporary trimmed file: {working_audio_path}")
 
 if __name__ == "__main__":
     main()
