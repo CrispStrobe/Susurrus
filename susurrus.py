@@ -217,12 +217,12 @@ class TranscriptionThread(QThread):
                     continue
 
                 if is_whisper_jax:
-                    if line.startswith("Transcription time:") or line.startswith("Audio file size:"):
+                    if line.startswith("Transcription time:") or line.startswith("Audio file size:") or line.startswith("Total transcription time:"):
                         self.progress_signal.emit(line, '')
                     else:
                         whisper_jax_output += line + "\n"
                         self.progress_signal.emit('', line)
-                elif 'Starting transcription' in line or 'Detected language' in line or 'Transcription time' in line:
+                elif 'Starting transcription' in line or 'Detected language' in line or 'Total transcription time' in line:
                     self.progress_signal.emit(line, '')
                     in_transcription = False
                 elif timecode_pattern.match(line):
