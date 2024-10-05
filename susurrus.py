@@ -1,75 +1,51 @@
 import sys
 import os
-import tempfile
-import time
 import logging
-from urllib.parse import urlparse
 import subprocess
-import shlex
 import re
 import shutil
 
 from PyQt6.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QLineEdit, QTextEdit,
-    QFileDialog, QComboBox, QCheckBox, QHBoxLayout, QVBoxLayout, QSpinBox,
-    QGroupBox, QPlainTextEdit, QMessageBox, QProgressBar, QInputDialog
+    QApplication, QWidget, QLabel, QPushButton, QLineEdit,
+    QFileDialog, QComboBox, QHBoxLayout, QVBoxLayout,
+    QPlainTextEdit, QMessageBox, QProgressBar, QInputDialog
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize
-from PyQt6.QtGui import QIcon, QAction
-
-# Import the necessary modules for transcription
-import torch
-import requests
-from pydub import AudioSegment
-
-# Import mlx_whisper for transcription
-import mlx_whisper
+from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtGui import QIcon
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Force device to "cpu" to avoid MPS-related errors
-device = "cpu"
-#logging.info(f"Using device: {device}")
-
-import os
-
-from PyQt6.QtWidgets import QWidget, QPushButton, QVBoxLayout
 
 class CollapsibleBox(QWidget):
     def __init__(self, title="", parent=None):
         super().__init__(parent)
-
         self.toggle_button = QPushButton()
-        
-        #self.toggle_button.setStyleSheet("text-align: left; background-color: #3a3a3a; color: white; padding: 5px; border: none;")
-        self.toggle_button.setStyleSheet("""
-            text-align: left;
-            background-color: #3a3a3a;
-            color: white;
-            padding: 5px;
-            font-size: 14px;
-            border: none;
-        """)
+        self.toggle_button.setStyleSheet(self.get_button_style())
         self.toggle_button.setCheckable(True)
-        self.toggle_button.setChecked(False)
         self.toggle_button.clicked.connect(self.toggle)
         self.title = title
         self.update_toggle_button_text()
 
         self.content_area = QWidget()
         self.content_area.setVisible(False)
-
         self.main_layout = QVBoxLayout()
-        self.main_layout.setSpacing(0)
-        self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.addWidget(self.toggle_button)
         self.main_layout.addWidget(self.content_area)
         self.setLayout(self.main_layout)
 
+    def get_button_style(self):
+        return """
+            text-align: left;
+            background-color: #3a3a3a;
+            color: white;
+            padding: 5px;
+            font-size: 14px;
+            border: none;
+        """
+
     def toggle(self):
-        checked = self.toggle_button.isChecked()
-        self.content_area.setVisible(checked)
+        self.content_area.setVisible(self.toggle_button.isChecked())
         self.update_toggle_button_text()
 
     def update_toggle_button_text(self):
@@ -79,29 +55,11 @@ class CollapsibleBox(QWidget):
     def setContentLayout(self, layout):
         self.content_area.setLayout(layout)
 
-from ctranslate2.converters.transformers import TransformersConverter
-from transformers import WhisperForConditionalGeneration, WhisperTokenizer
-
-def check_model_in_cache(model_id):
-    
-    try:
-        from transformers.utils import cached_file
-        from transformers import AutoConfig
-        
-        config = AutoConfig.from_pretrained(model_id)
-        # Attempt to get the path to the model file in the cache
-        model_file = cached_file(model_id, 'pytorch_model.bin')
-        if os.path.exists(model_file):
-            print(f"Model found in cache: {model_file}")
-            return True
-    except Exception as e:
-        print(f"Model not found in cache: {e}")
-    return False
 
 class TranscriptionThread(QThread):
     progress_signal = pyqtSignal(str, str)  # metrics, transcription
     error_signal = pyqtSignal(str)
-    transcription_replace_signal = pyqtSignal(str)  # for whisper.cpp output files
+    transcription_replace_signal = pyqtSignal(str)  # For whisper.cpp output files
 
     def __init__(self, args):
         super().__init__()
@@ -119,9 +77,10 @@ class TranscriptionThread(QThread):
             return f"{float(time_str):.3f}"
         except ValueError:
             return None
-    
+
     def run(self):
         try:
+            # Extract arguments
             model_id = self.args['model_id']
             word_timestamps = self.args['word_timestamps']
             language = self.args['language']
@@ -131,19 +90,17 @@ class TranscriptionThread(QThread):
             max_chunk_length = float(self.args['max_chunk_length']) if self.args['max_chunk_length'] else 0.0
             output_format = self.args['output_format']
             quantization = self.args.get('quantization', None)
-            start_time = self.args.get('start_time', '')
-            end_time = self.args.get('end_time', '')
-            
             start_time = self.format_time(self.args.get('start_time', ''))
             end_time = self.format_time(self.args.get('end_time', ''))
-            
+
             if start_time is None or end_time is None:
-                print ("no valid trim times (in seconds) provided, defaulting to none.")
+                logging.info("No valid trim times provided, defaulting to none.")
                 start_time = ''
                 end_time = ''
 
             python_executable = sys.executable
 
+            # Build the command to run transcribe_worker.py
             cmd = [
                 python_executable,
                 '-u',
@@ -155,7 +112,7 @@ class TranscriptionThread(QThread):
 
             if 'preprocessor_path' in self.args and self.args['preprocessor_path']:
                 cmd.extend(['--preprocessor-path', self.args['preprocessor_path']])
-            
+
             if 'original_model_id' in self.args and self.args['original_model_id']:
                 cmd.extend(['--original-model-id', self.args['original_model_id']])
 
@@ -163,6 +120,13 @@ class TranscriptionThread(QThread):
                 cmd.extend(['--audio-input', self.args['audio_input']])
             if self.args['audio_url']:
                 cmd.extend(['--audio-url', self.args['audio_url']])
+
+            if self.args['proxy_url']:
+                cmd.extend(['--proxy-url', self.args['proxy_url']])
+            if self.args['proxy_username']:
+                cmd.extend(['--proxy-username', self.args['proxy_username']])
+            if self.args['proxy_password']:
+                cmd.extend(['--proxy-password', self.args['proxy_password']])
 
             if word_timestamps:
                 cmd.append('--word-timestamps')
@@ -189,13 +153,6 @@ class TranscriptionThread(QThread):
                 bufsize=1,
             )
 
-            timecode_pattern_old = re.compile(
-                r'^\['
-                r'(\d{1,2}:\d{2}:\d{2}\.\d{3}|\d{1,2}:\d{2}\.\d{3}|\d+\.\d+)'
-                r'\s-->\s'
-                r'(\d{1,2}:\d{2}:\d{2}\.\d{3}|\d{1,2}:\d{2}\.\d{3}|\d+\.\d+)'
-                r'\]\s*(.*)'
-            )
             timecode_pattern = re.compile(
                 r'^\['
                 r'([^\]]+?)'  # Match any characters up to the closing bracket
@@ -211,7 +168,7 @@ class TranscriptionThread(QThread):
                 if not self._is_running:
                     break
                 line = line.rstrip()
-                
+
                 if line.startswith('OUTPUT FILE: '):
                     output_file = line[len('OUTPUT FILE: '):].strip()
                     continue
@@ -256,24 +213,24 @@ class TranscriptionThread(QThread):
 
         except Exception as e:
             error_msg = f"An error occurred: {str(e)}"
+            logging.error(error_msg)
             self.error_signal.emit(error_msg)
-            pass
-    
+
     def stop(self):
         self._is_running = False
         if self.process:
             self.process.terminate()
             self.process.wait()
 
+
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Susurrus: Audio Transcription")
+        self.setWindowTitle("Susurrus: Whisper Audio Transcription")
         self.setMinimumSize(800, 600)
         self.setAcceptDrops(True)  # Enable drag and drop
-        self.init_ui()
-        # Keep track of the transcription thread
         self.thread = None
+        self.init_ui()
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -286,7 +243,7 @@ class MainWindow(QWidget):
         if urls and urls[0].isLocalFile():
             file_path = urls[0].toLocalFile()
             self.audio_input_path.setText(file_path)
-    
+
     def get_original_model_id(self, model_id):
         # Search the backend_model_map for the original model ID
         for backend_models in self.backend_model_map.values():
@@ -302,7 +259,7 @@ class MainWindow(QWidget):
         # Handle special cases first
         if model_id.startswith("openai/whisper-"):
             return model_id  # It's already an OpenAI Whisper model
-        
+
         if "endpoint" in model_id_lower:
             return "openai/whisper-large-v2"  # Default for endpoints
 
@@ -348,7 +305,7 @@ class MainWindow(QWidget):
     def find_or_convert_ctranslate2_model(self, model_id):
         # Extract the original model ID
         original_model_id = self.get_original_model_id(model_id)
-        print(f"Original model ID determined as: {original_model_id}")
+        logging.info(f"Original model ID determined as: {original_model_id}")
 
         model_dir_name = model_id.replace('/', '_')
         local_model_dir = os.path.join(os.getcwd(), 'ctranslate2_models', model_dir_name)
@@ -361,9 +318,9 @@ class MainWindow(QWidget):
                 real_path = os.path.realpath(local_model_bin_path)
                 os.remove(local_model_bin_path)
                 shutil.copy(real_path, local_model_bin_path)
-                print(f"Replaced symlink with actual file for model.bin in: {local_model_dir}")
+                logging.info(f"Replaced symlink with actual file for model.bin in: {local_model_dir}")
             else:
-                print(f"Model already converted and exists locally in: {local_model_dir}")
+                logging.info(f"Model already converted and exists locally in: {local_model_dir}")
             return local_model_dir, original_model_id
 
         else:
@@ -374,12 +331,17 @@ class MainWindow(QWidget):
 
         # Check if the model is already in CTranslate2 format in the Hugging Face repo
         try:
-            from huggingface_hub import hf_hub_download, HfApi
-            
+            try:
+                from huggingface_hub import hf_hub_download, HfApi
+            except ImportError:
+                QMessageBox.critical(self, "Error", "huggingface_hub package is not installed. Cannot proceed.")
+                logging.error("huggingface_hub package is not installed.")
+                return None, None
+
             api = HfApi()
             model_files = api.list_repo_files(model_id)
             if 'model.bin' in model_files:
-                print(f"Found pre-converted CTranslate2 model in Hugging Face repo: {model_id}")
+                logging.info(f"Found pre-converted CTranslate2 model in Hugging Face repo: {model_id}")
                 # Download the model.bin and other necessary files
                 for file in ['model.bin', 'config.json', 'tokenizer.json', 'vocabulary.json', 'preprocessor_config.json']:
                     if file in model_files:
@@ -389,14 +351,14 @@ class MainWindow(QWidget):
                             real_path = os.path.realpath(file_path)
                             os.remove(file_path)
                             shutil.copy(real_path, file_path)
-                return local_model_dir, local_model_dir
-            
+                return local_model_dir, original_model_id
+
         except Exception as e:
-            print(f"Error while checking Hugging Face repo: {e}")
-            print("Proceeding with local model conversion...")
+            logging.error(f"Error while checking Hugging Face repo: {e}")
+            logging.info("Proceeding with local model conversion...")
 
         # If we reach here, we need to convert the model
-        print(f"Model not found in CTranslate2 format or couldn't be downloaded. Converting {model_id} to CTranslate2 format...")
+        logging.info(f"Model not found in CTranslate2 format or couldn't be downloaded. Converting {model_id} to CTranslate2 format...")
 
         # Ask for quantization
         quantization, ok_pressed = QInputDialog.getItem(
@@ -408,7 +370,9 @@ class MainWindow(QWidget):
             False
         )
         if not ok_pressed:
-            raise Exception("Quantization selection cancelled by user.")
+            QMessageBox.information(self, "Information", "Quantization selection cancelled by user.")
+            logging.info("Quantization selection cancelled by user.")
+            return None, None
 
         reply = QMessageBox.question(
             self,
@@ -417,69 +381,78 @@ class MainWindow(QWidget):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         if reply == QMessageBox.StandardButton.No:
-            raise Exception("Model conversion cancelled by user.")
+            QMessageBox.information(self, "Information", "Model conversion cancelled by user.")
+            logging.info("Model conversion cancelled by user.")
+            return None, None
 
         # Perform the model conversion
         try:
             self.convert_model_to_ctranslate2(model_id, local_model_dir, quantization)
-            print(f"Model converted and saved to: {local_model_dir}")
+            logging.info(f"Model converted and saved to: {local_model_dir}")
         except Exception as e:
-            print(f"Error during model conversion: {e}")
-            raise
+            logging.error(f"Error during model conversion: {e}")
+            QMessageBox.critical(self, "Error", f"Error during model conversion: {str(e)}")
+            return None, None
 
         # Download the preprocessor files and save them in the same directory
         try:
-            from transformers import WhisperProcessor
-            print(f"Downloading preprocessor files for model: {model_id}")
-            preprocessor = WhisperProcessor.from_pretrained(model_id)
-            preprocessor.save_pretrained(local_model_dir)
-            print(f"Preprocessor files saved to: {local_model_dir}")
-        except Exception as e:
-            print(f"Error downloading preprocessor files: {e}")
-            raise
+            try:
+                from transformers import WhisperProcessor
+            except ImportError:
+                QMessageBox.critical(self, "Error", "transformers package is not installed. Cannot load the preprocessor files.")
+                logging.error("transformers package is not installed.")
+                return None, None
 
-        # Download the preprocessor files and save them in the same directory
-        try:
-            from transformers import WhisperProcessor
-            print(f"Downloading preprocessor files for original model: {original_model_id}")
+            logging.info(f"Downloading preprocessor files for original model: {original_model_id}")
             preprocessor = WhisperProcessor.from_pretrained(original_model_id)
             preprocessor.save_pretrained(local_model_dir)
-            print(f"Preprocessor files saved to: {local_model_dir}")
+            logging.info(f"Preprocessor files saved to: {local_model_dir}")
         except Exception as e:
-            print(f"Error downloading preprocessor files: {e}")
-            raise
+            logging.error(f"Error downloading preprocessor files: {e}")
+            QMessageBox.critical(self, "Error", f"Error downloading preprocessor files: {str(e)}")
+            return None, None
 
         return local_model_dir, original_model_id  # Return both values
 
+
     def convert_model_to_ctranslate2(self, model_id, output_dir, quantization):
-        from ctranslate2.converters.transformers import TransformersConverter
-        from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
-        
-        print(f"Loading model {model_id} for conversion...")
+        try:
+            from ctranslate2.converters.transformers import TransformersConverter
+            from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
+        except ImportError:
+            QMessageBox.critical(self, "Error", "Required packages for model conversion are not installed. Please install 'ctranslate2' and 'transformers'.")
+            logging.error("Required packages 'ctranslate2' and 'transformers' are not installed.")
+            return
+
+        logging.info(f"Loading model {model_id} for conversion...")
         model = AutoModelForSpeechSeq2Seq.from_pretrained(model_id)
         processor = AutoProcessor.from_pretrained(model_id)
-        
-        print(f"Converting model to CTranslate2 format...")
+
+        logging.info(f"Converting model to CTranslate2 format...")
         converter = TransformersConverter(model, processor)
         converter.convert(output_dir, quantization=quantization, force=True)
-        
+
         # Verify that the model.bin file was created and is not a symlink
         model_bin_path = os.path.join(output_dir, 'model.bin')
         if not os.path.exists(model_bin_path) or os.path.getsize(model_bin_path) == 0:
-            raise Exception(f"Failed to convert model. model.bin not found or empty in {output_dir}")
+            error_msg = f"Failed to convert model. model.bin not found or empty in {output_dir}"
+            logging.error(error_msg)
+            QMessageBox.critical(self, "Error", error_msg)
+            return
         if os.path.islink(model_bin_path):
             real_path = os.path.realpath(model_bin_path)
             os.remove(model_bin_path)
             shutil.copy(real_path, model_bin_path)
-        
-        print(f"Model successfully converted and saved to: {output_dir}")
-    
+
+        logging.info(f"Model successfully converted and saved to: {output_dir}")
+
+
     def check_transcribe_button_state(self):
         if self.audio_input_path.text().strip() or self.audio_url.text().strip():
             self.transcribe_button.setEnabled(True)
         else:
             self.transcribe_button.setEnabled(False)
-    
+
     def init_ui(self):
 
         self.backend_model_map = {
@@ -521,7 +494,7 @@ class MainWindow(QWidget):
                 ("large-v3-turbo", "openai/whisper-large-v3"),
                 ("small", "openai/whisper-small"),
                 ("large-v3-q5_0", "openai/whisper-large-v3"),
-                ("medium-q5_0", "openai/whisper-mediem"),
+                ("medium-q5_0", "openai/whisper-medium"),
                 ("small-q5_1", "openai/whisper-small"),
                 ("base", "openai/whisper-base"),
                 ("tiny", "openai/whisper-tiny"),
@@ -550,11 +523,11 @@ class MainWindow(QWidget):
                 ("openai/whisper-tiny", "openai/whisper-tiny"),
             ],
         }
-        
+
         main_layout = QVBoxLayout()
 
         # Title
-        title_label = QLabel("<h1 style='color: #FFFFFF;'>Susurrus: Audio Transcription</h1>")
+        title_label = QLabel("<h1 style='color: #FFFFFF;'>Susurrus: Whisper Audio Transcription</h1>")
         subtitle_label = QLabel("<p style='color: #666666;'>Transcribe audio using various (Whisper-) backends.</p>")
         main_layout.addWidget(title_label)
         main_layout.addWidget(subtitle_label)
@@ -607,7 +580,6 @@ class MainWindow(QWidget):
         self.audio_input_path.textChanged.connect(self.check_transcribe_button_state)
         self.audio_url.textChanged.connect(self.check_transcribe_button_state)
 
-        # Advanced Options Group
         # Advanced Options Collapsible Box
         self.advanced_options_box = CollapsibleBox("Advanced Options")
         advanced_layout = QVBoxLayout()
@@ -646,8 +618,8 @@ class MainWindow(QWidget):
             "transformers",
             "whisper.cpp",
             "ctranslate2",
-            "whisper-jax",  
-            "insanely-fast-whisper", 
+            "whisper-jax",
+            "insanely-fast-whisper",
         ])
 
         self.backend_selection.setCurrentText("mlx-whisper")
@@ -787,24 +759,7 @@ class MainWindow(QWidget):
                 padding: 5px;
                 font-size: 14px;
             }
-            QGroupBox {
-                border: 1px solid #555555;
-                border-radius: 4px;
-                margin-top: 20px;
-                padding-top: 15px;
-                padding-bottom: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 7px;
-                padding: 0 5px 0 5px;
-                background-color: #2b2b2b;
-                font-size: 16px;
-            }
         """)
-
-        # Set window size
-        self.setMinimumSize(800, 600)
 
         # Adjust main layout margins and spacing
         main_layout.setContentsMargins(15, 15, 15, 15)
@@ -817,7 +772,7 @@ class MainWindow(QWidget):
         self.progress_bar.setRange(0, 0)  # Indeterminate progress bar
         self.progress_bar.setVisible(False)
         main_layout.addWidget(self.progress_bar)
-        
+
         self.setLayout(main_layout)
 
     def toggle_proxy_settings(self):
@@ -825,13 +780,14 @@ class MainWindow(QWidget):
             self.proxy_row_widget.setVisible(True)
         else:
             self.proxy_row_widget.setVisible(False)
-            
+
     def select_audio_file(self):
         file_name, _ = QFileDialog.getOpenFileName(self, "Select Audio File", "", "Audio Files (*.mp3 *.wav *.flac)")
         if file_name:
             self.audio_input_path.setText(file_name)
 
     def update_model_options(self, backend):
+        backend = backend.lower()
         models = self.backend_model_map.get(backend, [])
         self.model_id.clear()
         for model_tuple in models:
@@ -839,7 +795,7 @@ class MainWindow(QWidget):
             self.model_id.addItem(model_id)
 
         # Show/hide chunking selection based on backend
-        if backend in ['OpenAI Whisper', 'transformers']:
+        if backend in ['openai whisper', 'transformers']:
             self.chunk_row_widget.setVisible(True)
         else:
             self.chunk_row_widget.setVisible(False)
@@ -850,12 +806,13 @@ class MainWindow(QWidget):
         else:
             self.output_format_row_widget.setVisible(False)
 
+
     def replace_transcription_output(self, text):
         self.transcription_output.clear()
         self.transcription_output.setPlainText(text)
         self.save_button.setEnabled(True)
         self.transcription_text = text  # Update the transcription text used for saving
-    
+
     def start_transcription(self):
         # Collect arguments from UI
         args = {
@@ -875,105 +832,80 @@ class MainWindow(QWidget):
             'max_chunk_length': self.max_chunk_length.text(),
             'output_format': self.output_format_selection.currentText(),
         }
-        
+
         # Normalize backend and device arguments
         args['backend'] = args['backend'].strip().lower()
         args['device_arg'] = args['device_arg'].strip().lower()
-        print(f"Backend selected: '{args['backend']}'")
-        print(f"Device selected: '{args['device_arg']}'")
-        print(f"Model selected: '{args['model_id']}'")
+        logging.info(f"Backend selected: '{args['backend']}'")
+        logging.info(f"Device selected: '{args['device_arg']}'")
+        logging.info(f"Model selected: '{args['model_id']}'")
 
         # Handle ctranslate2 specific logic
-        quantization = None
         if args['backend'] == 'ctranslate2':
-            print("ctranslate2 selected. checking...")
+            logging.info("ctranslate2 selected. Checking...")
             # Force device to CPU if device is MPS
             if args['device_arg'] == 'mps':
                 args['device_arg'] = 'cpu'
-            
+
             # Find or convert the model
             try:
                 model_dir, original_model_id = self.find_or_convert_ctranslate2_model(args['model_id'])
+                if model_dir is None:
+                    self.progress_bar.setVisible(False)
+                    self.transcribe_button.setEnabled(True)
+                    return
+
                 args['model_id'] = model_dir  # Update model_id to point to the model directory
                 args['original_model_id'] = original_model_id
                 args['preprocessor_path'] = model_dir  # Set the preprocessor path to the same directory
-                print(f"Using model directory: {args['model_id']}")
+                logging.info(f"Using model directory: {args['model_id']}")
 
                 # Check if preprocessor files exist
                 preprocessor_files = ["tokenizer.json", "vocabulary.json", "tokenizer_config.json"]
                 preprocessor_missing = not all(os.path.exists(os.path.join(model_dir, f)) for f in preprocessor_files)
 
                 if preprocessor_missing:
-                    print(f"Preprocessor files missing. Downloading from original model ID: {original_model_id}")
-                    # No need to determine original_model_id again; use the one retrieved earlier
+                    logging.info(f"Preprocessor files missing. Downloading from original model ID: {original_model_id}")
                     try:
                         from transformers import WhisperProcessor
+                    except ImportError:
+                        QMessageBox.critical(self, "Error", "transformers package is not installed. Cannot load the preprocessor files.")
+                        logging.error("transformers package is not installed.")
+                        self.progress_bar.setVisible(False)
+                        self.transcribe_button.setEnabled(True)
+                        return
+                    # No need to determine original_model_id again; use the one retrieved earlier
+                    try:
                         preprocessor = WhisperProcessor.from_pretrained(original_model_id)
                         preprocessor.save_pretrained(model_dir)
-                        print(f"Preprocessor files saved to: {model_dir}")
+                        logging.info(f"Preprocessor files saved to: {model_dir}")
                     except Exception as e:
-                        QMessageBox.critical(self, "Error", f"Failed to download preprocessor files: {str(e)}")
+                        error_msg = f"Failed to download preprocessor files: {str(e)}"
+                        logging.error(error_msg)
+                        QMessageBox.critical(self, "Error", error_msg)
                         self.progress_bar.setVisible(False)
                         self.transcribe_button.setEnabled(True)
                         return
                 else:
-                    print("Preprocessor files already exist.")
+                    logging.info("Preprocessor files already exist.")
 
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Model preparation failed: {str(e)}")
+                error_msg = f"Model preparation failed: {str(e)}"
+                logging.error(error_msg)
+                QMessageBox.critical(self, "Error", error_msg)
                 self.progress_bar.setVisible(False)
                 self.transcribe_button.setEnabled(True)
+                self.abort_button.setEnabled(False)
                 return
-            
-            # Check if model.bin exists
-            model_bin_path = os.path.join(model_dir, 'model.bin')
-            if not os.path.exists(model_bin_path):
-                # Proceed with model conversion
-                quantization, ok_pressed = QInputDialog.getItem(
-                    self,
-                    "Select Quantization",
-                    "Choose quantization for model conversion:",
-                    ["float32", "int8_float16", "int16", "int8"],
-                    1,
-                    False
-                )
-                if not ok_pressed:
-                    self.progress_bar.setVisible(False)
-                    self.transcribe_button.setEnabled(True)
-                    return
-                reply = QMessageBox.question(
-                    self,
-                    "Model Conversion Required",
-                    f"The model {args['model_id']} needs to be converted to ctranslate2 format with quantization '{quantization}'. This may take several minutes. Do you want to proceed?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-                )
-                if reply == QMessageBox.StandardButton.No:
-                    self.progress_bar.setVisible(False)
-                    self.transcribe_button.setEnabled(True)
-                    return
-                # Pass quantization to the worker script
-                args['quantization'] = quantization
-                # Perform the model conversion here
-                try:
-                    self.convert_model_to_ctranslate2(args['model_id'], model_dir, quantization)
-                except Exception as e:
-                    QMessageBox.critical(self, "Error", f"Model conversion failed: {str(e)}")
-                    self.progress_bar.setVisible(False)
-                    self.transcribe_button.setEnabled(True)
-                    return
-            else:
-                print(f"Model already converted and exists in: {model_dir}")
-            args['model_id'] = model_dir  # Update model_id to point to the converted model directory
 
+            args['model_id'] = model_dir  # Update model_id to point to the converted model directory
 
         self.thread = TranscriptionThread(args)
         self.thread.progress_signal.connect(self.update_outputs)
         self.thread.error_signal.connect(self.show_error)
         self.thread.finished.connect(self.on_transcription_finished)
-        
-        # must we replace the content of the transcription with a file from whisper.cpp?
-        self.thread.transcription_replace_signal.connect(self.replace_transcription_output)  # signal for when we read from whisper.cpp output file
-        
+        self.thread.transcription_replace_signal.connect(self.replace_transcription_output)  # signal for whisper.cpp output
+
         self.thread.start()
         self.transcribe_button.setEnabled(False)
         self.progress_bar.setVisible(True)
@@ -992,17 +924,22 @@ class MainWindow(QWidget):
         self.abort_button.setEnabled(False)
         self.progress_bar.setVisible(False)
         self.metrics_output.appendPlainText("Transcription aborted by user.")
-    
+        logging.info("Transcription aborted by user.")
+
     def on_transcription_finished(self):
         self.transcribe_button.setEnabled(True)
         self.abort_button.setEnabled(False)
         self.progress_bar.setVisible(False)
+        logging.info("Transcription process finished.")
 
     def show_error(self, error_msg):
         self.metrics_output.appendPlainText(error_msg)
+        logging.error(error_msg)
         QMessageBox.critical(self, "Error", error_msg)
         self.transcribe_button.setEnabled(True)
+        self.abort_button.setEnabled(False)
         self.progress_bar.setVisible(False)
+
 
     def update_outputs(self, metrics, transcription):
         if metrics:
@@ -1010,7 +947,9 @@ class MainWindow(QWidget):
         if transcription:
             self.transcription_output.appendPlainText(transcription)
             self.save_button.setEnabled(True)
-            self.transcription_text += transcription + '\n'
+            #self.transcription_text += transcription + '\n' # check!
+            #alternatively:
+            self.transcription_text = self.transcription_output.toPlainText() # check!
 
     def save_transcription(self):
         if hasattr(self, 'transcription_text'):
@@ -1024,215 +963,6 @@ class MainWindow(QWidget):
                     QMessageBox.critical(self, "Error", f"Failed to save transcription: {str(e)}")
         else:
             QMessageBox.warning(self, "Warning", "No transcription available to save.")
-
-def transcribe_audio(
-    audio_input, audio_url, proxy_url, proxy_username, proxy_password,
-    model_id, start_time=None, end_time=None, verbose=False, word_timestamps=False,
-    language=None
-):
-    try:
-        if verbose:
-            logging.getLogger().setLevel(logging.INFO)
-        else:
-            logging.getLogger().setLevel(logging.WARNING)
-
-        logging.info(f"Transcription parameters: model_id={model_id}")
-
-        # Determine the audio source
-        audio_path = None
-        is_temp_file = False
-
-        if audio_input and len(audio_input) > 0:
-            # audio_input is a filepath to uploaded or recorded audio
-            audio_path = audio_input
-            is_temp_file = False
-        elif audio_url and len(audio_url.strip()) > 0:
-            # audio_url is provided
-            audio_path, is_temp_file = download_audio(audio_url, proxy_url, proxy_username, proxy_password)
-            if not audio_path:
-                error_msg = f"Error downloading audio from {audio_url}. Check logs for details."
-                logging.error(error_msg)
-                yield f"Error: {error_msg}", ""
-                return
-        else:
-            error_msg = "No audio source provided. Please upload an audio file or enter a URL."
-            logging.error(error_msg)
-            yield f"Error: {error_msg}", ""
-            return
-
-        # Convert start_time and end_time to float or None
-        start_time = float(start_time) if start_time else None
-        end_time = float(end_time) if end_time else None
-
-        if start_time is not None or end_time is not None:
-            audio_path = trim_audio(audio_path, start_time, end_time)
-            is_temp_file = True  # The trimmed audio is a temporary file
-            logging.info(f"Audio trimmed from {start_time} to {end_time}")
-
-        # Perform the transcription
-        start_time_perf = time.time()
-
-        # Load the model (mlx-whisper handles caching)
-        transcribe_options = {
-            "path_or_hf_repo": model_id,
-            "verbose": verbose,
-            "word_timestamps": word_timestamps,
-            "language": language,  # Specify the language to avoid auto-detection
-        }
-
-        logging.info("Starting transcription")
-        result = mlx_whisper.transcribe(audio_path, **transcribe_options)
-        transcription = result["text"]
-
-        end_time_perf = time.time()
-
-        # Calculate metrics
-        transcription_time = end_time_perf - start_time_perf
-        audio_file_size = os.path.getsize(audio_path) / (1024 * 1024)
-
-        metrics_output = (
-            f"Transcription time: {transcription_time:.2f} seconds\n"
-            f"Audio file size: {audio_file_size:.2f} MB\n"
-        )
-
-        # Optionally include word-level timestamps
-        if word_timestamps:
-            word_transcriptions = []
-            for segment in result["segments"]:
-                words_info = segment["words"]
-                for word_info in words_info:
-                    word_text = word_info["word"]
-                    start = word_info["start"]
-                    end = word_info["end"]
-                    word_transcriptions.append(f"[{start:.2f}s -> {end:.2f}s] {word_text}")
-            transcription = "\n".join(word_transcriptions)
-
-        yield metrics_output, transcription
-
-    except Exception as e:
-        error_msg = f"An error occurred during transcription: {str(e)}"
-        logging.error(error_msg)
-        yield f"Error: {error_msg}", ""
-
-    finally:
-        # Clean up temporary audio files
-        if audio_path and is_temp_file and os.path.exists(audio_path):
-            os.remove(audio_path)
-
-def trim_audio(audio_path, start_time, end_time):
-    try:
-        logging.info(f"Trimming audio from {start_time} to {end_time}")
-        audio = AudioSegment.from_file(audio_path)
-        audio_duration = len(audio) / 1000  # Duration in seconds
-
-        # Default start and end times if None
-        start_time = max(0, start_time) if start_time is not None else 0
-        end_time = min(audio_duration, end_time) if end_time is not None else audio_duration
-
-        # Validate times
-        if start_time >= end_time:
-            raise Exception("End time must be greater than start time.")
-
-        trimmed_audio = audio[int(start_time * 1000):int(end_time * 1000)]
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_audio_file:
-            trimmed_audio.export(temp_audio_file.name, format="wav")
-            logging.info(f"Trimmed audio saved to: {temp_audio_file.name}")
-        return temp_audio_file.name
-    except Exception as e:
-        logging.error(f"Error trimming audio: {str(e)}")
-        raise Exception(f"Error trimming audio: {str(e)}")
-
-def download_audio(url, proxy_url, proxy_username, proxy_password):
-    parsed_url = urlparse(url)
-    logging.info(f"Downloading audio from URL: {url}")
-    try:
-        if 'youtube.com' in parsed_url.netloc or 'youtu.be' in parsed_url.netloc:
-            audio_file = download_youtube_audio(url, proxy_url, proxy_username, proxy_password)
-            if not audio_file:
-                logging.error(f"Failed to download audio from {url}. Ensure yt-dlp is installed and up to date.")
-                return None, False
-        else:
-            audio_file = download_direct_audio(url, proxy_url, proxy_username, proxy_password)
-            if not audio_file:
-                logging.error(f"Failed to download audio from {url}")
-                return None, False
-        return audio_file, True
-    except Exception as e:
-        logging.error(f"Error downloading audio from {url}: {str(e)}")
-        return None, False
-
-def download_youtube_audio(url, proxy_url, proxy_username, proxy_password):
-    import yt_dlp
-    logging.info(f"Using yt-dlp {yt_dlp.version.__version__} to download YouTube audio")
-    temp_dir = tempfile.mkdtemp()
-    output_template = os.path.join(temp_dir, '%(id)s.%(ext)s')
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': output_template,
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
-        'quiet': False,
-        'no_warnings': False,
-        'logger': MyLogger(),
-    }
-    if proxy_url and len(proxy_url.strip()) > 0:
-        ydl_opts['proxy'] = proxy_url
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            if 'entries' in info:
-                # Can be a playlist or a list of videos
-                info = info['entries'][0]
-            output_file = ydl.prepare_filename(info)
-            output_file = os.path.splitext(output_file)[0] + '.mp3'
-            if os.path.exists(output_file):
-                logging.info(f"Downloaded YouTube audio: {output_file}")
-                return output_file
-            else:
-                logging.error("yt-dlp did not produce an output file.")
-                return None
-    except Exception as e:
-        logging.error(f"yt-dlp failed to download audio: {str(e)}")
-        return None
-
-def download_direct_audio(url, proxy_url, proxy_username, proxy_password):
-    try:
-        proxies = None
-        auth = None
-        if proxy_url and len(proxy_url.strip()) > 0:
-            proxies = {
-                "http": proxy_url,
-                "https": proxy_url
-            }
-            if proxy_username and proxy_password:
-                auth = (proxy_username, proxy_password)
-        response = requests.get(url, stream=True, proxies=proxies, auth=auth)
-        if response.status_code == 200:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        temp_file.write(chunk)
-            logging.info(f"Downloaded direct audio to: {temp_file.name}")
-            return temp_file.name
-        else:
-            logging.error(f"Failed to download audio from {url} with status code {response.status_code}")
-            return None
-    except Exception as e:
-        logging.error(f"Error in download_direct_audio: {str(e)}")
-        return None
-
-class MyLogger(object):
-    def debug(self, msg):
-        logging.debug(msg)
-    def info(self, msg):
-        logging.info(msg)
-    def warning(self, msg):
-        logging.warning(msg)
-    def error(self, msg):
-        logging.error(msg)
 
 def main():
     app = QApplication(sys.argv)
