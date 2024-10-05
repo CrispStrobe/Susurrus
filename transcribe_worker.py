@@ -2,25 +2,42 @@
 # handled from Susurrus main script or run manually
 
 import argparse
-import sys
 import os
 import logging
-import torch
-from pydub import AudioSegment
 import subprocess
-import requests
-import tempfile
 import time
-import yt_dlp
-from urllib.parse import urlparse
 import json
-import shutil
 
-from pydub.utils import mediainfo
-from pydub.silence import split_on_silence
+device_fallbacks = {
+    'faster-batched': [('mps', 'cpu')],
+    'faster-whisper': [('mps', 'cpu')],
+    'openai-whisper': [('mps', 'cpu')],
+    # Add other backends and unsupported devices as needed
+    # Format: 'backend': [(unsupported_device, fallback_device), ...]
+}
+
+def get_supported_device(backend, device):
+    if backend in device_fallbacks:
+        for unsupported, fallback in device_fallbacks[backend]:
+            if device == unsupported:
+                logging.warning(f"Device '{device}' is not supported by backend '{backend}'. Switching to '{fallback}'.")
+                return fallback
+    return device
+
+class MyLogger:
+    def debug(self, msg):
+        pass
+
+    def warning(self, msg):
+        pass
+
+    def error(self, msg):
+        logging.error(msg)
+
+def my_hook(d):
+    pass  # Suppress progress messages
 
 def get_original_model_id(model_id):
-    # Define a mapping of known models to their original IDs
     known_models = {
         'mlx-community/whisper-large-v3-turbo': 'openai/whisper-large-v3-turbo',
         'mlx-community/whisper-large-v3-turbo-q4': 'openai/whisper-large-v3-turbo',
@@ -35,21 +52,17 @@ def get_original_model_id(model_id):
         'GalaktischeGurke/primeline-whisper-large-v3-german-ct2': 'openai/whisper-large-v3'
     }
 
-    # Check if the model_id is in the known models mapping
     if model_id in known_models:
         return known_models[model_id]
 
-    # If not found in known models, use heuristics
     model_id_lower = model_id.lower()
 
-    # Handle special cases first
     if model_id.startswith("openai/whisper-"):
-        return model_id  # It's already an OpenAI Whisper model
-    
+        return model_id
+        
     if "endpoint" in model_id_lower:
-        return "openai/whisper-large-v2"  # Default for endpoints
+        return "openai/whisper-large-v2"
 
-    # Check for specific version numbers and turbo variant
     if "v3_turbo" in model_id_lower or "v3-turbo" in model_id_lower:
         base = "openai/whisper-large-v3-turbo"
     elif "v3" in model_id_lower:
@@ -61,7 +74,6 @@ def get_original_model_id(model_id):
     else:
         base = "openai/whisper"
 
-    # Check for model size (only if base is just "openai/whisper")
     if base == "openai/whisper":
         if "large" in model_id_lower:
             size = "large"
@@ -74,71 +86,104 @@ def get_original_model_id(model_id):
         elif "tiny" in model_id_lower:
             size = "tiny"
         else:
-            # Default to large if size is not specified
             size = "large"
         base = f"{base}-{size}"
 
-    # Check for language specificity
     if "_en" in model_id_lower or ".en" in model_id_lower:
         lang = ".en"
     else:
         lang = ""
 
-    # Construct the original model ID
     return f"{base}{lang}"
 
-def download_audio(url):
+def download_audio(url, proxies=None):
+    from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+
     parsed_url = urlparse(url)
+    query_params = parse_qs(parsed_url.query)
+    if 'list' in query_params:
+        query_params.pop('list', None)
+        new_query = urlencode(query_params, doseq=True)
+        parsed_url = parsed_url._replace(query=new_query)
+        url = urlunparse(parsed_url)
+        logging.info(f"Modified URL to remove playlist parameter: {url}")
     logging.info(f"Downloading audio from URL: {url}")
     audio_file = None
 
-    download_methods = [download_with_yt_dlp, download_with_pytube, download_with_ffmpeg]
+    download_methods = [
+        lambda url: download_with_yt_dlp(url, proxies),
+        lambda url: download_with_pytube(url, proxies),
+        lambda url: download_with_ffmpeg(url, proxies)
+    ]
 
     for method in download_methods:
         try:
             audio_file = method(url)
             if audio_file and os.path.exists(audio_file):
                 logging.info(f"Audio downloaded successfully using {method.__name__}")
-                return audio_file, True  # Return the path and a flag indicating it's a temporary file
+                return audio_file, True
         except Exception as e:
             logging.error(f"{method.__name__} failed: {str(e)}")
-            continue  # Try the next method
+            continue
 
     logging.error(f"All download methods failed for URL: {url}")
     return None, False
 
-def download_with_yt_dlp(url):
+def download_with_yt_dlp(url, proxies=None):
     logging.info("Trying to download using yt-dlp...")
-    temp_dir = tempfile.mkdtemp()
-    output_template = os.path.join(temp_dir, '%(id)s.%(ext)s')
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': output_template,
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
-        'quiet': True,
-        'no_warnings': True,
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        if 'entries' in info:
-            # Can be a playlist or a list of videos
-            info = info['entries'][0]
-        output_file = ydl.prepare_filename(info)
-        output_file = os.path.splitext(output_file)[0] + '.mp3'
-        if os.path.exists(output_file):
-            logging.info(f"Downloaded YouTube audio: {output_file}")
-            return output_file
-        else:
-            raise Exception("yt-dlp did not produce an output file.")
+    import tempfile
+    try:
+        import yt_dlp
+    except ImportError:
+        logging.error("yt_dlp is not installed. Please install it to download from youtube.")
+        return None
 
-def download_with_pytube(url):
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_template = os.path.join(temp_dir, '%(id)s.%(ext)s')
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': output_template,
+                'noplaylist': True,
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }],
+                'quiet': True,
+                'no_warnings': True,
+                'logger': MyLogger(),
+                'progress_hooks': [my_hook],
+            }
+            if proxies and proxies.get('http'):
+                ydl_opts['proxy'] = proxies['http'] # Can be 'socks5://hostname:port'
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                if 'entries' in info:
+                    info = info['entries'][0]
+                output_file = ydl.prepare_filename(info)
+                output_file = os.path.splitext(output_file)[0] + '.mp3'
+                if os.path.exists(output_file):
+                    logging.info(f"Downloaded YouTube audio: {output_file}")
+                    return output_file
+                else:
+                    raise Exception("yt-dlp did not produce an output file.")
+    except Exception as e:
+        logging.error(f"yt_dlp failed: {str(e)}")
+        raise
+
+def download_with_pytube(url, proxies=None):
     logging.info("Trying to download using pytube...")
-    from pytube import YouTube
+    import tempfile
+    try:
+        from pytube import YouTube
+    except ImportError:
+        logging.error("pytube and tempfile packages are needed for youtube downloads. Please install it to use this backend.")
+        return None
+    
     yt = YouTube(url)
+    if proxies and proxies.get('http'):
+        YouTube.proxy = proxies['http']
     audio_stream = yt.streams.filter(only_audio=True).first()
     if audio_stream is None:
         raise Exception("No audio streams available.")
@@ -150,24 +195,52 @@ def download_with_pytube(url):
     logging.info(f"Downloaded and converted audio to: {new_file}")
     return new_file
 
-def download_with_ffmpeg(url):
+def download_with_ffmpeg(url, proxies=None, ffmpeg_path='ffmpeg'):
     logging.info("Trying to download using ffmpeg...")
-    output_file = tempfile.mktemp(suffix='.mp3')
-    command = ['ffmpeg', '-i', url, '-q:a', '0', '-map', 'a', output_file]
-    subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if os.path.exists(output_file):
-        logging.info(f"Downloaded audio using ffmpeg: {output_file}")
-        return output_file
-    else:
-        raise Exception("ffmpeg did not produce an output file.")
+    import tempfile
+    import shutil
+    if shutil.which("ffmpeg") is None:
+        logging.error("ffmpeg is not installed or not found in PATH. Please install it to download with ffmpeg.")
+        return None
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as temp_file:
+        output_file = temp_file.name
+        command = [ffmpeg_path, '-i', url, '-q:a', '0', '-map', 'a', output_file]
+        env = os.environ.copy()
+        if proxies and 'socks5' in proxies['http']:
+            env['ALL_PROXY'] = proxies['http']
+        else:
+            env['http_proxy'] = proxies['http']
+            env['https_proxy'] = proxies['https']
+        try:
+            subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
+            if os.path.exists(output_file):
+                logging.info(f"Downloaded audio using ffmpeg: {output_file}")
+                return output_file
+            else:
+                raise Exception("ffmpeg did not produce an output file.")
+        except subprocess.CalledProcessError as e:
+            logging.error(f"Error running ffmpeg: {e}")
+            return None
 
 def detect_audio_format(audio_path):
-    info = mediainfo(audio_path)
-    return info.get('format_name', 'wav')
+    try:
+        from pydub.utils import mediainfo
+    except ImportError:
+        logging.error("pydub is not installed. Please install it to use this backend.")
+        return None
+    try:
+        info = mediainfo(audio_path)
+        return info.get('format_name', 'wav')
+    except Exception as e:
+        logging.error(f"Could not detect audio format: {str(e)}")
+        raise
 
 def convert_to_ctranslate2_model(model_id, model_path, quantization):
-    import ctranslate2
-    import transformers
+    try:
+        import ctranslate2
+    except ImportError:
+        logging.error("ctranslate2 package not available. Please install it to use this backend.")
+        raise
 
     logging.info(f"Converting model '{model_id}' to CTranslate2 format at '{model_path}' with quantization '{quantization}'")
     try:
@@ -179,29 +252,47 @@ def convert_to_ctranslate2_model(model_id, model_path, quantization):
         logging.info(f"Model converted and saved to '{model_path}'")
     except Exception as e:
         logging.error(f"Failed to convert model: {str(e)}")
-        sys.exit(1)
+        raise
 
 def convert_audio_to_wav(audio_path):
     try:
-        # Detect audio format
+        from pydub import AudioSegment
+    except ImportError:
+        logging.error("pydub is not installed. Please install it to use this backend.")
+        return None
+    
+    if not os.path.exists(audio_path):
+        logging.error(f"Audio file not found: {audio_path}")
+        raise FileNotFoundError(f"Audio file not found: {audio_path}")
+
+    try:
         audio_format = detect_audio_format(audio_path)
+        if not audio_format:
+            logging.error("Unable to detect audio format.")
+            return None
         sound = AudioSegment.from_file(audio_path, format=audio_format)
-        sound = sound.set_channels(1)  # Ensure mono audio
-        sound = sound.set_sample_width(2)  # 2 bytes = 16 bits
-        sound = sound.set_frame_rate(16000)  # Set sample rate to 16kHz
-        temp_wav_file = tempfile.NamedTemporaryFile(delete=False, suffix='.wav').name
-        sound.export(temp_wav_file, format='wav')
-        return temp_wav_file
+        sound = sound.set_channels(1)
+        sound = sound.set_sample_width(2)
+        sound = sound.set_frame_rate(16000)
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_wav_file:
+            sound.export(temp_wav_file.name, format='wav')
+            return temp_wav_file.name
     except Exception as e:
         logging.error(f"Error converting audio to 16-bit 16kHz WAV: {str(e)}")
-        sys.exit(1)
+        raise
 
-def download_whisper_cpp_model_directly(model_file, model_path):
+def download_whisper_cpp_model_directly(model_file, model_path, proxies=None):
     base_url = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/'
     url = base_url + model_file
     logging.info(f'Downloading {model_file} from {url}')
     try:
-        response = requests.get(url, stream=True)
+        try:
+            import requests
+        except ImportError:
+            logging.error("requests package not available. Cannot download the model.")
+            return False
+        response = requests.get(url, stream=True, proxies=proxies)
         response.raise_for_status()
         with open(model_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
@@ -209,7 +300,7 @@ def download_whisper_cpp_model_directly(model_file, model_path):
         logging.info(f'Model downloaded to {model_path}')
     except Exception as e:
         logging.error(f"Failed to download model file: {str(e)}")
-        sys.exit(1)
+        return False
 
 def find_whisper_cpp_executable():
     home_dir = os.path.expanduser('~')
@@ -222,9 +313,6 @@ def find_whisper_cpp_executable():
     return None
 
 def find_file(filename, search_paths):
-    """
-    Search for a file in the given paths and their subfolders.
-    """
     for base_path in search_paths:
         if os.path.isdir(base_path):
             for root, _, files in os.walk(base_path):
@@ -233,26 +321,18 @@ def find_file(filename, search_paths):
     return None
 
 def find_whisper_cpp_download_script():
-    """
-    Search for download-ggml-model.sh in home directory, current working directory,
-    all PATH locations, and their subfolders.
-    """
     search_paths = [
-        os.path.expanduser('~'),  # Home directory
-        os.getcwd(),  # Current working directory
-    ] + os.environ.get('PATH', '').split(os.pathsep)  # All PATH locations
+        os.path.expanduser('~'),
+        os.getcwd(),
+    ] + os.environ.get('PATH', '').split(os.pathsep)
 
     return find_file('download-ggml-model.sh', search_paths)
 
 def find_or_create_whisper_cpp_models_dir():
-    """
-    Find existing 'models' directory or create one in the current working directory.
-    """
-    # Check common locations for a 'models' directory
     common_locations = [
-        os.getcwd(),  # Current working directory
-        os.path.expanduser('~'),  # Home directory
-        os.path.join(os.path.expanduser('~'), 'whisper.cpp'),  # Common whisper.cpp location
+        os.getcwd(),
+        os.path.expanduser('~'),
+        os.path.join(os.path.expanduser('~'), 'whisper.cpp'),
     ]
     
     for location in common_locations:
@@ -261,53 +341,39 @@ def find_or_create_whisper_cpp_models_dir():
             logging.info(f"Existing 'models' directory found at: {models_dir}")
             return models_dir
 
-    # If not found, create in current working directory
     models_dir = os.path.join(os.getcwd(), 'models')
     os.makedirs(models_dir, exist_ok=True)
     logging.info(f"Created 'models' directory at: {models_dir}")
     return models_dir
 
 def find_or_download_whisper_cpp_model(model_id):
-    """
-    Search for the model file in various locations or download if not found.
-    """
-    # Generate model file name for local storage
     model_file = model_id
     if not model_file.startswith('ggml-'):
         model_file = f'ggml-{model_file}'
     if not model_file.endswith('.bin'):
         model_file = f'{model_file}.bin'
 
-    # Define search paths
     search_paths = [
-        os.path.expanduser('~'),  # Home directory
-        os.getcwd(),  # Current working directory
-    ] + os.environ.get('PATH', '').split(os.pathsep)  # All PATH locations
+        os.path.expanduser('~'),
+        os.getcwd(),
+    ] + os.environ.get('PATH', '').split(os.pathsep)
 
-    # Search for the model file
     model_path = find_file(model_file, search_paths)
 
     if model_path:
         logging.info(f"Model file '{model_file}' found at: {model_path}")
         return model_path
 
-    # If model not found, find or create 'models' directory
     models_dir = find_or_create_whisper_cpp_models_dir()
     new_model_path = os.path.join(models_dir, model_file)
 
-    # Check if the model already exists in the models directory
     if os.path.exists(new_model_path):
         logging.info(f"Model file '{model_file}' found in models directory: {new_model_path}")
         return new_model_path
 
-    # If model not found, proceed with download
     logging.info(f"Model file '{model_file}' not found. Proceeding with download.")
 
-    # Prepare model name for download script (without 'ggml-' prefix and '.bin' suffix)
-    download_model_name = model_id.replace('ggml-', '').replace('.bin', '')
-
-    # Download the model
-    download_whisper_cpp_model(download_model_name, new_model_path)
+    download_whisper_cpp_model(download_model_name=model_id.replace('ggml-', '').replace('.bin', ''), model_path=new_model_path)
 
     return new_model_path
 
@@ -316,62 +382,52 @@ def download_whisper_cpp_model(model_name, model_path):
     
     if not script_path:
         logging.error("download-ggml-model.sh script not found in home directory, current working directory, PATH locations, or their subfolders.")
-        sys.exit(1)
+        raise FileNotFoundError("download-ggml-model.sh script not found.")
 
-    # Ensure the script is executable
     os.chmod(script_path, 0o755)
     
-    # Run the script with the model name
     logging.info(f"Downloading model '{model_name}' using download-ggml-model.sh")
     try:
+        import shutil
+        
         subprocess.check_call([script_path, model_name], cwd=os.path.dirname(script_path))
         logging.info(f"Model '{model_name}' downloaded successfully.")
         
-        # Check if the model file was actually created
         expected_model_file = os.path.join(os.path.dirname(script_path), f"ggml-{model_name}.bin")
         if not os.path.exists(expected_model_file):
             raise FileNotFoundError(f"Expected model file {expected_model_file} not found after download.")
         
-        # Move the downloaded model to the specified model_path
         shutil.move(expected_model_file, model_path)
         logging.info(f"Model moved to {model_path}")
     except subprocess.CalledProcessError as e:
         logging.error(f"Failed to download model using download-ggml-model.sh: {str(e)}")
-        sys.exit(1)
+        raise
     except FileNotFoundError as e:
         logging.error(str(e))
-        sys.exit(1)
+        raise
     except Exception as e:
         logging.error(f"An unexpected error occurred while downloading the model: {str(e)}")
-        sys.exit(1)
+        raise
 
 def trim_audio(audio_path, start_time, end_time):
-    """
-    Trims an audio file to the specified start and end times.
-
-    Args:
-    audio_path (str): Path to the original audio file.
-    start_time (str): Start time in seconds, as a string with up to 3 decimal places, or an empty string.
-    end_time (str): End time in seconds, as a string with up to 3 decimal places, or an empty string.
-
-    Returns:
-    str: Path to the trimmed audio file (a temporary file), or the original audio path if no trimming is needed.
-    """
     try:
-        # If both start_time and end_time are empty, return the original path
+        try:
+            from pydub import AudioSegment
+        except ImportError:
+            logging.error("pydub is not installed. Please install it to use this backend.")
+            return audio_path
+            
         if not start_time and not end_time:
             logging.info("No trimming required, using the original audio file.")
             return audio_path
 
         logging.info(f"Trimming audio from {start_time} to {end_time}")
         audio = AudioSegment.from_file(audio_path)
-        audio_duration = len(audio) / 1000  # Duration in seconds
+        audio_duration = len(audio) / 1000
 
-        # Convert start_time and end_time to float, use 0 and audio_duration if empty
         start_time = float(start_time) if start_time else 0
         end_time = float(end_time) if end_time else audio_duration
 
-        # Validate times
         start_time = max(0, start_time)
         end_time = min(audio_duration, end_time)
 
@@ -379,29 +435,26 @@ def trim_audio(audio_path, start_time, end_time):
             raise Exception("End time must be greater than start time.")
 
         trimmed_audio = audio[int(start_time * 1000):int(end_time * 1000)]
+        import tempfile
         temp_trimmed = tempfile.NamedTemporaryFile(delete=False, suffix='.wav').name
         trimmed_audio.export(temp_trimmed, format="wav")
         logging.info(f"Trimmed audio saved to: {temp_trimmed}")
         return temp_trimmed
     except Exception as e:
         logging.error(f"Error trimming audio: {str(e)}")
-        raise Exception(f"Error trimming audio: {str(e)}")
+        raise
 
-def is_valid_time(time_str):
-    """Check if the given string can be converted to a valid float time value."""
-    if not time_str:
+def is_valid_time(time_value):
+    if time_value is None:
         return False
     try:
-        float_time = float(time_str)
-        return float_time >= 0
-    except ValueError:
+        return float(time_value) >= 0
+    except (ValueError, TypeError):
         return False
-                                      
+                                          
 def main():
     try:
-        #print("transcription worker script started.")
-
-        parser = argparse.ArgumentParser(description='Transcription worker script')
+        parser = argparse.ArgumentParser(description='Susurrus Transcription worker script')
         parser.add_argument('--audio-input', help='Path to the audio input file')
         parser.add_argument('--audio-url', help='URL to the audio file')
         parser.add_argument('--model-id', type=str, required=True, help='Model ID to use')
@@ -416,14 +469,25 @@ def main():
         parser.add_argument('--batch-size', type=int, default=16, help='Batch size for batched inference')
         parser.add_argument('--preprocessor-path', type=str, required=False, help='Path to preprocessor files (tokenizer and processor)')
         parser.add_argument('--original-model-id', type=str, required=False, help='Original model ID to use for loading tokenizer and processor if necessary')
+       
         parser.add_argument('--start-time', type=float, default=None, help='Start time for audio trimming in seconds')
         parser.add_argument('--end-time', type=float, default=None, help='End time for audio trimming in seconds')
+        
+        parser.add_argument('--proxy-url', type=str, default=None, help='Proxy URL (supports http://, https://, socks5://)')
+        parser.add_argument('--proxy-username', type=str, default=None, help='Proxy username')
+        parser.add_argument('--proxy-password', type=str, default=None, help='Proxy password')
 
+        parser.add_argument('--ffmpeg-path', type=str, default='ffmpeg', help='Path to ffmpeg executable')
+        parser.add_argument('--whisper-cpp-path', type=str, default=None, help='Path to whisper.cpp executable')
 
         args = parser.parse_args()
 
         if not args.audio_input and not args.audio_url:
             parser.error("Either --audio-input or --audio-url must be provided")
+
+        is_temp_file = False
+        original_audio_path = None
+        working_audio_path = None
 
         audio_input = args.audio_input
         audio_url = args.audio_url
@@ -439,16 +503,49 @@ def main():
         start_time = args.start_time
         end_time = args.end_time
         original_model_id = args.original_model_id
+        proxy_url = args.proxy_url
+        proxy_username = args.proxy_username
+        proxy_password = args.proxy_password
 
-        # Handle empty or whitespace-only language input
+        proxies = None
+        if proxy_url:
+            proxies = {
+                'http': proxy_url,
+                'https': proxy_url
+            }
+            if proxy_username and proxy_password:
+                # Include authentication in the proxy URL
+                from urllib.parse import urlparse, urlunparse
+                parsed_url = urlparse(proxy_url)
+                netloc = f"{proxy_username}:{proxy_password}@{parsed_url.hostname}"
+                if parsed_url.port:
+                    netloc += f":{parsed_url.port}"
+                proxy_url_with_auth = urlunparse((
+                    parsed_url.scheme,
+                    netloc,
+                    parsed_url.path,
+                    parsed_url.params,
+                    parsed_url.query,
+                    parsed_url.fragment
+                ))
+                proxies['http'] = proxy_url_with_auth
+                proxies['https'] = proxy_url_with_auth
+
+        is_working_file_temp = False
+
         if language is not None and language.strip() == '':
             language = None    
 
-        # Device selection
-        if device_arg.lower() == 'auto':
-            if torch.backends.mps.is_available():
+        try:
+            import torch
+        except ImportError:
+            logging.warning("PyTorch is not installed. Some backends may not work without it.")
+            torch = None
+
+        if torch is not None and device_arg.lower() == 'auto':
+            if torch is not None and torch.backends.mps.is_available():
                 device = "mps"
-            elif torch.cuda.is_available():
+            elif torch is not None and torch.cuda.is_available():
                 device = "cuda"
             else:
                 device = "cpu"
@@ -459,35 +556,28 @@ def main():
         elif device_arg.lower() == 'mps':
             device = "mps"
         else:
-            device = "cpu"  # Default to CPU if unknown
+            device = "cpu"
+
+        device = get_supported_device(backend, device)
 
         logging.basicConfig(level=logging.INFO, format='%(message)s')
         
         logging.info(f"Starting transcription on device: {device} using backend: {backend}")
-        
-        # Determine the audio source
-        audio_path = None
-        is_temp_file = False
-        original_audio_path = None
-        working_audio_path = None
 
         if audio_input and len(audio_input) > 0:
-            # audio_input is a filepath to uploaded or recorded audio
             original_audio_path = audio_input
             is_temp_file = False
         elif audio_url and len(audio_url.strip()) > 0:
-            # audio_url is provided
-            original_audio_path, is_temp_file = download_audio(audio_url)
+            original_audio_path, is_temp_file = download_audio(audio_url, proxies=proxies, ffmpeg_path=args.ffmpeg_path)
             if not original_audio_path:
                 error_msg = f"Error downloading audio from {audio_url}. Check logs for details."
                 logging.error(error_msg)
-                sys.exit(1)
+                raise Exception(error_msg)
         else:
             error_msg = "No audio source provided. Please upload an audio file or enter a URL."
             logging.error(error_msg)
-            sys.exit(1)
+            raise Exception(error_msg)
 
-        # Trim the audio if necessary
         if is_valid_time(start_time) or is_valid_time(end_time):
             logging.info(f"Trimming audio from {start_time} to {end_time}")
             working_audio_path = trim_audio(original_audio_path, start_time, end_time)
@@ -497,44 +587,46 @@ def main():
             working_audio_path = original_audio_path
             is_working_file_temp = False
 
-        # Use working_audio_path for transcription
         audio_input = working_audio_path
         
         start_tr_time = time.time()
 
         if backend == 'mlx-whisper':
-            # Existing mlx-whisper code
-            import mlx_whisper
+            try:
+                import mlx_whisper
+            except ImportError:
+                logging.error("mlx_whisper package not available. Please install these packages to use this backend.")
+                raise
+
             transcribe_options = {
                 "path_or_hf_repo": model_id,
-                "verbose": True,  # Force verbose to be True to get incremental outputs
+                "verbose": True,
                 "word_timestamps": word_timestamps,
                 "language": language,
             }
             result = mlx_whisper.transcribe(audio_input, **transcribe_options)
-            #print("mlx-whisper transcription finished.")
         
         elif backend == 'faster-batched':
-            
-            from faster_whisper import WhisperModel, BatchedInferencePipeline
+            try:
+                from faster_whisper import WhisperModel, BatchedInferencePipeline
+            except ImportError:
+                logging.error("faster_whisper package not available. Please install it to use this backend.")
+                raise
 
-            # Handle device selection
+            # we should not need this anymore with: device = get_supported_device(backend, device)
             if device == 'mps':
                 logging.warning("Faster-Whisper does not support MPS device. Switching to CPU.")
                 device = 'cpu'
 
-            # Determine compute_type based on quantization
             compute_type = args.quantization if args.quantization else 'int8'
 
             logging.info("Loading model...")
             model = WhisperModel(model_id, device=device, compute_type=compute_type)
             pipeline = BatchedInferencePipeline(model=model)
 
-            # Transcribe audio
             logging.info("Starting batched transcription")
             segments, info = pipeline.transcribe(audio_input, batch_size=args.batch_size)
 
-            # Collect and print transcription
             for segment in segments:
                 text = segment.text.strip()
                 start = segment.start
@@ -543,19 +635,23 @@ def main():
         
         elif backend == 'faster-sequenced':
             
+            # we should not need this anymore with: device = get_supported_device(backend, device)
             if device == 'mps':
                 logging.warning("Faster-Whisper does not support MPS device. Switching to CPU.")
                 device = 'cpu'
-            
-            from faster_whisper import WhisperModel
 
-            # Adjust compute_type based on the device
+            try:
+                from faster_whisper import WhisperModel
+            except ImportError:
+                logging.error("faster_whisper package not available. Please install it to use this backend.")
+                raise
+
             if device == 'cuda':
                 compute_type = "float16"
             elif device == 'cpu':
                 compute_type = "int8"
             elif device == 'mps':
-                compute_type = "int8"  # MPS may not support float16 in all cases
+                compute_type = "int8"
             else:
                 compute_type = "int8"
 
@@ -569,18 +665,14 @@ def main():
                 "word_timestamps": word_timestamps,
             }
 
-            # 'faster-sequenced'
             segments, _ = model.transcribe(audio_input, **options)
             for segment in segments:
-                # Obtain text and timestamps
                 text = segment.text.strip()
                 start = segment.start
                 end = segment.end
                 print(f'[{start:0>5.3f} --> {end:0>5.3f}] {text}', flush=True)
         
         elif backend == 'insanely-fast-whisper':
-        
-            # Prepare the command for insanely-fast-whisper CLI
             output_json = "output.json"
             cmd = [
                 "insanely-fast-whisper",
@@ -588,7 +680,7 @@ def main():
                 "--device-id", "0" if device == "cuda" else device,
                 "--model-name", model_id,
                 "--task", "transcribe",
-                "--batch-size", "24",  # Using default batch size
+                "--batch-size", "24",
                 "--timestamp", "chunk",
                 "--transcript-path", output_json
             ]
@@ -596,7 +688,6 @@ def main():
             if language:
                 cmd.extend(["--language", language])
             
-            # Run the command
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -605,26 +696,22 @@ def main():
                 bufsize=1,
             )
 
-            # Wait for the process to complete
             process.wait()
 
             if process.returncode != 0:
                 error_output = process.stderr.read()
                 raise Exception(f"Insanely Fast Whisper failed with error: {error_output}")
 
-            # Read and parse the output JSON file
             try:
                 with open(output_json, 'r') as json_file:
                     transcription_data = json.load(json_file)
                 
-                # Print the transcription in the expected format
                 for chunk in transcription_data['chunks']:
                     text = chunk['text'].strip()
                     start = chunk['timestamp'][0]
                     end = chunk['timestamp'][1]
                     print(f'[{start:.3f} --> {end:.3f}] {text}', flush=True)
 
-                # Optionally, remove the output JSON file
                 os.remove(output_json)
 
             except Exception as e:
@@ -632,13 +719,17 @@ def main():
         
         
         elif backend == 'transformers':
-            from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+            try:
+                from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+            except ImportError:
+                logging.error("transformers package not available. Please install it to use this backend.")
+                raise
+
             if device == 'cpu':
                 torch_dtype = torch.float32
             elif device == 'cuda':
                 torch_dtype = torch.float16
             else:
-                # For MPS, you might need to check compatibility
                 torch_dtype = torch.float32
             
             logging.info("Loading model...")
@@ -668,35 +759,42 @@ def main():
                 print(f'[00:00.000 --> XX:XX.XXX] {text}', flush=True)
         
         elif backend == 'whisper.cpp':
-
             model_path = find_or_download_whisper_cpp_model(model_id)
             logging.info(f"Using model at: {model_path}")
 
-            # Convert audio to 16kHz WAV
             logging.info("Converting audio to 16-bit 16kHz WAV format")
             audio_input = convert_audio_to_wav(audio_input)
+            if audio_input is None:
+                logging.error("Failed to convert audio to WAV format.")
+                return
 
-            whisper_cpp_executable = find_whisper_cpp_executable()
+            whisper_cpp_executable = None
+            if args.whisper_cpp_path:
+                if os.path.isfile(args.whisper_cpp_path) and os.access(args.whisper_cpp_path, os.X_OK):
+                    whisper_cpp_executable = args.whisper_cpp_path
+                else:
+                    logging.warning(f"Provided whisper.cpp path '{args.whisper_cpp_path}' is not a valid executable. Searching for whisper.cpp...")
+
             if not whisper_cpp_executable:
-                logging.error("whisper.cpp executable not found in home directory or subfolders.")
-                sys.exit(1)
+                whisper_cpp_executable = find_whisper_cpp_executable()
 
-            # Build the command
+            if not whisper_cpp_executable:
+                logging.error("whisper.cpp executable not found. Please provide a valid path using --whisper-cpp-path or ensure it's in a searchable location.")
+                raise FileNotFoundError("whisper.cpp executable not found.")
+
+            logging.info(f"Using whisper.cpp executable: {whisper_cpp_executable}")
+
             cmd = [
                 whisper_cpp_executable,
                 '-m', model_path,
                 '-f', audio_input,
                 '--language', language if language else 'en',
                 f'--output-{output_format}',
-                #'--max-len', '1',  # For incremental output
                 '--threads', str(os.cpu_count()),
-                #'--quiet'  # Suppress progress logs
             ]
             
             logging.info(f"Running whisper.cpp with command: {' '.join(cmd)}")
-            #print (f"Running whisper.cpp with command: {' '.join(cmd)}")
             
-            # Start the subprocess
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -705,51 +803,56 @@ def main():
                 bufsize=1,
             )
 
-            # Read outputs from stdout as they are printed
             for line in process.stdout:
                 text = line.strip()
                 if text:
                     print(text, flush=True)
 
-            # Wait for the process to complete and read stderr
             _, stderr_output = process.communicate()
 
             if process.returncode != 0:
                 logging.error(stderr_output)
-                sys.exit(1)
+                raise Exception("whisper.cpp transcription failed.")
             else:
-                # Only print OUTPUT FILE when output format is srt or vtt
                 if output_format in ('srt', 'vtt'):
                     output_file = f"{audio_input}.{output_format}"
                     print(f"OUTPUT FILE: {output_file}", flush=True)
     
         elif backend == 'ctranslate2':
+            import tempfile
+            try:
+                import ctranslate2
+                from transformers import WhisperProcessor, WhisperTokenizer
+                import librosa
+                from pydub import AudioSegment
+                from pydub.silence import split_on_silence
+            except ImportError:
+                    logging.error("packages for ctranslate2 (ctranslate2, librosa, transformers, pydub, torch) are not installed. Please install them to use this backend.")
+                    raise
 
-            import ctranslate2
-            from transformers import WhisperProcessor, WhisperTokenizer
-            import numpy as np
-            import librosa
-            from pydub import AudioSegment
-            from pydub.silence import split_on_silence  # for segmenting
+            try:
+                import torch
+            except ImportError:
+                logging.warning("PyTorch is not installed. Some backends may not work without it.")
+                torch = None
             
-            if torch.backends.mps.is_available():
+            if torch is not None and torch.backends.mps.is_available():
                 device = "cpu"
-                print("Defaulting to CPU on Apple Metal (MPS) architecture for ctranslate2")
+                logging.warning("Defaulting to CPU on Apple Metal (MPS) architecture for ctranslate2")
 
             quantization = args.quantization if args.quantization else 'int8_float16'
 
             logging.info(f"Loading model from {args.model_id}...")
 
-            model_dir = args.model_id  # args.model_id now contains the path to the converted model
+            model_dir = args.model_id
             preprocessor_path = args.preprocessor_path
 
             if not os.path.exists(os.path.join(model_dir, 'model.bin')):
                 logging.error(f"model.bin not found in {model_dir}. Model conversion may have failed.")
-                sys.exit(1)
+                raise FileNotFoundError(f"model.bin not found in {model_dir}")
             else:
                 logging.info(f"Using existing model in {model_dir}")
 
-            # Check if the preprocessor files exist
             preprocessor_files = ["tokenizer.json", "vocabulary.json", "tokenizer_config.json"]
             preprocessor_missing = not all(os.path.exists(os.path.join(preprocessor_path, f)) for f in preprocessor_files)
 
@@ -758,7 +861,7 @@ def main():
 
                 if original_model_id is None:
                     logging.error("Original model ID is not specified. Cannot load tokenizer and processor.")
-                    sys.exit(1)
+                    raise Exception("Original model ID is not specified.")
 
                 logging.info(f"Original model ID determined as: {original_model_id}")
 
@@ -768,23 +871,20 @@ def main():
                     logging.info("WhisperTokenizer and WhisperProcessor loaded successfully from original model.")
                 except Exception as e:
                     logging.error(f"Failed to load tokenizer and processor from original model: {str(e)}")
-                    sys.exit(1)
+                    raise
             else:
                 try:
-                    # Load the tokenizer and processor from the preprocessor_path
                     tokenizer = WhisperTokenizer.from_pretrained(preprocessor_path)
                     processor = WhisperProcessor.from_pretrained(preprocessor_path)
                     logging.info("WhisperTokenizer and WhisperProcessor loaded successfully.")
                 except Exception as e:
                     logging.error(f"Failed to load tokenizer and processor from preprocessor path: {str(e)}")
-                    sys.exit(1)
+                    raise
 
             try:
-                # Load the CTranslate2 model
                 model = ctranslate2.models.Whisper(model_dir, device=device)
                 logging.info("CTranslate2 model loaded successfully.")
 
-                # Load audio
                 logging.info(f"Loading audio from {audio_input}")
                 if audio_input is None:
                     raise ValueError("audio_input is None. Please provide a valid audio file path.")
@@ -795,7 +895,6 @@ def main():
                 audio_segment = AudioSegment.from_file(audio_input)
                 logging.info(f"Audio loaded. Duration: {len(audio_segment)/1000:.2f} seconds")
 
-                # Split audio on silence
                 chunks = split_on_silence(
                     audio_segment,
                     min_silence_len=500,
@@ -803,8 +902,7 @@ def main():
                     keep_silence=250
                 )
 
-                # Merge chunks to respect the max_chunk_length (30 seconds)
-                max_chunk_length = 30 * 1000  # 30 seconds in milliseconds
+                max_chunk_length = 30 * 1000
                 merged_chunks = []
                 current_chunk = AudioSegment.empty()
                 for chunk in chunks:
@@ -820,21 +918,17 @@ def main():
                     with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_audio_file:
                         chunk.export(temp_audio_file.name, format="wav")
                         
-                        # Load audio chunk as numpy array
                         audio_array, sr = librosa.load(temp_audio_file.name, sr=16000, mono=True)
                         
-                        # Compute features
                         inputs = processor(audio_array, return_tensors="np", sampling_rate=16000)
                         features = ctranslate2.StorageView.from_array(inputs.input_features)
 
-                        # Detect language (only for the first chunk)
                         if chunk_index == 0 and not language:
                             results = model.detect_language(features)
                             detected_language, probability = results[0][0]
-                            print(f"Detected language {detected_language} with probability {probability:.4f}")
+                            logging.info(f"Detected language {detected_language} with probability {probability:.4f}")
                             language = detected_language
 
-                        # Prepare prompt
                         prompt = tokenizer.convert_tokens_to_ids([
                             "<|startoftranscript|>",
                             language,
@@ -842,29 +936,14 @@ def main():
                             "<|notimestamps|>" if not word_timestamps else "",
                         ])
 
-                        # Generate transcription
                         results = model.generate(features, [prompt], beam_size=5)
-
-                        """ or try with more parameters:
-                        results = model.generate(
-                            features,
-                            [prompt],  # Make sure this is a list of lists
-                            beam_size=5,
-                            num_hypotheses=5,  # Replace best_of with num_hypotheses
-                            length_penalty=1.0,
-                            repetition_penalty=1.0,
-                            return_scores=True,
-                            return_no_speech_prob=True
-                        )
-                        """
 
                         transcription = tokenizer.decode(results[0].sequences_ids[0])
 
-                        # Print transcription for this chunk
                         chunk_start_time = total_offset
                         print(f"[{chunk_start_time:.2f}s] {transcription}", flush=True)
 
-                    total_offset += len(chunk) / 1000.0  # Convert milliseconds to seconds
+                    total_offset += len(chunk) / 1000.0
 
                 logging.info("Transcription completed successfully.")
 
@@ -873,7 +952,7 @@ def main():
                 logging.error(f"Error details: {type(e).__name__}")
                 import traceback
                 logging.error(traceback.format_exc())
-                sys.exit(1)
+                raise
 
         elif backend == 'whisper-jax':
             try:
@@ -881,7 +960,6 @@ def main():
                 import jax.numpy as jnp
                 from whisper_jax import FlaxWhisperPipline
                 
-                # Device selection
                 if device.lower() == 'auto':
                     device = 'gpu' if jax.devices('gpu') else 'cpu'
                 elif device.lower() in ['cpu', 'gpu']:
@@ -890,26 +968,20 @@ def main():
                     logging.warning("whisper-jax supports 'cpu' or 'gpu' devices. Using 'cpu'.")
                     device = 'cpu'
 
-                # Set data type
                 dtype = jnp.bfloat16 if device == 'gpu' else jnp.float32
 
-                # Instantiate pipeline
                 logging.info(f"Loading whisper-jax model '{model_id}' with dtype={dtype}")
                 pipeline = FlaxWhisperPipline(model_id, dtype=dtype)
                 
-                # Transcribe
                 logging.info("Starting transcription with whisper-jax")
                 start_time_perf = time.time()
 
-                # Transcribe the audio
                 text = pipeline(audio_input)
 
                 end_time_perf = time.time()
 
-                # Output transcription
                 print(text['text'], flush=True)
 
-                # Output metrics
                 transcription_time = end_time_perf - start_time_perf
                 audio_file_size = os.path.getsize(audio_input) / (1024 * 1024)
                 metrics_output = (
@@ -923,43 +995,45 @@ def main():
                 logging.error("Please ensure you have installed whisper-jax and its dependencies correctly.")
                 logging.error("You may need to update JAX and whisper-jax to compatible versions.")
                 logging.error("Try running: pip install --upgrade jax jaxlib whisper-jax")
-                sys.exit(1)
+                raise
             except AttributeError as e:
                 if 'NamedShape' in str(e):
                     logging.error("Encountered a NamedShape AttributeError.")
                 else:
                     logging.error(f"An unexpected AttributeError occurred: {str(e)}")
-                sys.exit(1)
+                raise
             except Exception as e:
                 logging.error(f"An error occurred while using whisper-jax: {str(e)}")
-                sys.exit(1)
+                logging.error("Please ensure you have the latest versions of jax and whisper-jax installed.")
+                raise
         
         elif backend == 'openai whisper':
-            import whisper
-            from pydub import AudioSegment
-            from pydub.silence import split_on_silence
-
+            try:
+                import whisper
+                from pydub import AudioSegment
+                from pydub.silence import split_on_silence
+            except ImportError:
+                logging.error("The 'whisper' and 'pydub' packages are needed for OpenAI Whisper. Please install these packages to use this backend.")
+                raise
+                
+            # we should not need this anymore with: device = get_supported_device(backend, device)
             if device == 'mps':
                 logging.warning("OpenAI Whisper does not currently support MPS device. Switching to CPU.")
                 device = 'cpu'
 
             model = whisper.load_model(model_id, device=device)
 
-            # Retrieve max_chunk_length, default to 0 if not provided
             max_chunk_length = float(args.max_chunk_length) if args.max_chunk_length else 0.0
 
             logging.info("Starting transcription")
 
-            # Convert audio to WAV
             audio_input = convert_audio_to_wav(audio_input)
 
             start_oaw_time = time.time()
 
             if max_chunk_length > 0:
-                # Load audio
                 audio_segment = AudioSegment.from_wav(audio_input)
 
-                # Split audio on silence
                 chunks = split_on_silence(
                     audio_segment,
                     min_silence_len=500,
@@ -967,7 +1041,6 @@ def main():
                     keep_silence=250
                 )
 
-                # Merge chunks to respect the max_chunk_length
                 merged_chunks = []
                 current_chunk = AudioSegment.empty()
                 for chunk in chunks:
@@ -988,9 +1061,8 @@ def main():
                             start = segment['start'] + total_offset
                             end = segment['end'] + total_offset
                             print(f'[{start:.3f} --> {end:.3f}] {text}', flush=True)
-                    total_offset += len(chunk) / 1000.0  # Convert milliseconds to seconds
+                    total_offset += len(chunk) / 1000.0
             else:
-                # No chunking, process the entire audio file
                 result = model.transcribe(audio_input, language=language)
                 for segment in result['segments']:
                     text = segment['text'].strip()
@@ -1004,29 +1076,30 @@ def main():
 
         else:
             logging.error(f"Unsupported backend: {backend}")
-            sys.exit(1)
+            raise Exception(f"Unsupported backend: {backend}")
 
         
         end_tr_time = time.time()
         transcription_time = end_tr_time - start_tr_time
-        #print("transcription finished.")
         print(f"Total transcription time: {transcription_time:.2f} seconds", flush=True)
         
         logging.info(f"Transcription completed in {transcription_time:.2f} seconds")
     
     except Exception as e:
         logging.error(f"An error occurred during transcription: {str(e)}", exc_info=True)
-        sys.exit(1)
+        is_working_file_temp = False
+        raise
 
     finally:
-        # Clean up temporary audio files
-        # Clean up temporary audio files
         if is_temp_file and os.path.exists(original_audio_path):
             os.remove(original_audio_path)
             logging.info(f"Removed temporary downloaded file: {original_audio_path}")
         if is_working_file_temp and os.path.exists(working_audio_path):
             os.remove(working_audio_path)
             logging.info(f"Removed temporary trimmed file: {working_audio_path}")
+        # Clean up temporary files created during downloads
+        import tempfile
+        tempfile.tempdir = None  # Reset the temporary directory if changed
 
 if __name__ == "__main__":
     main()
