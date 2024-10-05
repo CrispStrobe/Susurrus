@@ -1,4 +1,4 @@
-# Susurrus: Whsiper Audio Transcription GUI
+# Susurrus: Whisper Audio Transcription GUI
 
 Susurrus is a flexible audio transcription frontend that leverages various AI models, mostly based on OpenAI Whisper, and backends to convert speech to text. It transcribes audio files, including online content, using a number of optional models and pipelines.
 
