@@ -457,8 +457,8 @@ class MainWindow(QWidget):
 
         self.backend_model_map = {
             'mlx-whisper': [
-                ("mlx-community/whisper-large-v3-turbo", "openai/whisper-large-v3"),
-                ("mlx-community/whisper-large-v3-turbo-q4", "openai/whisper-large-v3"),
+                ("mlx-community/whisper-large-v3-turbo", "openai/whisper-large-v3-turbo"),
+                ("mlx-community/whisper-large-v3-turbo-q4", "openai/whisper-large-v3-turbo"),
                 ("mlx-community/whisper-tiny-mlx-4bit", "openai/whisper-tiny"),
                 ("mlx-community/whisper-base-mlx-4bit", "openai/whisper-base"),
                 ("mlx-community/whisper-small-mlx-q4", "openai/whisper-small"),
@@ -467,12 +467,14 @@ class MainWindow(QWidget):
                 ("mlx-community/whisper-large-v3-mlx", "openai/whisper-large-v3")
             ],
             'faster-batched': [
-                ("cstr/whisper-large-v3-turbo-int8_float32", "openai/whisper-large-v3"),
+                ("cstr/whisper-large-v3-turbo-german-int8_float32", "openai/whisper-large-v3-turbo"),
+                ("cstr/whisper-large-v3-turbo-int8_float32", "openai/whisper-large-v3-turbo"),
                 ("SYSTRAN/faster-whisper-large-v1", "openai/whisper-large-v2"),
                 ("GalaktischeGurke/primeline-whisper-large-v3-german-ct2", "openai/whisper-large-v3")
             ],
             'faster-sequenced': [
-                ("cstr/whisper-large-v3-turbo-int8_float32", "openai/whisper-large-v3"),
+                ("cstr/whisper-large-v3-turbo-german-int8_float32", "openai/whisper-large-v3-turbo"),
+                ("cstr/whisper-large-v3-turbo-int8_float32", "openai/whisper-large-v3-turbo"),
                 ("SYSTRAN/faster-whisper-large-v1", "openai/whisper-large-v2"),
                 ("GalaktischeGurke/primeline-whisper-large-v3-german-ct2", "openai/whisper-large-v3")
             ],
@@ -502,6 +504,7 @@ class MainWindow(QWidget):
                 ("tiny.en", "openai/whisper-tiny.en")
             ],
             'ctranslate2': [
+                ("cstr/whisper-large-v3-turbo-german-int8_float32", "openai/whisper-large-v3-turbo"),
                 ("cstr/whisper-large-v3-turbo-int8_float32", "openai/whisper-large-v3"),
                 ("SYSTRAN/faster-whisper-large-v1", "openai/whisper-large-v2"),
                 ("GalaktischeGurke/primeline-whisper-large-v3-german-ct2", "openai/whisper-large-v3")
