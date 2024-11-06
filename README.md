@@ -33,7 +33,7 @@ Susurrus is a flexible audio transcription frontend that leverages various AI mo
 
 1. Clone the repository:
    ```
-   git clone https://github.com/yourusername/susurrus.git
+   git clone https://github.com/CrispStrobe/susurrus.git
    cd susurrus
    ```
 
