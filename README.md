@@ -84,10 +84,6 @@ or for windows:
    cd ../..
    ```
 
-[Rest of the content unchanged]
-
-Note for Windows Users: The UTF-8 flag in the CMake configuration is important for proper handling of non-ASCII characters (like umlauts) in transcriptions.
-
 6. Install FFmpeg:
    - macOS:
      ```
