@@ -7,6 +7,38 @@ import logging
 import subprocess
 import time
 import json
+import requests
+import sys
+from datetime import datetime
+
+# Debug imports
+import sys
+print("Python path at startup:", sys.path)
+try:
+    import pydub
+    print("Found pydub at:", pydub.__file__)
+except ImportError as e:
+    print("Failed to import pydub, sys.path is:", sys.path)
+    print("Import error:", str(e))
+
+# Set up logging immediately at script start
+timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+log_file = f'susurrus_debug_{timestamp}.log'
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file, encoding='utf-8'),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+
+# Log system information
+logging.info("=== Starting Susurrus Debug Log ===")
+logging.info(f"Log file: {log_file}")
+logging.info(f"Platform: {sys.platform}")
+logging.info(f"Python version: {sys.version}")
 
 device_fallbacks = {
     'faster-batched': [('mps', 'cpu')],
@@ -223,16 +255,28 @@ def download_with_ffmpeg(url, proxies=None, ffmpeg_path='ffmpeg'):
             return None
 
 def detect_audio_format(audio_path):
+    """Detect audio format with detailed logging."""
+    logging.info(f"Detecting format for audio file: {audio_path}")
     try:
         from pydub.utils import mediainfo
-    except ImportError:
-        logging.error("pydub is not installed. Please install it to use this backend.")
-        return None
-    try:
+        logging.info("Successfully imported mediainfo from pydub")
+        
+        if not os.path.exists(audio_path):
+            logging.error(f"Audio file does not exist at path: {audio_path}")
+            return None
+            
         info = mediainfo(audio_path)
-        return info.get('format_name', 'wav')
+        format_name = info.get('format_name', 'wav')
+        logging.info(f"Detected audio format: {format_name}")
+        logging.debug(f"Full mediainfo: {info}")
+        return format_name
+    except ImportError as e:
+        logging.error(f"ImportError with pydub: {str(e)}")
+        return None
     except Exception as e:
-        logging.error(f"Could not detect audio format: {str(e)}")
+        logging.error(f"Error detecting audio format: {str(e)}")
+        logging.error(f"File path: {audio_path}")
+        logging.error(f"Exception type: {type(e).__name__}")
         raise
 
 def convert_to_ctranslate2_model(model_id, model_path, quantization):
@@ -255,61 +299,120 @@ def convert_to_ctranslate2_model(model_id, model_path, quantization):
         raise
 
 def convert_audio_to_wav(audio_path):
+    """Convert audio to WAV with detailed logging."""
+    logging.info(f"Starting audio conversion for: {audio_path}")
     try:
         from pydub import AudioSegment
-    except ImportError:
-        logging.error("pydub is not installed. Please install it to use this backend.")
-        return None
-    
-    if not os.path.exists(audio_path):
-        logging.error(f"Audio file not found: {audio_path}")
-        raise FileNotFoundError(f"Audio file not found: {audio_path}")
+        logging.info("Successfully imported AudioSegment from pydub")
+        
+        if not os.path.exists(audio_path):
+            logging.error(f"Audio file not found: {audio_path}")
+            raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
-    try:
+        # Log file details
+        file_size = os.path.getsize(audio_path)
+        logging.info(f"Input file size: {file_size} bytes")
+        
+        # Detect format
         audio_format = detect_audio_format(audio_path)
         if not audio_format:
             logging.error("Unable to detect audio format.")
             return None
+            
+        logging.info(f"Loading audio file with format: {audio_format}")
         sound = AudioSegment.from_file(audio_path, format=audio_format)
+        logging.info(f"Original audio: {len(sound)/1000}s, {sound.channels} channels, {sound.frame_rate}Hz, {sound.sample_width} bytes/sample")
+        
+        # Convert to standard format
         sound = sound.set_channels(1)
         sound = sound.set_sample_width(2)
         sound = sound.set_frame_rate(16000)
+        logging.info(f"Converted audio: {len(sound)/1000}s, {sound.channels} channels, {sound.frame_rate}Hz, {sound.sample_width} bytes/sample")
+        
+        # Export
         import tempfile
         with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_wav_file:
-            sound.export(temp_wav_file.name, format='wav')
-            return temp_wav_file.name
+            output_path = temp_wav_file.name
+            logging.info(f"Exporting to temporary WAV file: {output_path}")
+            sound.export(output_path, format='wav')
+            
+            # Verify the output file
+            if os.path.exists(output_path):
+                output_size = os.path.getsize(output_path)
+                logging.info(f"Successfully created WAV file: {output_path} ({output_size} bytes)")
+                return output_path
+            else:
+                logging.error(f"Failed to create output file at: {output_path}")
+                return None
+                
+    except ImportError as e:
+        logging.error(f"ImportError with pydub: {str(e)}")
+        return None
     except Exception as e:
-        logging.error(f"Error converting audio to 16-bit 16kHz WAV: {str(e)}")
+        logging.error(f"Error converting audio to WAV: {str(e)}")
+        logging.error(f"Exception type: {type(e).__name__}")
+        import traceback
+        logging.error(f"Traceback: {traceback.format_exc()}")
         raise
 
-def download_whisper_cpp_model_directly(model_file, model_path, proxies=None):
-    base_url = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/'
-    url = base_url + model_file
-    logging.info(f'Downloading {model_file} from {url}')
-    try:
-        try:
-            import requests
-        except ImportError:
-            logging.error("requests package not available. Cannot download the model.")
-            return False
-        response = requests.get(url, stream=True, proxies=proxies)
-        response.raise_for_status()
-        with open(model_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-        logging.info(f'Model downloaded to {model_path}')
-    except Exception as e:
-        logging.error(f"Failed to download model file: {str(e)}")
-        return False
 
 def find_whisper_cpp_executable():
-    home_dir = os.path.expanduser('~')
-    for root, dirs, files in os.walk(home_dir):
-        if 'whisper.cpp' in dirs:
-            whisper_cpp_dir = os.path.join(root, 'whisper.cpp')
-            main_executable = os.path.join(whisper_cpp_dir, 'main')
-            if os.path.isfile(main_executable) and os.access(main_executable, os.X_OK):
-                return main_executable
+    """Find whisper.cpp executable with improved Windows support."""
+    logging.info("\nLooking for whisper.cpp executable...")
+    
+    # On Windows, we need to look in build directories
+    if os.name == 'nt':  # Windows
+        possible_names = ['whisper.exe', 'main.exe']
+        # Add Visual Studio build paths
+        extra_paths = [
+            'build/bin/Release',
+            'build/Release',
+            'build/x64/Release',
+            'bin/Release',
+            'x64/Release',
+            'Release'
+        ]
+    else:
+        possible_names = ['whisper', 'main']
+        extra_paths = ['build']
+    
+    # Search in common locations
+    search_paths = [
+        os.getcwd(),
+        os.path.join(os.getcwd(), 'whisper.cpp'),
+        os.path.expanduser('~'),
+        os.path.join(os.path.expanduser('~'), 'whisper.cpp'),
+    ]
+    
+    # Add the build paths to each search location
+    full_search_paths = []
+    for base_path in search_paths:
+        full_search_paths.append(base_path)
+        for extra in extra_paths:
+            full_search_paths.append(os.path.join(base_path, extra))
+            full_search_paths.append(os.path.join(base_path, 'whisper.cpp', extra))
+    
+    logging.info("Searching for executable in paths:")
+    for path in full_search_paths:
+        logging.info(f"- {path}")
+        if os.path.exists(path):
+            for name in possible_names:
+                exe_path = os.path.join(path, name)
+                logging.info(f"Checking: {exe_path}")
+                if os.path.isfile(exe_path):
+                    # On Windows, we don't rely on access() for executable check
+                    if os.name == 'nt' or os.access(exe_path, os.X_OK):
+                        logging.info(f"Found valid executable at: {exe_path}")
+                        return exe_path
+                    else:
+                        logging.info(f"Found {exe_path} but it's not executable")
+                else:
+                    logging.info(f"Not a file: {exe_path}")
+    
+    logging.error("\nwhisper.cpp executable not found!")
+    logging.error("Please either:")
+    logging.error("1. Install whisper.cpp from https://github.com/ggerganov/whisper.cpp")
+    logging.error("2. Specify the path using --whisper-cpp-path argument")
     return None
 
 def find_file(filename, search_paths):
@@ -346,67 +449,228 @@ def find_or_create_whisper_cpp_models_dir():
     logging.info(f"Created 'models' directory at: {models_dir}")
     return models_dir
 
+def download_whisper_cpp_model_directly(model_file, model_path, proxies=None):
+    """Download a Whisper CPP model with optimized performance."""
+    print("\nInitiating direct download...")
+    base_url = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/'
+    url = base_url + model_file
+    print(f"Download URL: {url}")
+    
+    try:
+        import requests
+        from tqdm import tqdm
+        import certifi
+    except ImportError:
+        print("Installing required packages...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "requests", "tqdm", "certifi"])
+        import requests
+        from tqdm import tqdm
+        import certifi
+
+    # Create session with retry strategy
+    session = requests.Session()
+    session.mount('https://', requests.adapters.HTTPAdapter(max_retries=1))
+
+    try:
+        print(f"Using certificates from: {certifi.where()}")
+        print("Checking file availability...")
+        
+        # First try with SSL verification
+        try:
+            response = session.get(
+                url,
+                stream=True,
+                timeout=5,
+                verify=True,
+                headers={'User-Agent': 'Mozilla/5.0'}
+            )
+        except (requests.exceptions.SSLError, requests.exceptions.ConnectionError) as e:
+            print("SSL verification failed, attempting without verification (not recommended)...")
+            response = session.get(
+                url,
+                stream=True,
+                timeout=5,
+                verify=False,
+                headers={'User-Agent': 'Mozilla/5.0'}
+            )
+
+        response.raise_for_status()
+        total_size = int(response.headers.get('content-length', 0))
+        print(f"File size: {total_size / (1024*1024):.1f} MB")
+
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(model_path), exist_ok=True)
+
+        # Download with optimized chunk size and less frequent updates
+        chunk_size = 1024 * 1024  # 1MB chunks
+        downloaded = 0
+        last_update_time = time.time()
+        update_interval = 1.0  # Update progress every 1 second
+
+        with open(model_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=chunk_size):
+                if chunk:
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    
+                    # Update progress less frequently
+                    current_time = time.time()
+                    if current_time - last_update_time >= update_interval:
+                        percent = (downloaded * 100) / total_size
+                        speed = downloaded / (current_time - last_update_time) / (1024*1024)
+                        print(f"Downloaded: {percent:.1f}% ({downloaded/(1024*1024):.1f} MB) - {speed:.1f} MB/s")
+                        last_update_time = current_time
+
+        actual_size = os.path.getsize(model_path)
+        print(f"\nDownload completed. File size: {actual_size / (1024*1024):.1f} MB")
+
+        if total_size > 0 and actual_size != total_size:
+            raise Exception(
+                f"Download may be incomplete. Expected {total_size} bytes but got {actual_size} bytes"
+            )
+
+        return True
+
+    except requests.Timeout:
+        print("\nError: Download timed out. Network may be slow or unstable.")
+        if os.path.exists(model_path):
+            os.remove(model_path)
+        raise
+    except requests.ConnectionError as e:
+        print(f"\nError: Connection failed - {str(e)}")
+        if os.path.exists(model_path):
+            os.remove(model_path)
+        raise
+    except Exception as e:
+        print(f"\nError during download: {str(e)}")
+        if os.path.exists(model_path):
+            os.remove(model_path)
+        raise
+    finally:
+        session.close()
+
 def find_or_download_whisper_cpp_model(model_id):
+    """Find or download a Whisper CPP model."""
+    logging.info(f"Looking for Whisper model: {model_id}")
+    
+    # Format model filename
     model_file = model_id
     if not model_file.startswith('ggml-'):
         model_file = f'ggml-{model_file}'
     if not model_file.endswith('.bin'):
         model_file = f'{model_file}.bin'
+    logging.info(f"Formatted model filename: {model_file}")
 
+    # Search for existing model
     search_paths = [
-        os.path.expanduser('~'),
         os.getcwd(),
-    ] + os.environ.get('PATH', '').split(os.pathsep)
+        os.path.join(os.getcwd(), 'models'),
+        os.path.expanduser('~'),
+        os.path.join(os.path.expanduser('~'), 'models')
+    ]
+    
+    logging.info("\nSearching for existing model in common locations:")
+    for path in search_paths:
+        model_path = os.path.join(path, model_file)
+        if os.path.exists(model_path):
+            logging.info(f"Found existing model at: {model_path}")
+            return model_path
+        logging.error(f"Not found in: {path}")
 
-    model_path = find_file(model_file, search_paths)
-
-    if model_path:
-        logging.info(f"Model file '{model_file}' found at: {model_path}")
-        return model_path
-
-    models_dir = find_or_create_whisper_cpp_models_dir()
+    # Prepare for download
+    models_dir = os.path.join(os.getcwd(), 'models')
+    os.makedirs(models_dir, exist_ok=True)
     new_model_path = os.path.join(models_dir, model_file)
-
+    
     if os.path.exists(new_model_path):
-        logging.info(f"Model file '{model_file}' found in models directory: {new_model_path}")
+        logging.info(f"Found existing model in models directory: {new_model_path}")
         return new_model_path
 
-    logging.info(f"Model file '{model_file}' not found. Proceeding with download.")
-
-    download_whisper_cpp_model(download_model_name=model_id.replace('ggml-', '').replace('.bin', ''), model_path=new_model_path)
+    # Download model
+    logging.info(f"\nDownloading model to: {new_model_path}")
+    try:
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                if download_whisper_cpp_model_directly(model_file, new_model_path):
+                    if os.path.exists(new_model_path) and os.path.getsize(new_model_path) > 0:
+                        logging.info(f"\n[OK] Model downloaded successfully: {new_model_path}")
+                        return new_model_path
+                    else:
+                        raise Exception("Download completed but file is missing or empty")
+            except (requests.Timeout, requests.RequestException) as e:
+                if attempt < max_retries - 1:
+                    logging.info(f"\nRetrying download (attempt {attempt + 2}/{max_retries})...")
+                    time.sleep(2)  # Wait before retrying
+                else:
+                    raise
+    except Exception as e:
+        logging.error(f"\n[ERROR] Download failed after {max_retries} attempts: {str(e)}")
+        if os.path.exists(new_model_path):
+            os.remove(new_model_path)
+        raise
 
     return new_model_path
 
-def download_whisper_cpp_model(model_name, model_path):
+def download_whisper_cpp_model_with_script(model_name, model_path):
+    print("\nStarting script-based download process...")
     script_path = find_whisper_cpp_download_script()
-    
+
     if not script_path:
-        logging.error("download-ggml-model.sh script not found in home directory, current working directory, PATH locations, or their subfolders.")
+        print("✗ ERROR: download-ggml-model.sh script not found")
+        print("Searched in:")
+        print("- Home directory")
+        print("- Current working directory")
+        print("- PATH locations")
         raise FileNotFoundError("download-ggml-model.sh script not found.")
 
+    print(f"Found download script at: {script_path}")
     os.chmod(script_path, 0o755)
-    
-    logging.info(f"Downloading model '{model_name}' using download-ggml-model.sh")
+
+    print(f"\nDownloading model '{model_name}' using download-ggml-model.sh")
     try:
         import shutil
-        
-        subprocess.check_call([script_path, model_name], cwd=os.path.dirname(script_path))
-        logging.info(f"Model '{model_name}' downloaded successfully.")
-        
+
+        print("Executing download script...")
+        process = subprocess.Popen(
+            [script_path, model_name],
+            cwd=os.path.dirname(script_path),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True
+        )
+
+        # Print output in real-time
+        while True:
+            output = process.stdout.readline()
+            if output == '' and process.poll() is not None:
+                break
+            if output:
+                print(output.strip())
+
+        returncode = process.wait()
+
+        if returncode != 0:
+            error = process.stderr.read()
+            raise subprocess.CalledProcessError(returncode, script_path, error)
+
+        print(f"\nDownload script completed successfully")
+
         expected_model_file = os.path.join(os.path.dirname(script_path), f"ggml-{model_name}.bin")
         if not os.path.exists(expected_model_file):
             raise FileNotFoundError(f"Expected model file {expected_model_file} not found after download.")
-        
+
+        print(f"Moving model file to final location: {model_path}")
         shutil.move(expected_model_file, model_path)
-        logging.info(f"Model moved to {model_path}")
+        print(f"✓ Model successfully moved to: {model_path}")
+
     except subprocess.CalledProcessError as e:
-        logging.error(f"Failed to download model using download-ggml-model.sh: {str(e)}")
-        raise
-    except FileNotFoundError as e:
-        logging.error(str(e))
+        print(f"\n✗ Script execution failed: {str(e)}")
+        if e.stderr:
+            print(f"Error output:\n{e.stderr}")
         raise
     except Exception as e:
-        logging.error(f"An unexpected error occurred while downloading the model: {str(e)}")
+        print(f"\n✗ An unexpected error occurred: {str(e)}")
         raise
 
 def trim_audio(audio_path, start_time, end_time):
@@ -559,8 +823,6 @@ def main():
             device = "cpu"
 
         device = get_supported_device(backend, device)
-
-        logging.basicConfig(level=logging.INFO, format='%(message)s')
         
         logging.info(f"Starting transcription on device: {device} using backend: {backend}")
 
@@ -759,11 +1021,23 @@ def main():
                 print(f'[00:00.000 --> XX:XX.XXX] {text}', flush=True)
         
         elif backend == 'whisper.cpp':
+
             model_path = find_or_download_whisper_cpp_model(model_id)
             logging.info(f"Using model at: {model_path}")
 
+            logging.info(f"Audio input path before conversion: {audio_input}")
+            logging.info(f"Audio input path exists: {os.path.exists(audio_input)}")
+            if os.path.exists(audio_input):
+                logging.info(f"Audio input file size: {os.path.getsize(audio_input)} bytes")
+            
             logging.info("Converting audio to 16-bit 16kHz WAV format")
-            audio_input = convert_audio_to_wav(audio_input)
+            converted_audio = convert_audio_to_wav(audio_input)
+            if converted_audio is None:
+                logging.error("Failed to convert audio to WAV format.")
+                return
+                
+            audio_input = converted_audio  # Use the converted audio path
+            logging.info(f"Using converted audio at: {audio_input}")
             if audio_input is None:
                 logging.error("Failed to convert audio to WAV format.")
                 return
@@ -772,15 +1046,19 @@ def main():
             if args.whisper_cpp_path:
                 if os.path.isfile(args.whisper_cpp_path) and os.access(args.whisper_cpp_path, os.X_OK):
                     whisper_cpp_executable = args.whisper_cpp_path
+                    logging.info(f"Using provided whisper.cpp path: {whisper_cpp_executable}")
                 else:
-                    logging.warning(f"Provided whisper.cpp path '{args.whisper_cpp_path}' is not a valid executable. Searching for whisper.cpp...")
+                    logging.warning(f"Provided whisper.cpp path '{args.whisper_cpp_path}' is not valid.")
 
             if not whisper_cpp_executable:
                 whisper_cpp_executable = find_whisper_cpp_executable()
 
             if not whisper_cpp_executable:
-                logging.error("whisper.cpp executable not found. Please provide a valid path using --whisper-cpp-path or ensure it's in a searchable location.")
-                raise FileNotFoundError("whisper.cpp executable not found.")
+                error_msg = "whisper.cpp executable not found. You need to either:\n" + \
+                        "1. Install whisper.cpp from https://github.com/ggerganov/whisper.cpp\n" + \
+                        "2. Provide the path using --whisper-cpp-path argument"
+                logging.error(error_msg)
+                raise FileNotFoundError(error_msg)
 
             logging.info(f"Using whisper.cpp executable: {whisper_cpp_executable}")
 
@@ -793,30 +1071,61 @@ def main():
                 '--threads', str(os.cpu_count()),
             ]
             
-            logging.info(f"Running whisper.cpp with command: {' '.join(cmd)}")
+            # For German text, let's also add print-colors and UTF-8 handling
+            #cmd.extend(['--print-colors', '--pc'])
             
-            process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=True,
-                bufsize=1,
-            )
+            logging.info(f"Running command: {' '.join(cmd)}")
+            
+            try:
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    universal_newlines=True,
+                    bufsize=1,
+                    encoding='utf-8'  # Explicitly specify UTF-8 encoding
+                )
 
-            for line in process.stdout:
-                text = line.strip()
-                if text:
-                    print(text, flush=True)
+                # Capture and log stdout
+                output_lines = []
+                while True:
+                    line = process.stdout.readline()
+                    if not line and process.poll() is not None:
+                        break
+                    
+                    text = line.strip()
+                    if text:
+                        logging.info(f"STDOUT: {text}")
+                        output_lines.append(text)
+                        print(text, flush=True)  # For GUI display
 
-            _, stderr_output = process.communicate()
+                # Get any remaining stderr
+                stderr_output = process.stderr.read()
+                if stderr_output:
+                    logging.error(f"STDERR: {stderr_output}")
 
-            if process.returncode != 0:
-                logging.error(stderr_output)
-                raise Exception("whisper.cpp transcription failed.")
-            else:
+                # Check the return code
+                if process.returncode != 0:
+                    error_msg = f"whisper.cpp transcription failed with code {process.returncode}"
+                    if stderr_output:
+                        error_msg += f": {stderr_output}"
+                    logging.error(error_msg)
+                    raise Exception(error_msg)
+
+                # Handle SRT/VTT output files
                 if output_format in ('srt', 'vtt'):
                     output_file = f"{audio_input}.{output_format}"
-                    print(f"OUTPUT FILE: {output_file}", flush=True)
+                    if os.path.exists(output_file):
+                        logging.info(f"Found output file: {output_file}")
+                        print(f"OUTPUT FILE: {output_file}", flush=True)
+                    else:
+                        error_msg = f"Output file not found: {output_file}"
+                        logging.error(error_msg)
+                        raise FileNotFoundError(error_msg)
+
+            except Exception as e:
+                logging.error(f"Error during whisper.cpp execution: {str(e)}")
+                raise
     
         elif backend == 'ctranslate2':
             import tempfile
