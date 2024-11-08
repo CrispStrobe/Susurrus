@@ -2,24 +2,47 @@
 # handled from Susurrus main script or run manually
 
 import argparse
+import sys
+# Reconfigure stdout to use UTF-8 encoding if not already set
+if sys.stdout.encoding.lower() != 'utf-8':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except AttributeError:
+        # For Python versions < 3.7
+        import codecs
+        sys.stdout = codecs.getwriter('utf-8')(sys.stdout.detach())
+        
 import os
+
+# set Windows console to UTF-8 mode
+if os.name == 'nt':
+    os.system('chcp 65001 >nul')
+    
+    import ctypes
+    
+    # Enable VT100 terminal mode for colored output
+    kernel32 = ctypes.windll.kernel32
+    kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
+    
+    # Set console output to UTF-8
+    if sys.version_info >= (3, 7):
+        os.system('chcp 65001 >nul')
+
 import logging
 import subprocess
 import time
 import json
 import requests
-import sys
 from datetime import datetime
 
 # Debug imports
-import sys
-print("Python path at startup:", sys.path)
-try:
-    import pydub
-    print("Found pydub at:", pydub.__file__)
-except ImportError as e:
-    print("Failed to import pydub, sys.path is:", sys.path)
-    print("Import error:", str(e))
+#print("Python path at startup:", sys.path)
+#try:
+#    import pydub
+#    print("Found pydub at:", pydub.__file__)
+#except ImportError as e:
+#    print("Failed to import pydub, sys.path is:", sys.path)
+#    print("Import error:", str(e))
 
 # Set up logging immediately at script start
 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -30,7 +53,7 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler(log_file, encoding='utf-8'),
-        logging.StreamHandler(sys.stdout)
+        logging.StreamHandler(sys.stderr)
     ]
 )
 
@@ -451,17 +474,17 @@ def find_or_create_whisper_cpp_models_dir():
 
 def download_whisper_cpp_model_directly(model_file, model_path, proxies=None):
     """Download a Whisper CPP model with optimized performance."""
-    print("\nInitiating direct download...")
+    logging.info("\nInitiating direct download...")
     base_url = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/'
     url = base_url + model_file
-    print(f"Download URL: {url}")
+    logging.info(f"Download URL: {url}")
     
     try:
         import requests
         from tqdm import tqdm
         import certifi
     except ImportError:
-        print("Installing required packages...")
+        logging.info("Installing required packages...")
         subprocess.check_call([sys.executable, "-m", "pip", "install", "requests", "tqdm", "certifi"])
         import requests
         from tqdm import tqdm
@@ -472,8 +495,8 @@ def download_whisper_cpp_model_directly(model_file, model_path, proxies=None):
     session.mount('https://', requests.adapters.HTTPAdapter(max_retries=1))
 
     try:
-        print(f"Using certificates from: {certifi.where()}")
-        print("Checking file availability...")
+        logging.info(f"Using certificates from: {certifi.where()}")
+        logging.info("Checking file availability...")
         
         # First try with SSL verification
         try:
@@ -485,7 +508,7 @@ def download_whisper_cpp_model_directly(model_file, model_path, proxies=None):
                 headers={'User-Agent': 'Mozilla/5.0'}
             )
         except (requests.exceptions.SSLError, requests.exceptions.ConnectionError) as e:
-            print("SSL verification failed, attempting without verification (not recommended)...")
+            logging.error("SSL verification failed, attempting without verification (not recommended)...")
             response = session.get(
                 url,
                 stream=True,
@@ -496,7 +519,7 @@ def download_whisper_cpp_model_directly(model_file, model_path, proxies=None):
 
         response.raise_for_status()
         total_size = int(response.headers.get('content-length', 0))
-        print(f"File size: {total_size / (1024*1024):.1f} MB")
+        logging.info(f"File size: {total_size / (1024*1024):.1f} MB")
 
         # Ensure directory exists
         os.makedirs(os.path.dirname(model_path), exist_ok=True)
@@ -518,11 +541,11 @@ def download_whisper_cpp_model_directly(model_file, model_path, proxies=None):
                     if current_time - last_update_time >= update_interval:
                         percent = (downloaded * 100) / total_size
                         speed = downloaded / (current_time - last_update_time) / (1024*1024)
-                        print(f"Downloaded: {percent:.1f}% ({downloaded/(1024*1024):.1f} MB) - {speed:.1f} MB/s")
+                        logging.info(f"Downloaded: {percent:.1f}% ({downloaded/(1024*1024):.1f} MB) - {speed:.1f} MB/s")
                         last_update_time = current_time
 
         actual_size = os.path.getsize(model_path)
-        print(f"\nDownload completed. File size: {actual_size / (1024*1024):.1f} MB")
+        logging.info(f"\nDownload completed. File size: {actual_size / (1024*1024):.1f} MB")
 
         if total_size > 0 and actual_size != total_size:
             raise Exception(
@@ -532,17 +555,17 @@ def download_whisper_cpp_model_directly(model_file, model_path, proxies=None):
         return True
 
     except requests.Timeout:
-        print("\nError: Download timed out. Network may be slow or unstable.")
+        logging.error("\nError: Download timed out. Network may be slow or unstable.")
         if os.path.exists(model_path):
             os.remove(model_path)
         raise
     except requests.ConnectionError as e:
-        print(f"\nError: Connection failed - {str(e)}")
+        logging.error(f"\nError: Connection failed - {str(e)}")
         if os.path.exists(model_path):
             os.remove(model_path)
         raise
     except Exception as e:
-        print(f"\nError during download: {str(e)}")
+        logging.error(f"\nError during download: {str(e)}")
         if os.path.exists(model_path):
             os.remove(model_path)
         raise
@@ -1081,26 +1104,31 @@ def main():
                     cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    universal_newlines=True,
+                    #universal_newlines=True,
                     bufsize=1,
-                    encoding='utf-8'  # Explicitly specify UTF-8 encoding
+                    #encoding='utf-8',  # Explicitly specify UTF-8 encoding
+                    #errors='replace'  # Handle any encoding errors gracefully
                 )
 
                 # Capture and log stdout
-                output_lines = []
+                
                 while True:
                     line = process.stdout.readline()
                     if not line and process.poll() is not None:
                         break
-                    
-                    text = line.strip()
-                    if text:
-                        logging.info(f"STDOUT: {text}")
-                        output_lines.append(text)
-                        print(text, flush=True)  # For GUI display
 
-                # Get any remaining stderr
-                stderr_output = process.stderr.read()
+                    text = line.decode('utf-8', errors='replace').strip()
+
+                    if text:
+                        try:
+                            print(text, flush=True)
+                            logging.info(f"STDOUT: {text}")
+                        except UnicodeEncodeError:
+                            sys.stdout.buffer.write((text + '\n').encode('utf-8', 'replace'))
+                            sys.stdout.buffer.flush()
+
+                # Read and handle any remaining stderr
+                stderr_output = process.stderr.read().decode('utf-8', errors='replace')
                 if stderr_output:
                     logging.error(f"STDERR: {stderr_output}")
 
@@ -1112,7 +1140,7 @@ def main():
                     logging.error(error_msg)
                     raise Exception(error_msg)
 
-                # Handle SRT/VTT output files
+                # Handle output files if necessary
                 if output_format in ('srt', 'vtt'):
                     output_file = f"{audio_input}.{output_format}"
                     if os.path.exists(output_file):
@@ -1297,7 +1325,7 @@ def main():
                     f"Transcription time: {transcription_time:.2f} seconds\n"
                     f"Audio file size: {audio_file_size:.2f} MB\n"
                 )
-                print(metrics_output, flush=True)
+                logging.info(metrics_output)
 
             except ImportError as e:
                 logging.error(f"Failed to import required modules for whisper-jax: {str(e)}")
@@ -1381,7 +1409,7 @@ def main():
 
             end_oaw_time = time.time()
             transcription_oaw_time = end_oaw_time - start_oaw_time
-            print(f"Transcription time with OpenAI Whisper: {transcription_oaw_time:.2f} seconds", flush=True)
+            logging.info(f"Transcription time with OpenAI Whisper: {transcription_oaw_time:.2f} seconds")
 
         else:
             logging.error(f"Unsupported backend: {backend}")
@@ -1390,7 +1418,7 @@ def main():
         
         end_tr_time = time.time()
         transcription_time = end_tr_time - start_tr_time
-        print(f"Total transcription time: {transcription_time:.2f} seconds", flush=True)
+        logging.info(f"Total transcription time: {transcription_time:.2f} seconds")
         
         logging.info(f"Transcription completed in {transcription_time:.2f} seconds")
     
