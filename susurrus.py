@@ -5,6 +5,7 @@ import subprocess
 import re
 import shutil
 import platform
+import threading
 
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QLineEdit,
@@ -193,9 +194,21 @@ class TranscriptionThread(QThread):
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                universal_newlines=True,
                 bufsize=1,
             )
+
+            # Function to read from stderr and emit metrics
+            def read_stderr():
+                for line in self.process.stderr:
+                    if not self._is_running:
+                        break
+                    line = line.decode('utf-8', errors='replace').rstrip()
+                    if line:
+                        self.progress_signal.emit(line, '')  # Emit logs to metrics
+
+            # Start a separate thread to read stderr
+            stderr_thread = threading.Thread(target=read_stderr)
+            stderr_thread.start()
 
             timecode_pattern = re.compile(
                 r'^\['
@@ -211,13 +224,13 @@ class TranscriptionThread(QThread):
             for line in self.process.stdout:
                 if not self._is_running:
                     break
-                line = line.rstrip()
+                line = line.decode('utf-8', errors='replace').rstrip()
 
                 if line.startswith('OUTPUT FILE: '):
                     output_file = line[len('OUTPUT FILE: '):].strip()
                     continue
 
-                # Add special handling for download progress
+                # Handle download progress or other special lines
                 if line.startswith("\rProgress:"):
                     self.progress_signal.emit(line, '')  # Show in metrics window
                     continue
@@ -245,9 +258,10 @@ class TranscriptionThread(QThread):
             # Wait for the process to complete
             self.process.stdout.close()
             self.process.wait()
+            stderr_thread.join()
 
             if self.process.returncode != 0:
-                error_msg = self.process.stderr.read()
+                error_msg = "Transcription process failed."
                 self.error_signal.emit(error_msg)
             else:
                 if is_whisper_jax:
