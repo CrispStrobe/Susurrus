@@ -1,11 +1,10 @@
+# susurrus.py
 import sys
 import os
 import logging
 import subprocess
 import re
 import shutil
-import platform
-import threading
 
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QLineEdit,
@@ -16,51 +15,8 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtGui import QIcon
 
 # Set up logging
-#logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def get_default_backend():
-        import platform
-        system = platform.system().lower()
-        
-        if system == 'windows':
-            try:
-                import torch
-                return 'faster-batched'  # Good default for Windows with GPU support
-            except ImportError:
-                return 'whisper.cpp'     # Fallback for Windows without PyTorch
-        elif system == 'darwin':
-            try:
-                import mlx
-                return 'mlx-whisper'     # Best for Apple Silicon
-            except ImportError:
-                return 'faster-batched'  # Fallback for Mac
-        else:  # Linux and others
-            try:
-                import torch
-                return 'faster-batched'  # Good default for Linux with GPU support
-            except ImportError:
-                return 'whisper.cpp'     # Fallback for Linux without PyTorch
-
-def get_default_model_for_backend(backend):
-    defaults = {
-        'mlx-whisper': "mlx-community/whisper-tiny-mlx-4bit",
-        'faster-batched': "cstr/whisper-large-v3-turbo-int8_float32",
-        'faster-sequenced': "cstr/whisper-large-v3-turbo-int8_float32",
-        'whisper.cpp': "tiny",
-        'transformers': "openai/whisper-tiny",
-        'OpenAI Whisper': "tiny",
-        'ctranslate2': "cstr/whisper-large-v3-turbo-int8_float32",
-        'whisper-jax': "openai/whisper-tiny",
-        'insanely-fast-whisper': "openai/whisper-tiny"
-    }
-    return defaults.get(backend, "tiny")
 
 class CollapsibleBox(QWidget):
     def __init__(self, title="", parent=None):
@@ -194,21 +150,9 @@ class TranscriptionThread(QThread):
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                universal_newlines=True,
                 bufsize=1,
             )
-
-            # Function to read from stderr and emit metrics
-            def read_stderr():
-                for line in self.process.stderr:
-                    if not self._is_running:
-                        break
-                    line = line.decode('utf-8', errors='replace').rstrip()
-                    if line:
-                        self.progress_signal.emit(line, '')  # Emit logs to metrics
-
-            # Start a separate thread to read stderr
-            stderr_thread = threading.Thread(target=read_stderr)
-            stderr_thread.start()
 
             timecode_pattern = re.compile(
                 r'^\['
@@ -224,15 +168,10 @@ class TranscriptionThread(QThread):
             for line in self.process.stdout:
                 if not self._is_running:
                     break
-                line = line.decode('utf-8', errors='replace').rstrip()
+                line = line.rstrip()
 
                 if line.startswith('OUTPUT FILE: '):
                     output_file = line[len('OUTPUT FILE: '):].strip()
-                    continue
-
-                # Handle download progress or other special lines
-                if line.startswith("\rProgress:"):
-                    self.progress_signal.emit(line, '')  # Show in metrics window
                     continue
 
                 if is_whisper_jax:
@@ -258,10 +197,9 @@ class TranscriptionThread(QThread):
             # Wait for the process to complete
             self.process.stdout.close()
             self.process.wait()
-            stderr_thread.join()
 
             if self.process.returncode != 0:
-                error_msg = "Transcription process failed."
+                error_msg = self.process.stderr.read()
                 self.error_signal.emit(error_msg)
             else:
                 if is_whisper_jax:
@@ -294,7 +232,7 @@ class MainWindow(QWidget):
         self.setAcceptDrops(True)  # Enable drag and drop
         self.thread = None
         self.init_ui()
-    
+
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
@@ -306,7 +244,7 @@ class MainWindow(QWidget):
         if urls and urls[0].isLocalFile():
             file_path = urls[0].toLocalFile()
             self.audio_input_path.setText(file_path)
-    
+
     def get_original_model_id(self, model_id):
         # Search the backend_model_map for the original model ID
         for backend_models in self.backend_model_map.values():
@@ -676,33 +614,23 @@ class MainWindow(QWidget):
         # Transcription Backend Selection Row
         backend_row = QHBoxLayout()
         self.backend_selection = QComboBox()
-        
-
-        # Transcription Backend Selection Row
-        backend_row = QHBoxLayout()
-        self.backend_selection = QComboBox()
-        
-        # Get the platform-appropriate default backend
-        default_backend = get_default_backend()
-        
-        available_backends = [
+        self.backend_selection.addItems([
+            "mlx-whisper",
+            "OpenAI Whisper",
             "faster-batched",
             "faster-sequenced",
-            "whisper.cpp",
             "transformers",
-            "OpenAI Whisper",
+            "whisper.cpp",
             "ctranslate2",
             "whisper-jax",
-            "insanely-fast-whisper"
-        ]
-        
-        # Add mlx-whisper only on macOS
-        if platform.system().lower() == 'darwin':
-            available_backends.insert(0, "mlx-whisper")
-            
-        self.backend_selection.addItems(available_backends)
+            "insanely-fast-whisper",
+        ])
+
+        self.backend_selection.setCurrentText("mlx-whisper")
+
         backend_row.addWidget(QLabel("Backend:"))
         backend_row.addWidget(self.backend_selection)
+
         advanced_layout.addLayout(backend_row)
 
         # Connect the backend selection change to the update_model_options method
@@ -710,8 +638,12 @@ class MainWindow(QWidget):
 
         # Model, Device, and Language selection row
         model_row = QHBoxLayout()
+
         model_row.addWidget(QLabel("Model:"))
         self.model_id = QComboBox()
+        # Set initial models for the default backend
+        models = self.backend_model_map[self.backend_selection.currentText()]
+        self.model_id.addItems([model_tuple[0] for model_tuple in models])
         self.model_id.setEditable(True)
         model_row.addWidget(self.model_id)
 
@@ -731,44 +663,7 @@ class MainWindow(QWidget):
         self.language.setPlaceholderText("en")
         model_row.addWidget(self.language)
 
-        # Max Chunk Length Row
-        chunk_row = QHBoxLayout()
-        self.max_chunk_length = QLineEdit()
-        self.max_chunk_length.setPlaceholderText("Max Chunk Length (seconds, 0=No Chunking, default=0)")
-        self.max_chunk_length.setText("0")  # Default value
-
-        chunk_row.addWidget(QLabel("Max Chunk Length:"))
-        chunk_row.addWidget(self.max_chunk_length)
-
-        self.chunk_row_widget = QWidget()
-        self.chunk_row_widget.setLayout(chunk_row)
-        self.chunk_row_widget.setVisible(False)  # Hide initially
-        advanced_layout.addWidget(self.chunk_row_widget)
-
-        # Output Format Row
-        output_format_row = QHBoxLayout()
-        self.output_format_selection = QComboBox()
-        self.output_format_selection.addItems(['txt', 'srt', 'vtt'])
-        self.output_format_selection.setCurrentText('txt')
-
-        output_format_row.addWidget(QLabel("Output Format:"))
-        output_format_row.addWidget(self.output_format_selection)
-
-        self.output_format_row_widget = QWidget()
-        self.output_format_row_widget.setLayout(output_format_row)
-        self.output_format_row_widget.setVisible(False)
-        advanced_layout.addWidget(self.output_format_row_widget)
-        
         advanced_layout.addLayout(model_row)
-
-        # Now set the default backend and update models
-        self.backend_selection.setCurrentText(default_backend)
-        # Set initial models for the default backend
-        models = self.backend_model_map[default_backend]
-        self.model_id.clear()
-        self.model_id.addItems([model_tuple[0] for model_tuple in models])
-        default_model = get_default_model_for_backend(default_backend)
-        self.model_id.setCurrentText(default_model)
 
         # Output Format Row (initially hidden)
         output_format_row = QHBoxLayout()
