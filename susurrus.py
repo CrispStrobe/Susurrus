@@ -1,11 +1,90 @@
-# susurrus.py
 import sys
 import os
 import logging
 import subprocess
 import re
 import shutil
+import platform
+import threading
 
+def safe_create_symlink(src, dst):
+    try:
+        os.symlink(src, dst)
+    except OSError as e:
+        if e.winerror == 1314:
+            logging.warning(f"Insufficient privileges to create symlink from {src} to {dst}. Copying file instead.")
+            shutil.copy(src, dst)
+        else:
+            logging.error(f"Failed to create symlink from {src} to {dst}: {e}")
+            raise
+
+def diagnose_pytorch():
+    import sys
+    import platform
+    import logging
+    
+    logging.info(f"Python version: {sys.version}")
+    logging.info(f"Platform: {platform.platform()}")
+    
+    try:
+        import torch
+        logging.info(f"PyTorch version: {torch.__version__}")
+        
+        # Check CUDA availability
+        logging.info(f"torch.cuda.is_available(): {torch.cuda.is_available()}")
+        
+        # Check CUDA version PyTorch was built with
+        logging.info(f"PyTorch CUDA version: {torch.version.cuda}")
+        
+        # Get NVIDIA driver version
+        if hasattr(torch.version, 'cuda') and torch.cuda.is_available():
+            logging.info(f"NVIDIA driver version: {torch.cuda.get_device_properties(0).name}")
+        else:
+            logging.info("No CUDA driver found")
+            
+        # Try importing CUDA toolkit
+        try:
+            import nvidia.cuda
+            logging.info("CUDA toolkit is installed")
+        except ImportError:
+            logging.info("CUDA toolkit not found in Python environment")
+            
+    except ImportError:
+        logging.error("PyTorch is not installed")
+        return False
+        
+    return True
+
+def check_developer_mode():
+    if platform.system() == 'Windows':
+        try:
+            import ctypes
+            # Check if process has admin rights
+            is_admin = ctypes.windll.shell32.IsUserAnAdmin()
+            if not is_admin:
+                logging.warning("Python is not running with administrator privileges")
+            
+            # Check Developer Mode
+            try:
+                import winreg
+                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                    r"SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock", 
+                    0, winreg.KEY_READ)
+                value, _ = winreg.QueryValueEx(key, "AllowDevelopmentWithoutDevMode")
+                if value != 1:
+                    logging.warning("Developer Mode is not enabled")
+                    QMessageBox.warning(None, "Developer Mode Not Enabled", 
+                        "Please enable Developer Mode in Windows Settings:\n"
+                        "1. Open Windows Settings\n"
+                        "2. Navigate to Privacy & security > For developers\n"
+                        "3. Enable 'Developer Mode'\n\n"
+                        "This will improve cache performance.")
+            except WindowsError as e:
+                logging.warning(f"Could not check Developer Mode registry: {e}")
+                
+        except Exception as e:
+            logging.warning(f"Could not check Developer Mode status: {e}")
+            
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QLineEdit,
     QFileDialog, QComboBox, QHBoxLayout, QVBoxLayout,
@@ -15,8 +94,104 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtGui import QIcon
 
 # Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+#logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
 
+def get_default_device():
+    cuda_available = check_cuda()
+    if cuda_available:
+        return "GPU"
+    try:
+        import torch
+        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            return "MPS"
+    except ImportError:
+        pass
+    return "CPU"
+
+def check_cuda():
+    try:
+        import torch
+        
+        # Force CUDA initialization
+        if torch.cuda.is_available():
+            # Get CUDA device count
+            device_count = torch.cuda.device_count()
+            
+            # Get CUDA device properties
+            if device_count > 0:
+                device_name = torch.cuda.get_device_name(0)
+                cuda_version = torch.version.cuda
+                
+                logging.info(f"CUDA is available with {device_count} device(s)")
+                logging.info(f"Primary GPU: {device_name}")
+                logging.info(f"CUDA Version: {cuda_version}")
+                
+                # Test CUDA by creating a small tensor
+                try:
+                    test_tensor = torch.tensor([1.0], device='cuda')
+                    logging.info("CUDA test successful - GPU is working")
+                    return True
+                except RuntimeError as e:
+                    logging.error(f"CUDA test failed: {e}")
+                    return False
+            else:
+                logging.warning("CUDA is available but no GPU devices found")
+                return False
+        else:
+            logging.warning("CUDA is not available")
+            return False
+            
+    except ImportError as e:
+        logging.warning(f"PyTorch import failed: {e}")
+        return False
+    except Exception as e:
+        logging.warning(f"CUDA check failed: {e}")
+        return False
+
+def get_default_backend():
+    system = platform.system().lower()
+    
+    if system == 'windows':
+        cuda_available = check_cuda()
+        if cuda_available:
+            logging.info("Using CUDA GPU with faster-batched backend")
+            return 'faster-batched'
+        else:
+            logging.info("No working CUDA GPU detected, falling back to CPU with whisper.cpp")
+            return 'whisper.cpp'
+    elif system == 'darwin':
+        try:
+            import mlx
+            return 'mlx-whisper'
+        except ImportError:
+            return 'faster-batched'
+    else:  # Linux and others
+        cuda_available = check_cuda()
+        if cuda_available:
+            return 'faster-batched'
+        else:
+            return 'whisper.cpp'
+
+def get_default_model_for_backend(backend):
+    defaults = {
+        'mlx-whisper': "mlx-community/whisper-tiny-mlx-4bit",
+        'faster-batched': "cstr/whisper-large-v3-turbo-int8_float32",
+        'faster-sequenced': "cstr/whisper-large-v3-turbo-int8_float32",
+        'whisper.cpp': "tiny",
+        'transformers': "openai/whisper-tiny",
+        'OpenAI Whisper': "tiny",
+        'ctranslate2': "cstr/whisper-large-v3-turbo-int8_float32",
+        'whisper-jax': "openai/whisper-tiny",
+        'insanely-fast-whisper': "openai/whisper-tiny"
+    }
+    return defaults.get(backend, "tiny")
 
 class CollapsibleBox(QWidget):
     def __init__(self, title="", parent=None):
@@ -150,9 +325,21 @@ class TranscriptionThread(QThread):
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                universal_newlines=True,
                 bufsize=1,
             )
+
+            # read from stderr and emit metrics
+            def read_stderr():
+                for line in self.process.stderr:
+                    if not self._is_running:
+                        break
+                    line = line.decode('utf-8', errors='replace').rstrip()
+                    if line:
+                        self.progress_signal.emit(line, '')  # Emit logs to metrics
+
+            # Start a separate thread to read stderr
+            stderr_thread = threading.Thread(target=read_stderr, daemon=True) # daemon added
+            stderr_thread.start()
 
             timecode_pattern = re.compile(
                 r'^\['
@@ -168,10 +355,15 @@ class TranscriptionThread(QThread):
             for line in self.process.stdout:
                 if not self._is_running:
                     break
-                line = line.rstrip()
+                line = line.decode('utf-8', errors='replace').rstrip()
 
                 if line.startswith('OUTPUT FILE: '):
                     output_file = line[len('OUTPUT FILE: '):].strip()
+                    continue
+
+                # Handle download progress or other special lines
+                if line.startswith("\rProgress:"):
+                    self.progress_signal.emit(line, '')  # Show in metrics window
                     continue
 
                 if is_whisper_jax:
@@ -197,11 +389,13 @@ class TranscriptionThread(QThread):
             # Wait for the process to complete
             self.process.stdout.close()
             self.process.wait()
+            stderr_thread.join()
 
             if self.process.returncode != 0:
-                error_msg = self.process.stderr.read()
+                error_msg = "Transcription process failed."
                 self.error_signal.emit(error_msg)
             else:
+                # Handle the transcription output
                 if is_whisper_jax:
                     self.transcription_replace_signal.emit(whisper_jax_output)
                 elif self.args['backend'] == 'whisper.cpp' and self.args['output_format'] in ('srt', 'vtt'):
@@ -231,8 +425,14 @@ class MainWindow(QWidget):
         self.setMinimumSize(800, 600)
         self.setAcceptDrops(True)  # Enable drag and drop
         self.thread = None
+        
+        # Check system configuration
+        diagnose_pytorch()
+        check_developer_mode()
+        check_cuda()
+        
         self.init_ui()
-
+    
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
@@ -244,7 +444,7 @@ class MainWindow(QWidget):
         if urls and urls[0].isLocalFile():
             file_path = urls[0].toLocalFile()
             self.audio_input_path.setText(file_path)
-
+    
     def get_original_model_id(self, model_id):
         # Search the backend_model_map for the original model ID
         for backend_models in self.backend_model_map.values():
@@ -614,23 +814,33 @@ class MainWindow(QWidget):
         # Transcription Backend Selection Row
         backend_row = QHBoxLayout()
         self.backend_selection = QComboBox()
-        self.backend_selection.addItems([
-            "mlx-whisper",
-            "OpenAI Whisper",
+        
+
+        # Transcription Backend Selection Row
+        backend_row = QHBoxLayout()
+        self.backend_selection = QComboBox()
+        
+        # Get the platform-appropriate default backend
+        default_backend = get_default_backend()
+        
+        available_backends = [
             "faster-batched",
             "faster-sequenced",
-            "transformers",
             "whisper.cpp",
+            "transformers",
+            "OpenAI Whisper",
             "ctranslate2",
             "whisper-jax",
-            "insanely-fast-whisper",
-        ])
-
-        self.backend_selection.setCurrentText("mlx-whisper")
-
+            "insanely-fast-whisper"
+        ]
+        
+        # Add mlx-whisper only on macOS
+        if platform.system().lower() == 'darwin':
+            available_backends.insert(0, "mlx-whisper")
+            
+        self.backend_selection.addItems(available_backends)
         backend_row.addWidget(QLabel("Backend:"))
         backend_row.addWidget(self.backend_selection)
-
         advanced_layout.addLayout(backend_row)
 
         # Connect the backend selection change to the update_model_options method
@@ -638,12 +848,8 @@ class MainWindow(QWidget):
 
         # Model, Device, and Language selection row
         model_row = QHBoxLayout()
-
         model_row.addWidget(QLabel("Model:"))
         self.model_id = QComboBox()
-        # Set initial models for the default backend
-        models = self.backend_model_map[self.backend_selection.currentText()]
-        self.model_id.addItems([model_tuple[0] for model_tuple in models])
         self.model_id.setEditable(True)
         model_row.addWidget(self.model_id)
 
@@ -655,7 +861,8 @@ class MainWindow(QWidget):
             "GPU",  # CUDA
             "MPS"   # Apple Silicon
         ])
-        self.device_selection.setCurrentText("Auto")
+        default_device = get_default_device()
+        self.device_selection.setCurrentText(default_device)
         model_row.addWidget(self.device_selection)
 
         model_row.addWidget(QLabel("Language:"))
@@ -663,7 +870,44 @@ class MainWindow(QWidget):
         self.language.setPlaceholderText("en")
         model_row.addWidget(self.language)
 
+        # Max Chunk Length Row
+        chunk_row = QHBoxLayout()
+        self.max_chunk_length = QLineEdit()
+        self.max_chunk_length.setPlaceholderText("Max Chunk Length (seconds, 0=No Chunking, default=0)")
+        self.max_chunk_length.setText("0")  # Default value
+
+        chunk_row.addWidget(QLabel("Max Chunk Length:"))
+        chunk_row.addWidget(self.max_chunk_length)
+
+        self.chunk_row_widget = QWidget()
+        self.chunk_row_widget.setLayout(chunk_row)
+        self.chunk_row_widget.setVisible(False)  # Hide initially
+        advanced_layout.addWidget(self.chunk_row_widget)
+
+        # Output Format Row
+        output_format_row = QHBoxLayout()
+        self.output_format_selection = QComboBox()
+        self.output_format_selection.addItems(['txt', 'srt', 'vtt'])
+        self.output_format_selection.setCurrentText('txt')
+
+        output_format_row.addWidget(QLabel("Output Format:"))
+        output_format_row.addWidget(self.output_format_selection)
+
+        self.output_format_row_widget = QWidget()
+        self.output_format_row_widget.setLayout(output_format_row)
+        self.output_format_row_widget.setVisible(False)
+        advanced_layout.addWidget(self.output_format_row_widget)
+        
         advanced_layout.addLayout(model_row)
+
+        # Now set the default backend and update models
+        self.backend_selection.setCurrentText(default_backend)
+        # Set initial models for the default backend
+        models = self.backend_model_map[default_backend]
+        self.model_id.clear()
+        self.model_id.addItems([model_tuple[0] for model_tuple in models])
+        default_model = get_default_model_for_backend(default_backend)
+        self.model_id.setCurrentText(default_model)
 
         # Output Format Row (initially hidden)
         output_format_row = QHBoxLayout()
