@@ -9,6 +9,7 @@ import time
 import json
 import platform
 from pathlib import Path
+import threading
 
 device_fallbacks = {
     'faster-batched': [('mps', 'cpu')],
@@ -593,52 +594,75 @@ def setup_whisper_cpp():
     return str(executable)
 
 def find_whisper_cpp_executable():
-    """Find or set up whisper.cpp executable"""
-    # Define paths
-    home_dir = Path.home()
-    code_dir = home_dir / "Downloads" / "code"
-    susurrus_dir = code_dir / "susurrus"
-    whisper_cpp_dir = susurrus_dir / "whisper.cpp"
-    build_dir = whisper_cpp_dir / "build"
+    """Find or set up whisper.cpp executable with proper fallbacks"""
+    # Check direct paths first
+    home_dir = os.path.expanduser('~')
+    code_dir = os.path.join(home_dir, "Downloads", "code")
+    susurrus_dir = os.path.join(code_dir, "susurrus")
+    whisper_cpp_dir = os.path.join(susurrus_dir, "whisper.cpp")
+    build_dir = os.path.join(whisper_cpp_dir, "build")
     
-    # Check for existing executable
-    is_windows = platform.system() == "Windows"
-    exe_name = "whisper-cli.exe" if is_windows else "whisper-cli"  # Updated executable name
-    
-    if is_windows:
-        executable = build_dir / "bin" / "Release" / exe_name
-    else:
-        executable = build_dir / exe_name
-        
-    if executable.exists() and os.access(executable, os.X_OK):
-        logging.info(f"Found existing whisper.cpp executable at: {executable}")
-        return str(executable)
-    
-    logging.info("No existing executable found, setting up whisper.cpp...")
-    return setup_whisper_cpp()
-
-def find_or_download_whisper_cpp_model(model_id):
-    """Find or download whisper.cpp model with caching"""
-    model_file = f"ggml-{model_id}.bin"
-    
-    # Check common locations in order of preference
-    common_paths = [
-        os.path.expanduser(os.path.join("~", "Downloads", model_file)),
-        os.path.join(os.getcwd(), model_file),
-        os.path.join(os.getcwd(), "models", model_file)
+    # Define possible executable names and locations
+    executable_names = ["whisper-cli.exe", "whisper-cli"] if os.name == 'nt' else ["whisper-cli"]
+    search_paths = [
+        build_dir,
+        os.path.join(build_dir, "bin", "Release"),
+        os.path.join(build_dir, "bin"),
+        whisper_cpp_dir,
+        susurrus_dir,
+        code_dir,
+        home_dir,
     ]
     
-    # Use cached path if exists
-    for path in common_paths:
+    # Search for executable
+    for path in search_paths:
         if os.path.exists(path):
-            logging.info(f"Model file '{model_file}' found at: {path}")
-            return path
+            for exe_name in executable_names:
+                exe_path = os.path.join(path, exe_name)
+                if os.path.isfile(exe_path) and os.access(exe_path, os.X_OK):
+                    logging.info(f"Found whisper.cpp executable at: {exe_path}")
+                    return exe_path
+    
+    logging.error("No whisper.cpp executable found in search paths")
+    return None
+
+def find_or_download_whisper_cpp_model(model_id):
+    """Find or download whisper.cpp model with proper error handling"""
+    model_file = model_id
+    if not model_file.startswith('ggml-'):
+        model_file = f'ggml-{model_file}'
+    if not model_file.endswith('.bin'):
+        model_file = f'{model_file}.bin'
+
+    # Search paths for existing model
+    search_paths = [
+        os.getcwd(),
+        os.path.expanduser('~'),
+        os.path.join(os.path.expanduser('~'), 'Downloads'),
+        os.path.join(os.getcwd(), 'models'),
+    ]
+
+    # Look for existing model
+    for path in search_paths:
+        model_path = os.path.join(path, model_file)
+        if os.path.exists(model_path):
+            logging.info(f"Model file '{model_file}' found at: {model_path}")
+            return model_path
+
+    # Download model if not found
+    try:
+        models_dir = os.path.join(os.getcwd(), 'models')
+        os.makedirs(models_dir, exist_ok=True)
+        model_path = os.path.join(models_dir, model_file)
+        
+        # Try direct download first
+        if download_whisper_cpp_model_directly(model_file, model_path):
+            return model_path
             
-    # If not found, download to Downloads directory
-    target_path = common_paths[0]
-    logging.info(f"Downloading model '{model_file}' to {target_path}")
-    download_whisper_cpp_model_directly(model_file, target_path)
-    return target_path
+        raise FileNotFoundError(f"Could not find or download model: {model_file}")
+    except Exception as e:
+        logging.error(f"Error finding/downloading model: {str(e)}")
+        raise
 
 def download_whisper_cpp_model(model_name, model_path):
     script_path = find_whisper_cpp_download_script()
@@ -1050,7 +1074,7 @@ def main():
                 if not os.path.exists(model_path):
                     raise FileNotFoundError(f"Model not found at {model_path}")
                 model_size = os.path.getsize(model_path)/1024/1024
-                logging.info(f"Using model at: {model_path} (Size: {model_size:.2f} MB)")
+                logging.info(f"Model file '{os.path.basename(model_path)}' found at: {model_path} (Size: {model_size:.2f} MB)")
             except Exception as e:
                 logging.error(f"Model preparation failed: {str(e)}")
                 raise
@@ -1075,38 +1099,43 @@ def main():
                         whisper_cpp_executable = args.whisper_cpp_path
                         logging.info(f"Using provided whisper.cpp path: {whisper_cpp_executable}")
                     else:
-                        logging.warning(f"Provided whisper.cpp path '{args.whisper_cpp_path}' is invalid")
+                        logging.warning(f"Provided whisper.cpp path '{args.whisper_cpp_path}' is not valid")
 
                 if not whisper_cpp_executable:
                     logging.info("Searching for whisper.cpp executable...")
                     try:
                         whisper_cpp_executable = find_whisper_cpp_executable()
                     except FileNotFoundError:
-                        logging.info("Executable not found, attempting to set up whisper.cpp...")
+                        logging.info("No existing executable found, setting up whisper.cpp...")
                         whisper_cpp_executable = setup_whisper_cpp()
 
                 if not os.path.isfile(whisper_cpp_executable) or not os.access(whisper_cpp_executable, os.X_OK):
                     raise FileNotFoundError(f"Invalid executable: {whisper_cpp_executable}")
+                    
+                # Update to use whisper-cli.exe
+                executable_dir = Path(whisper_cpp_executable).parent
+                whisper_cli = executable_dir / "whisper-cli.exe" if platform.system() == "Windows" else executable_dir / "whisper-cli"
+                if whisper_cli.exists() and os.access(str(whisper_cli), os.X_OK):
+                    whisper_cpp_executable = str(whisper_cli)
                     
                 logging.info(f"Using whisper.cpp executable: {whisper_cpp_executable}")
             except Exception as e:
                 logging.error(f"Executable setup failed: {str(e)}")
                 raise
 
-            # 4. Command preparation
-            cmd = [
-                str(Path(whisper_cpp_executable).parent / "whisper-cli.exe"),  # Use whisper-cli.exe
-                '-m', model_path,
-                '-f', wav_path,
-                '-l', language if language else 'auto',
-                '-t', str(min(os.cpu_count() or 4, 8)),  # Limit threads to reasonable number
-                '--output-txt'
-            ]
-
-            logging.info(f"Executing command: {' '.join(cmd)}")
-
-            # 5. Process execution with proper handling
+            # 4. Command preparation and execution
             try:
+                cmd = [
+                    whisper_cpp_executable,
+                    '-m', model_path,
+                    '-f', wav_path,
+                    '-l', language if language else 'auto',
+                    '-t', str(min(os.cpu_count() or 4, 8)),  # Limit threads
+                    '--output-txt'
+                ]
+
+                logging.info(f"Executing command: {' '.join(cmd)}")
+                
                 process = subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE,
@@ -1117,27 +1146,28 @@ def main():
                 
                 logging.info("Process started, monitoring output...")
                 
-                def read_output(pipe, log_func):
-                    """Helper function to read and log output"""
-                    for line in iter(pipe.readline, ''):
-                        line = line.strip()
-                        if line:
-                            log_func(line)
-                            if log_func == logging.info:
-                                print(line, flush=True)
-                
-                # Create threads for non-blocking I/O
-                import threading
-                
+                # Output monitoring with threading
+                def monitor_output(pipe, log_func, prefix=""):
+                    try:
+                        for line in iter(pipe.readline, ''):
+                            line = line.strip()
+                            if line:
+                                log_func(f"{prefix}{line}")
+                                if log_func == logging.info:
+                                    print(line, flush=True)
+                    except Exception as e:
+                        logging.error(f"Error in output monitoring: {str(e)}")
+
+                # Start monitoring threads
                 stdout_thread = threading.Thread(
-                    target=read_output,
+                    target=monitor_output,
                     args=(process.stdout, logging.info),
                     daemon=True,
                     name="stdout-monitor"
                 )
                 stderr_thread = threading.Thread(
-                    target=read_output,
-                    args=(process.stderr, logging.warning),
+                    target=monitor_output,
+                    args=(process.stderr, logging.warning, "stderr: "),
                     daemon=True,
                     name="stderr-monitor"
                 )
@@ -1145,14 +1175,14 @@ def main():
                 stdout_thread.start()
                 stderr_thread.start()
                 
-                # Wait for process to complete
+                # Wait for process completion
                 return_code = process.wait()
                 
-                # Wait for output threads to finish
+                # Clean up monitoring threads
                 stdout_thread.join(timeout=1.0)
                 stderr_thread.join(timeout=1.0)
                 
-                # Check return code
+                # Handle process result
                 if return_code != 0:
                     stderr_output = process.stderr.read()
                     raise subprocess.CalledProcessError(
@@ -1161,13 +1191,16 @@ def main():
                         stderr=stderr_output
                     )
                 
-                # Look for output file
+                # 5. Process output
                 expected_output = f"{wav_path}.txt"
                 if os.path.exists(expected_output):
                     with open(expected_output, 'r', encoding='utf-8') as f:
-                        transcription = f.read()
-                    logging.info("Successfully read transcription from output file")
-                    print(transcription, flush=True)
+                        transcription = f.read().strip()
+                    if transcription:
+                        logging.info("Successfully read transcription from output file")
+                        print(transcription, flush=True)
+                    else:
+                        raise RuntimeError("Transcription file is empty")
                 else:
                     raise FileNotFoundError(f"Expected output file not found: {expected_output}")
                     
@@ -1179,6 +1212,14 @@ def main():
             except Exception as e:
                 logging.error(f"Error during whisper.cpp execution: {str(e)}")
                 raise
+            finally:
+                # Clean up temporary files
+                try:
+                    if 'expected_output' in locals() and os.path.exists(expected_output):
+                        os.remove(expected_output)
+                        logging.debug(f"Removed temporary output file: {expected_output}")
+                except Exception as e:
+                    logging.warning(f"Failed to remove temporary output file: {str(e)}")
     
         elif backend == 'ctranslate2':
             import tempfile
