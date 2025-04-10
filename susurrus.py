@@ -6,6 +6,7 @@ import re
 import shutil
 import platform
 import threading
+import json
 
 def safe_create_symlink(src, dst):
     try:
@@ -22,38 +23,82 @@ def diagnose_pytorch():
     import sys
     import platform
     import logging
-    
+
     logging.info(f"Python version: {sys.version}")
     logging.info(f"Platform: {platform.platform()}")
-    
+
     try:
         import torch
         logging.info(f"PyTorch version: {torch.__version__}")
-        
+
         # Check CUDA availability
         logging.info(f"torch.cuda.is_available(): {torch.cuda.is_available()}")
-        
+
         # Check CUDA version PyTorch was built with
         logging.info(f"PyTorch CUDA version: {torch.version.cuda}")
-        
+
         # Get NVIDIA driver version
         if hasattr(torch.version, 'cuda') and torch.cuda.is_available():
             logging.info(f"NVIDIA driver version: {torch.cuda.get_device_properties(0).name}")
         else:
             logging.info("No CUDA driver found")
-            
+
         # Try importing CUDA toolkit
         try:
             import nvidia.cuda
             logging.info("CUDA toolkit is installed")
         except ImportError:
             logging.info("CUDA toolkit not found in Python environment")
-            
+
     except ImportError:
         logging.error("PyTorch is not installed")
         return False
-        
+
     return True
+
+def is_diarization_available():
+    """Check if diarization functionality is available without importing pyannote.audio directly"""
+    try:
+        # Use importlib.util to avoid actually loading the module
+        import importlib.util
+        import sys
+        
+        # Check if the module is available
+        spec = importlib.util.find_spec("pyannote.audio")
+        if spec is None:
+            return False
+            
+        # Check for HF_TOKEN which is required
+        hf_token = os.environ.get("HF_TOKEN")
+        if not hf_token:
+            return False
+            
+        return True
+    except Exception as e:
+        logging.warning(f"Error checking diarization availability: {str(e)}")
+        return False
+    
+def check_ffmpeg_installation():
+    """Check if ffmpeg is properly installed and working."""
+    try:
+        import subprocess
+        result = subprocess.run(['ffmpeg', '-version'], 
+                               stdout=subprocess.PIPE, 
+                               stderr=subprocess.PIPE,
+                               text=True)
+        if result.returncode == 0:
+            version_str = result.stdout.split('\n')[0]
+            logging.info(f"ffmpeg is installed: {version_str}")
+            return True
+        else:
+            logging.warning("ffmpeg command failed. Output formats may be limited.")
+            return False
+    except FileNotFoundError:
+        logging.warning("ffmpeg not found. Some audio formats may not be supported.")
+        return False
+    except Exception as e:
+        logging.warning(f"Error checking ffmpeg: {str(e)}")
+        return False
 
 def check_developer_mode():
     if platform.system() == 'Windows':
@@ -63,17 +108,17 @@ def check_developer_mode():
             is_admin = ctypes.windll.shell32.IsUserAnAdmin()
             if not is_admin:
                 logging.warning("Python is not running with administrator privileges")
-            
+
             # Check Developer Mode
             try:
                 import winreg
-                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
-                    r"SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock", 
+                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                    r"SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock",
                     0, winreg.KEY_READ)
                 value, _ = winreg.QueryValueEx(key, "AllowDevelopmentWithoutDevMode")
                 if value != 1:
                     logging.warning("Developer Mode is not enabled")
-                    QMessageBox.warning(None, "Developer Mode Not Enabled", 
+                    QMessageBox.warning(None, "Developer Mode Not Enabled",
                         "Please enable Developer Mode in Windows Settings:\n"
                         "1. Open Windows Settings\n"
                         "2. Navigate to Privacy & security > For developers\n"
@@ -81,17 +126,19 @@ def check_developer_mode():
                         "This will improve cache performance.")
             except WindowsError as e:
                 logging.warning(f"Could not check Developer Mode registry: {e}")
-                
+
         except Exception as e:
             logging.warning(f"Could not check Developer Mode status: {e}")
-            
+
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QLineEdit,
-    QFileDialog, QComboBox, QHBoxLayout, QVBoxLayout,
-    QPlainTextEdit, QMessageBox, QProgressBar, QInputDialog
+    QFileDialog, QComboBox, QHBoxLayout, QVBoxLayout, QCheckBox,
+    QPlainTextEdit, QMessageBox, QProgressBar, QInputDialog,
+    QHeaderView, QTableWidget, QTableWidgetItem, QDialogButtonBox,
+    QDialog, QMenuBar, QMenu
 )
-from PyQt6.QtCore import QThread, pyqtSignal
-from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import QThread, pyqtSignal, QSettings, Qt
+from PyQt6.QtGui import QIcon, QAction, QColor
 
 # Set up logging
 #logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -118,21 +165,21 @@ def get_default_device():
 def check_cuda():
     try:
         import torch
-        
+
         # Force CUDA initialization
         if torch.cuda.is_available():
             # Get CUDA device count
             device_count = torch.cuda.device_count()
-            
+
             # Get CUDA device properties
             if device_count > 0:
                 device_name = torch.cuda.get_device_name(0)
                 cuda_version = torch.version.cuda
-                
+
                 logging.info(f"CUDA is available with {device_count} device(s)")
                 logging.info(f"Primary GPU: {device_name}")
                 logging.info(f"CUDA Version: {cuda_version}")
-                
+
                 # Test CUDA by creating a small tensor
                 try:
                     test_tensor = torch.tensor([1.0], device='cuda')
@@ -147,7 +194,7 @@ def check_cuda():
         else:
             logging.warning("CUDA is not available")
             return False
-            
+
     except ImportError as e:
         logging.warning(f"PyTorch import failed: {e}")
         return False
@@ -155,9 +202,177 @@ def check_cuda():
         logging.warning(f"CUDA check failed: {e}")
         return False
 
+def check_dependencies():
+    """Check for required dependencies with safer import handling"""
+    
+    dependencies = {
+        "PyTorch": {
+            "required": True,
+            "installed": False,
+            "version": None,
+            "module": "torch",
+            "message": "PyTorch is essential for audio processing and transcription"
+        },
+        "Transformers": {
+            "required": True,
+            "installed": False,
+            "version": None,
+            "module": "transformers",
+            "message": "Transformers is required for Whisper models"
+        },
+        "PyAnnote Audio": {
+            "required": False,
+            "installed": False,
+            "version": None,
+            "module": "pyannote.audio",
+            "message": "Required for speaker diarization"
+        },
+        "Pydub": {
+            "required": True,
+            "installed": False,
+            "version": None,
+            "module": "pydub",
+            "message": "Required for audio file processing"
+        },
+        "Hugging Face Hub": {
+            "required": False,
+            "installed": False,
+            "version": None,
+            "module": "huggingface_hub",
+            "message": "Required for model downloading"
+        },
+        "NumPy": {
+            "required": True,
+            "installed": False,
+            "version": None,
+            "module": "numpy",
+            "message": "Required for audio processing"
+        }
+    }
+    
+    # Check each dependency with safer approach
+    for name, info in dependencies.items():
+        try:
+            # Use importlib for safer importing
+            import importlib
+            module = importlib.import_module(info["module"])
+            info["installed"] = True
+            
+            # Get version if available
+            if hasattr(module, "__version__"):
+                info["version"] = module.__version__
+            elif hasattr(module, "version"):
+                info["version"] = module.version
+            
+            version_str = f" v{info['version']}" if info["version"] else ""
+            logging.info(f"{name}{version_str} is available")
+            
+            # Special checks for specific modules
+            if name == "PyTorch":
+                # Safer CUDA check that won't crash
+                try:
+                    cuda_available = module.cuda.is_available()
+                    logging.info(f"CUDA available: {cuda_available}")
+                except:
+                    logging.info("Could not check CUDA availability")
+                
+                # Safer MPS check that won't crash
+                try:
+                    if hasattr(module.backends, 'mps'):
+                        mps_available = module.backends.mps.is_available()
+                        logging.info(f"MPS available: {mps_available}")
+                except:
+                    logging.info("Could not check MPS availability")
+                
+        except ImportError:
+            info["installed"] = False
+            if info["required"]:
+                logging.warning(f"{name} not found. {info['message']}")
+            else:
+                logging.info(f"{name} not found. {info['message']} (optional)")
+        except Exception as e:
+            # Instead of allowing the exception to propagate, just mark as not installed
+            # and log the error
+            info["installed"] = False
+            logging.warning(f"Error checking {name}: {str(e)}")
+            if info["required"]:
+                logging.warning(f"{name} might not be usable. {info['message']}")
+            else:
+                logging.info(f"{name} might not be usable. {info['message']} (optional)")
+    
+    # Check for pyannote.audio version specifically while avoiding the full import
+    # which could cause the dependency conflict
+    try:
+        import importlib.metadata
+        pyannote_version = importlib.metadata.version("pyannote.audio")
+        dependencies["PyAnnote Audio"]["installed"] = True
+        dependencies["PyAnnote Audio"]["version"] = pyannote_version
+        logging.info(f"PyAnnote Audio v{pyannote_version} is installed")
+    except:
+        # Already handled in the main loop
+        pass
+    
+    # Check for ffmpeg
+    try:
+        import subprocess
+        result = subprocess.run(['ffmpeg', '-version'], 
+                               stdout=subprocess.PIPE, 
+                               stderr=subprocess.PIPE,
+                               text=True)
+        if result.returncode == 0:
+            version_str = result.stdout.split('\n')[0]
+            logging.info(f"ffmpeg is installed: {version_str}")
+            dependencies["ffmpeg"] = {
+                "required": True,
+                "installed": True,
+                "version": version_str.split(' ')[2],
+                "message": "Required for audio format conversion"
+            }
+        else:
+            logging.warning("ffmpeg command failed. Audio format support may be limited.")
+            dependencies["ffmpeg"] = {
+                "required": True,
+                "installed": False,
+                "message": "Required for audio format conversion"
+            }
+    except FileNotFoundError:
+        logging.warning("ffmpeg not found. Audio format support may be limited.")
+        dependencies["ffmpeg"] = {
+            "required": True,
+            "installed": False,
+            "message": "Required for audio format conversion"
+        }
+    except Exception as e:
+        logging.warning(f"Error checking ffmpeg: {str(e)}")
+        dependencies["ffmpeg"] = {
+            "required": True,
+            "installed": False,
+            "message": "Required for audio format conversion"
+        }
+    
+    # Check for HF_TOKEN in environment
+    hf_token = os.environ.get("HF_TOKEN")
+    if hf_token:
+        logging.info("Hugging Face token found in environment.")
+        dependencies["HF_TOKEN"] = {
+            "required": False,
+            "installed": True,
+            "message": "Required for speaker diarization"
+        }
+    else:
+        logging.info("No Hugging Face token found in environment. You'll need to provide one for speaker diarization.")
+        dependencies["HF_TOKEN"] = {
+            "required": False,
+            "installed": False,
+            "message": "Required for speaker diarization"
+        }
+    
+    # Return the dependency dict for potential UI display
+    return dependencies
+
 def get_default_backend():
     system = platform.system().lower()
-    
+
     if system == 'windows':
         cuda_available = check_cuda()
         if cuda_available:
@@ -235,7 +450,8 @@ class CollapsibleBox(QWidget):
 class TranscriptionThread(QThread):
     progress_signal = pyqtSignal(str, str)  # metrics, transcription
     error_signal = pyqtSignal(str)
-    transcription_replace_signal = pyqtSignal(str)  # For whisper.cpp output files
+    transcription_replace_signal = pyqtSignal(str)  # For whisper.cpp output files and diarization
+    diarization_signal = pyqtSignal(str)  # For diarization status updates
 
     def __init__(self, args):
         super().__init__()
@@ -255,6 +471,176 @@ class TranscriptionThread(QThread):
             return None
 
     def run(self):
+        try:
+            # Check if diarization is enabled
+            if self.args.get('diarization_enabled', False):
+                self._run_diarization()
+            else:
+                self._run_standard_transcription()
+                
+        except Exception as e:
+            error_msg = f"An error occurred: {str(e)}"
+            logging.error(error_msg)
+            self.error_signal.emit(error_msg)
+
+    def _run_diarization(self):
+        """Run transcription with speaker diarization"""
+        try:
+            # Check if diarize_audio module exists
+            try:
+                import importlib.util
+                spec = importlib.util.find_spec("diarize_audio")
+                if spec is None:
+                    raise ImportError("No module named 'diarize_audio'")
+            except ImportError as e:
+                # Module not found, we need to show an error and abort
+                error_msg = f"Failed to import diarize_audio module: {str(e)}"
+                logging.error(error_msg)
+                self.error_signal.emit(error_msg)
+                self.error_signal.emit("Please create diarize_audio.py and diarize_worker.py files as described in the documentation")
+                return
+            
+            # Extract arguments
+            audio_input = self.args['audio_input']
+            hf_token = self.args['hf_token']
+            model_id = self.args['model_id']
+            language = self.args['language']
+            backend = self.args['backend']
+            device_arg = self.args['device_arg']
+            min_speakers = self.args.get('min_speakers')
+            max_speakers = self.args.get('max_speakers')
+            output_format = self.args.get('output_format', 'txt')
+            diarization_model = self.args.get('diarization_model', 'Default')
+            
+            # Convert to valid format for command line
+            min_speakers_arg = f"--min-speakers {min_speakers}" if min_speakers else ""
+            max_speakers_arg = f"--max-speakers {max_speakers}" if max_speakers else ""
+            language_arg = f"--language {language}" if language else ""
+            
+            python_executable = sys.executable
+            
+            # Check if diarize_worker.py exists
+            diarize_worker_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'diarize_worker.py')
+            if not os.path.exists(diarize_worker_path):
+                # Try looking in the current directory
+                diarize_worker_path = 'diarize_worker.py'
+                if not os.path.exists(diarize_worker_path):
+                    self.error_signal.emit("diarize_worker.py not found. Please create this file.")
+                    return
+            
+            # Build the command to run diarize_worker.py
+            cmd = [
+                python_executable,
+                '-u',
+                diarize_worker_path,
+                '--audio-input', audio_input,
+                '--hf-token', hf_token,
+                '--transcribe',
+                '--model-id', model_id,
+                '--backend', backend,
+                '--device', device_arg,
+                '--output-formats', output_format,
+                '--diarization-model', diarization_model
+            ]
+            
+            # Add optional arguments
+            if min_speakers:
+                cmd.extend(['--min-speakers', str(min_speakers)])
+            
+            if max_speakers:
+                cmd.extend(['--max-speakers', str(max_speakers)])
+                
+            if language:
+                cmd.extend(['--language', language])
+            
+            self.progress_signal.emit("Starting speaker diarization...", "")
+            self.progress_signal.emit(f"Using diarization model: {diarization_model}", "")
+            
+            # Run the diarization worker
+            self.process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=1,
+                text=True
+            )
+            
+            # Track output files found in the output
+            output_files = {}
+            diarization_json = None
+            
+            # Read from stderr and emit metrics
+            def read_stderr():
+                for line in iter(self.process.stderr.readline, ''):
+                    if not self._is_running:
+                        break
+                    self.progress_signal.emit(line.strip(), '')  # Emit logs to metrics
+            
+            # Start a separate thread to read stderr
+            stderr_thread = threading.Thread(target=read_stderr, daemon=True)
+            stderr_thread.start()
+            
+            # Process stdout
+            for line in iter(self.process.stdout.readline, ''):
+                if not self._is_running:
+                    break
+                
+                line = line.strip()
+                
+                # Check for output file markers
+                if line.startswith("OUTPUT FILE ("):
+                    # Parse output file path
+                    match = re.match(r"OUTPUT FILE \((.+)\): (.+)", line)
+                    if match:
+                        format_type, file_path = match.groups()
+                        output_files[format_type.lower()] = file_path
+                        self.progress_signal.emit(f"Generated {format_type} transcript: {file_path}", "")
+                
+                elif line.startswith("DIARIZATION JSON:"):
+                    diarization_json = line.split(":", 1)[1].strip()
+                    self.progress_signal.emit(f"Diarization data saved to: {diarization_json}", "")
+                
+                else:
+                    self.progress_signal.emit(line, "")
+            
+            # Wait for process to complete
+            self.process.wait()
+            stderr_thread.join(timeout=1)
+            
+            if self.process.returncode != 0:
+                self.error_signal.emit("Speaker diarization process failed")
+                return
+            
+            # Load and display the transcript if available
+            if output_format.lower() in output_files:
+                file_path = output_files[output_format.lower()]
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        transcript = f.read()
+                        self.transcription_replace_signal.emit(transcript)
+                except Exception as e:
+                    self.error_signal.emit(f"Failed to read transcript file: {str(e)}")
+            
+            # Load and display diarization information
+            if diarization_json:
+                try:
+                    with open(diarization_json, 'r', encoding='utf-8') as f:
+                        diarization_data = json.load(f)
+                        speaker_count = len(set(segment["speaker"] for segment in diarization_data))
+                        segment_count = len(diarization_data)
+                        self.diarization_signal.emit(
+                            f"Diarization successful. Found {speaker_count} speakers in {segment_count} segments."
+                        )
+                except Exception as e:
+                    self.error_signal.emit(f"Failed to read diarization data: {str(e)}")
+            
+        except Exception as e:
+            error_msg = f"Diarization error: {str(e)}"
+            logging.error(error_msg)
+            self.error_signal.emit(error_msg)
+
+    def _run_standard_transcription(self):
+        """Run standard transcription without diarization"""
         try:
             # Extract arguments
             model_id = self.args['model_id']
@@ -338,7 +724,7 @@ class TranscriptionThread(QThread):
                         self.progress_signal.emit(line, '')  # Emit logs to metrics
 
             # Start a separate thread to read stderr
-            stderr_thread = threading.Thread(target=read_stderr, daemon=True) # daemon added
+            stderr_thread = threading.Thread(target=read_stderr, daemon=True)
             stderr_thread.start()
 
             timecode_pattern = re.compile(
@@ -389,7 +775,7 @@ class TranscriptionThread(QThread):
             # Wait for the process to complete
             self.process.stdout.close()
             self.process.wait()
-            stderr_thread.join()
+            stderr_thread.join(timeout=1)
 
             if self.process.returncode != 0:
                 error_msg = "Transcription process failed."
@@ -417,34 +803,294 @@ class TranscriptionThread(QThread):
             self.process.terminate()
             self.process.wait()
 
+class DependenciesDialog(QDialog):
+    """Dialog to display the status of dependencies"""
+    def __init__(self, dependencies, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Susurrus Dependencies")
+        self.setMinimumWidth(500)
+        
+        layout = QVBoxLayout()
+        
+        # Title
+        title = QLabel("<h2>Dependency Status</h2>")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+        
+        # Info text
+        info = QLabel("The following dependencies are required or recommended for Susurrus:")
+        layout.addWidget(info)
+        
+        # Create a table for dependencies
+        table = QTableWidget()
+        table.setColumnCount(3)
+        table.setHorizontalHeaderLabels(["Dependency", "Status", "Details"])
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        
+        # Populate table
+        table.setRowCount(len(dependencies))
+        row = 0
+        
+        for name, info in dependencies.items():
+            # Name
+            name_item = QTableWidgetItem(name)
+            table.setItem(row, 0, name_item)
+            
+            # Status
+            if info["installed"]:
+                status_text = "✓ Installed"
+                if info.get("version"):
+                    status_text += f" (v{info['version']})"
+                status_item = QTableWidgetItem(status_text)
+                status_item.setForeground(QColor("green"))
+            else:
+                if info["required"]:
+                    status_text = "❌ Missing"
+                    status_item = QTableWidgetItem(status_text)
+                    status_item.setForeground(QColor("red"))
+                else:
+                    status_text = "⚠ Optional"
+                    status_item = QTableWidgetItem(status_text)
+                    status_item.setForeground(QColor("orange"))
+            
+            table.setItem(row, 1, status_item)
+            
+            # Details
+            details_item = QTableWidgetItem(info["message"])
+            table.setItem(row, 2, details_item)
+            
+            row += 1
+        
+        layout.addWidget(table)
+        
+        # Add installation instructions for missing dependencies
+        if any(not info["installed"] and info["required"] for info in dependencies.values()):
+            instructions_label = QLabel("<b>Installation Instructions:</b>")
+            layout.addWidget(instructions_label)
+            
+            instructions_text = QLabel(
+                "Missing required dependencies can be installed with pip:<br>"
+                "<code>pip install torch transformers pydub numpy</code><br><br>"
+                "For speaker diarization, also install:<br>"
+                "<code>pip install pyannote.audio huggingface_hub</code><br><br>"
+                "For ffmpeg, visit <a href='https://ffmpeg.org/download.html'>ffmpeg.org/download.html</a>"
+            )
+            instructions_text.setTextFormat(Qt.TextFormat.RichText)
+            instructions_text.setOpenExternalLinks(True)
+            layout.addWidget(instructions_text)
+        
+        # Add close button
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+        
+        self.setLayout(layout)
+
+class DiarizationSettingsBox(CollapsibleBox):
+    """Collapsible box for speaker diarization settings"""
+    
+    def __init__(self, parent=None):
+        super().__init__("Speaker Diarization", parent)
+        layout = QVBoxLayout()
+        
+        # Enable diarization checkbox
+        self.enable_diarization = QCheckBox("Enable Speaker Diarization")
+        self.enable_diarization.setToolTip("Identify different speakers in the audio")
+        layout.addWidget(self.enable_diarization)
+        
+        # Hugging Face token input
+        token_layout = QHBoxLayout()
+        token_layout.addWidget(QLabel("Hugging Face Token:"))
+        self.hf_token = QLineEdit()
+        self.hf_token.setPlaceholderText("Enter your Hugging Face API token")
+        self.hf_token.setToolTip("Required for speaker diarization. Get it from https://huggingface.co/settings/tokens")
+        token_layout.addWidget(self.hf_token)
+        
+        # Token help button
+        self.token_help_button = QPushButton("?")
+        self.token_help_button.setMaximumWidth(30)
+        self.token_help_button.clicked.connect(self.show_token_help)
+        token_layout.addWidget(self.token_help_button)
+        
+        layout.addLayout(token_layout)
+        
+        # Diarization model selection
+        model_layout = QHBoxLayout()
+        model_layout.addWidget(QLabel("Diarization Model:"))
+        self.diarization_model = QComboBox()
+        
+        # Add models - will be populated when DiarizationManager is available
+        self.diarization_model.addItems([
+            "Default",
+            "English",
+            "Chinese",
+            "German", 
+            "Spanish",
+            "Japanese"
+        ])
+        
+        model_layout.addWidget(self.diarization_model)
+        
+        # Model help button
+        self.model_help_button = QPushButton("?")
+        self.model_help_button.setMaximumWidth(30)
+        self.model_help_button.clicked.connect(self.show_model_help)
+        model_layout.addWidget(self.model_help_button)
+        
+        layout.addLayout(model_layout)
+        
+        # Min/Max speakers row
+        speakers_layout = QHBoxLayout()
+        speakers_layout.addWidget(QLabel("Min. Speakers:"))
+        self.min_speakers = QLineEdit()
+        self.min_speakers.setPlaceholderText("Auto")
+        self.min_speakers.setMaximumWidth(60)
+        speakers_layout.addWidget(self.min_speakers)
+        
+        speakers_layout.addWidget(QLabel("Max. Speakers:"))
+        self.max_speakers = QLineEdit()
+        self.max_speakers.setPlaceholderText("Auto")
+        self.max_speakers.setMaximumWidth(60)
+        speakers_layout.addWidget(self.max_speakers)
+        
+        speakers_layout.addStretch()
+        layout.addLayout(speakers_layout)
+        
+        # Add layout to content area
+        self.setContentLayout(layout)
+
+    def show_token_help(self):
+        """Show help dialog for Hugging Face token"""
+        QMessageBox.information(
+            self,
+            "Hugging Face Token Help",
+            "A Hugging Face API token is required for speaker diarization.\n\n"
+            "1. Create a free account at https://huggingface.co\n"
+            "2. Go to https://huggingface.co/settings/tokens\n"
+            "3. Create a new token with 'read' access\n"
+            "4. Copy and paste the token here\n\n"
+            "Note: You need to accept the user agreement for the diarization models at "
+            "https://huggingface.co/pyannote/speaker-diarization"
+        )
+    
+    def show_model_help(self):
+        """Show help dialog for diarization model selection"""
+        QMessageBox.information(
+            self,
+            "Diarization Model Selection",
+            "Choose the appropriate diarization model for your audio:\n\n"
+            "• Default: General purpose diarization model\n"
+            "• English: Optimized for English conversations\n"
+            "• Chinese: Optimized for Mandarin Chinese conversations\n"
+            "• German: Optimized for German conversations\n"
+            "• Spanish: Optimized for Spanish conversations\n"
+            "• Japanese: Optimized for Japanese conversations\n\n"
+            "Language-specific models may provide better results for their respective languages, "
+            "especially for phone calls and naturalistic conversations."
+        )
+    
 
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Susurrus: Whisper Audio Transcription")
+        self.setWindowTitle("Susurrus: Whisper Audio Transcription with Speaker Diarization")
         self.setMinimumSize(800, 600)
         self.setAcceptDrops(True)  # Enable drag and drop
         self.thread = None
         
-        # Check system configuration
-        diagnose_pytorch()
-        check_developer_mode()
-        check_cuda()
+        # Initialize QSettings
+        self.settings = QSettings("Susurrus", "AudioTranscription")
         
+        # Check for token in environment
+        hf_token = os.environ.get("HF_TOKEN", "")
+        if hf_token:
+            self.has_env_token = True
+        else:
+            self.has_env_token = False
+
+        # Check system configuration - use a try-except to prevent crashes
+        try:
+            diagnose_pytorch()
+        except Exception as e:
+            logging.warning(f"Error during PyTorch diagnosis: {str(e)}")
+        
+        try:
+            check_developer_mode()
+        except Exception as e:
+            logging.warning(f"Error checking developer mode: {str(e)}")
+        
+        try:
+            check_cuda()
+        except Exception as e:
+            logging.warning(f"Error checking CUDA: {str(e)}")
+        
+        try:
+            # Use improved dependency checking
+            self.dependencies = check_dependencies()
+        except Exception as e:
+            logging.warning(f"Error checking dependencies: {str(e)}")
+            self.dependencies = {}
+
         self.init_ui()
-    
+
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
         else:
             event.ignore()
 
+    
+
+    def show_diarization_help(self):
+        """Show help dialog for speaker diarization"""
+        QMessageBox.information(
+            self,
+            "Speaker Diarization Help",
+            "<h2>Speaker Diarization in Susurrus</h2>"
+            "<p>Speaker diarization identifies different speakers in your audio recordings "
+            "and creates transcriptions with speaker labels.</p>"
+            "<h3>Requirements</h3>"
+            "<ul>"
+            "<li>A Hugging Face account and API token</li>"
+            "<li>The pyannote.audio library installed</li>"
+            "<li>Acceptance of the model license agreements</li>"
+            "</ul>"
+            "<h3>Tips for best results</h3>"
+            "<ul>"
+            "<li>Use clean audio with minimal background noise</li>"
+            "<li>Choose language-specific models for non-English content</li>"
+            "<li>Set min/max speakers if you know how many speakers to expect</li>"
+            "<li>Recordings where speakers don't talk over each other work better</li>"
+            "</ul>"
+            "<p>Language-specific models are available for English, Chinese, German, Spanish, and Japanese.</p>"
+        )
+
+
+    def show_dependencies_dialog(self):
+        """Show the dependencies check dialog"""
+        try:
+            # Run a fresh check of dependencies to get the latest status
+            dependencies = check_dependencies()
+        except Exception as e:
+            logging.error(f"Error checking dependencies: {str(e)}")
+            QMessageBox.warning(
+                self,
+                "Dependency Check Error",
+                f"There was an error checking dependencies: {str(e)}"
+            )
+            dependencies = self.dependencies  # Use the stored dependencies as fallback
+        
+        dialog = DependenciesDialog(dependencies, self)
+        dialog.exec()
+
     def dropEvent(self, event):
         urls = event.mimeData().urls()
         if urls and urls[0].isLocalFile():
             file_path = urls[0].toLocalFile()
             self.audio_input_path.setText(file_path)
-    
+
     def get_original_model_id(self, model_id):
         # Search the backend_model_map for the original model ID
         for backend_models in self.backend_model_map.values():
@@ -654,6 +1300,120 @@ class MainWindow(QWidget):
         else:
             self.transcribe_button.setEnabled(False)
 
+    def init_thread_connections(self):
+        """Initialize connections for the transcription thread"""
+        self.thread.progress_signal.connect(self.update_outputs)
+        self.thread.error_signal.connect(self.show_error)
+        self.thread.finished.connect(self.on_transcription_finished)
+        self.thread.transcription_replace_signal.connect(self.replace_transcription_output)
+        
+        # Additional connection for diarization status updates
+        if hasattr(self.thread, 'diarization_signal'):
+            self.thread.diarization_signal.connect(self.update_diarization_status)
+
+    def save_diarization_settings(self):
+        """Save diarization settings to QSettings"""
+        enabled = self.diarization_box.enable_diarization.isChecked()
+        model = self.diarization_box.diarization_model.currentText()
+        
+        self.settings.setValue("diarization_enabled", enabled)
+        self.settings.setValue("diarization_model", model)
+        
+        # Optional: save min/max speakers if needed
+        min_speakers = self.diarization_box.min_speakers.text().strip()
+        max_speakers = self.diarization_box.max_speakers.text().strip()
+        
+        if min_speakers:
+            self.settings.setValue("min_speakers", min_speakers)
+        if max_speakers:
+            self.settings.setValue("max_speakers", max_speakers)
+        
+        # Sync settings to disk
+        self.settings.sync()
+
+    def create_menu_bar(self):
+        """Create application menu bar"""
+        menu_bar = QMenuBar(self)
+        self.layout().setMenuBar(menu_bar)
+        
+        # File menu
+        file_menu = menu_bar.addMenu("&File")
+        
+        # Open audio file action
+        open_action = QAction("&Open Audio File...", self)
+        open_action.setShortcut("Ctrl+O")
+        open_action.triggered.connect(self.select_audio_file)
+        file_menu.addAction(open_action)
+        
+        # Save transcript action
+        save_action = QAction("&Save Transcript...", self)
+        save_action.setShortcut("Ctrl+S")
+        save_action.triggered.connect(self.save_transcription)
+        file_menu.addAction(save_action)
+        
+        file_menu.addSeparator()
+        
+        # Exit action
+        exit_action = QAction("E&xit", self)
+        exit_action.setShortcut("Ctrl+Q")
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+        
+        # Tools menu
+        tools_menu = menu_bar.addMenu("&Tools")
+        
+        # Transcribe action
+        transcribe_action = QAction("&Transcribe", self)
+        transcribe_action.setShortcut("F5")
+        transcribe_action.triggered.connect(self.start_transcription)
+        tools_menu.addAction(transcribe_action)
+        
+        # Abort action
+        abort_action = QAction("&Abort Transcription", self)
+        abort_action.setShortcut("Esc")
+        abort_action.triggered.connect(self.abort_transcription)
+        tools_menu.addAction(abort_action)
+        
+        tools_menu.addSeparator()
+        
+        # Check dependencies action
+        dependencies_action = QAction("Check &Dependencies...", self)
+        dependencies_action.triggered.connect(self.show_dependencies_dialog)
+        tools_menu.addAction(dependencies_action)
+        
+        # Help menu
+        help_menu = menu_bar.addMenu("&Help")
+        
+        # About action
+        about_action = QAction("&About Susurrus", self)
+        about_action.triggered.connect(self.show_about_dialog)
+        help_menu.addAction(about_action)
+        
+        # Diarization help action
+        diarization_help_action = QAction("Speaker &Diarization Help", self)
+        diarization_help_action.triggered.connect(self.show_diarization_help)
+        help_menu.addAction(diarization_help_action)
+
+    def show_about_dialog(self):
+        """Show the about dialog"""
+        QMessageBox.about(
+            self,
+            "About Susurrus",
+            "<h1>Susurrus</h1>"
+            "<p>Whisper Audio Transcription with Speaker Diarization</p>"
+            "<p>Version 1.1.0</p>"
+            "<p>A tool for transcribing audio files with speaker identification.</p>"
+            "<p>Supports multiple Whisper backends and language-specific diarization models.</p>"
+            "<p>Features:</p>"
+            "<ul>"
+            "<li>Multiple transcription backends</li>"
+            "<li>Speaker diarization with pyannote.audio</li>"
+            "<li>Support for many audio formats</li>"
+            "<li>Language-specific diarization models</li>"
+            "<li>Multiple output formats</li>"
+            "</ul>"
+        )
+        
     def init_ui(self):
 
         self.backend_model_map = {
@@ -729,6 +1489,10 @@ class MainWindow(QWidget):
         }
 
         main_layout = QVBoxLayout()
+        self.setLayout(main_layout)
+
+        # Create menu bar
+        self.create_menu_bar()
 
         # Title
         title_label = QLabel("<h1 style='color: #FFFFFF;'>Susurrus: Whisper Audio Transcription</h1>")
@@ -788,6 +1552,36 @@ class MainWindow(QWidget):
         self.advanced_options_box = CollapsibleBox("Advanced Options")
         advanced_layout = QVBoxLayout()
 
+        self.diarization_box = DiarizationSettingsBox()
+        main_layout.addWidget(self.diarization_box)
+
+        # Pre-fill Hugging Face token from environment if available
+        if self.has_env_token:
+            self.diarization_box.hf_token.setText("Using HF_TOKEN from environment")
+            self.diarization_box.hf_token.setEnabled(False)
+            env_token_note = QLabel("Token loaded from environment variable")
+            env_token_note.setStyleSheet("color: green; font-style: italic;")
+            env_token_layout = QHBoxLayout()
+            env_token_layout.addWidget(env_token_note)
+            env_token_layout.addStretch()
+            # Add this note to the diarization box's layout
+            self.diarization_box.layout().addLayout(env_token_layout)
+        
+        # Load previous diarization settings from QSettings
+        if self.settings.contains("diarization_enabled"):
+            enabled = self.settings.value("diarization_enabled", type=bool)
+            self.diarization_box.enable_diarization.setChecked(enabled)
+        
+        if self.settings.contains("diarization_model"):
+            model = self.settings.value("diarization_model")
+            index = self.diarization_box.diarization_model.findText(model)
+            if index >= 0:
+                self.diarization_box.diarization_model.setCurrentIndex(index)
+        
+        # Connect diarization settings changes to save function
+        self.diarization_box.enable_diarization.toggled.connect(self.save_diarization_settings)
+        self.diarization_box.diarization_model.currentTextChanged.connect(self.save_diarization_settings)
+
         # Proxy Row
         proxy_row = QHBoxLayout()
         self.proxy_url = QLineEdit()
@@ -814,15 +1608,15 @@ class MainWindow(QWidget):
         # Transcription Backend Selection Row
         backend_row = QHBoxLayout()
         self.backend_selection = QComboBox()
-        
+
 
         # Transcription Backend Selection Row
         backend_row = QHBoxLayout()
         self.backend_selection = QComboBox()
-        
+
         # Get the platform-appropriate default backend
         default_backend = get_default_backend()
-        
+
         available_backends = [
             "faster-batched",
             "faster-sequenced",
@@ -833,11 +1627,11 @@ class MainWindow(QWidget):
             "whisper-jax",
             "insanely-fast-whisper"
         ]
-        
+
         # Add mlx-whisper only on macOS
         if platform.system().lower() == 'darwin':
             available_backends.insert(0, "mlx-whisper")
-            
+
         self.backend_selection.addItems(available_backends)
         backend_row.addWidget(QLabel("Backend:"))
         backend_row.addWidget(self.backend_selection)
@@ -897,7 +1691,7 @@ class MainWindow(QWidget):
         self.output_format_row_widget.setLayout(output_format_row)
         self.output_format_row_widget.setVisible(False)
         advanced_layout.addWidget(self.output_format_row_widget)
-        
+
         advanced_layout.addLayout(model_row)
 
         # Now set the default backend and update models
@@ -1030,7 +1824,13 @@ class MainWindow(QWidget):
             self.proxy_row_widget.setVisible(False)
 
     def select_audio_file(self):
-        file_name, _ = QFileDialog.getOpenFileName(self, "Select Audio File", "", "Audio Files (*.mp3 *.wav *.flac)")
+        """Open file dialog with updated support for more audio formats"""
+        file_name, _ = QFileDialog.getOpenFileName(
+            self, 
+            "Select Audio File", 
+            "", 
+            "Audio Files (*.mp3 *.wav *.flac *.m4a *.aac *.ogg *.opus *.webm *.mp4 *.wma)"
+        )
         if file_name:
             self.audio_input_path.setText(file_name)
 
@@ -1087,6 +1887,78 @@ class MainWindow(QWidget):
         logging.info(f"Backend selected: '{args['backend']}'")
         logging.info(f"Device selected: '{args['device_arg']}'")
         logging.info(f"Model selected: '{args['model_id']}'")
+
+        # Check if diarization is enabled
+        diarization_enabled = self.diarization_box.enable_diarization.isChecked()
+
+        if diarization_enabled:
+            # Check if diarization is available
+            if not is_diarization_available():
+                QMessageBox.critical(
+                    self,
+                    "Diarization Not Available",
+                    "Speaker diarization is not available. Please ensure you have:\n\n"
+                    "1. Installed pyannote.audio\n"
+                    "2. Set a valid Hugging Face token in the HF_TOKEN environment variable\n\n"
+                    "If you still see this message, there may be a version conflict between packages."
+                )
+                self.progress_bar.setVisible(False)
+                self.transcribe_button.setEnabled(True)
+                return
+                
+            # Get diarization parameters
+            hf_token = self.diarization_box.hf_token.text().strip()
+            min_speakers = self.diarization_box.min_speakers.text().strip()
+            max_speakers = self.diarization_box.max_speakers.text().strip()
+            diarization_model = self.diarization_box.diarization_model.currentText()
+            
+            # Validate token
+            if not hf_token:
+                # Try to get token from environment
+                hf_token = os.environ.get("HF_TOKEN", "")
+                
+                if not hf_token:
+                    QMessageBox.critical(
+                        self,
+                        "Missing Token",
+                        "A Hugging Face token is required for speaker diarization.\n\n"
+                        "Please enter your token or disable speaker diarization."
+                    )
+                    self.progress_bar.setVisible(False)
+                    self.transcribe_button.setEnabled(True)
+                    return
+            
+            # Store diarization settings in args
+            args['diarization_enabled'] = True
+            args['hf_token'] = hf_token
+            args['min_speakers'] = min_speakers if min_speakers else None
+            args['max_speakers'] = max_speakers if max_speakers else None
+            args['diarization_model'] = diarization_model
+            
+            # Show a warning for first-time users
+            if not self.settings.value("diarization_warning_shown", False):
+                reply = QMessageBox.information(
+                    self,
+                    "Speaker Diarization Information",
+                    "You are using speaker diarization for the first time.\n\n"
+                    "Important notes:\n"
+                    "• The first run will download the diarization model (approx. 1GB)\n"
+                    "• Processing may take longer than standard transcription\n"
+                    "• For language-specific content, consider using the matching language model\n\n"
+                    "Do you want to continue?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                
+                if reply == QMessageBox.StandardButton.No:
+                    self.progress_bar.setVisible(False)
+                    self.transcribe_button.setEnabled(True)
+                    return
+                    
+                # Don't show this warning again
+                self.settings.setValue("diarization_warning_shown", True)
+                    
+        else:
+            args['diarization_enabled'] = False
 
         # Handle ctranslate2 specific logic
         if args['backend'] == 'ctranslate2':
@@ -1154,6 +2026,10 @@ class MainWindow(QWidget):
         self.thread.finished.connect(self.on_transcription_finished)
         self.thread.transcription_replace_signal.connect(self.replace_transcription_output)  # signal for whisper.cpp output
 
+        # connection for diarization status updates
+        if hasattr(self.thread, 'diarization_signal'):
+            self.thread.diarization_signal.connect(self.update_diarization_status)
+
         self.thread.start()
         self.transcribe_button.setEnabled(False)
         self.progress_bar.setVisible(True)
@@ -1199,6 +2075,10 @@ class MainWindow(QWidget):
             #alternatively:
             self.transcription_text = self.transcription_output.toPlainText() # check!
 
+    def update_diarization_status(self, status_msg):
+        """Update UI with diarization status"""
+        self.metrics_output.appendPlainText(status_msg)
+
     def save_transcription(self):
         if hasattr(self, 'transcription_text'):
             save_path, _ = QFileDialog.getSaveFileName(self, "Save Transcription", "", "Text Files (*.txt)")
@@ -1214,6 +2094,24 @@ class MainWindow(QWidget):
 
 def main():
     app = QApplication(sys.argv)
+    
+    # Check required dependencies for extended audio format support
+    check_ffmpeg_installation()
+    
+    try:
+        from pydub import AudioSegment
+        logging.info("pydub is installed and available.")
+    except ImportError:
+        logging.warning("pydub is not installed. Installing it would improve audio format support.")
+        # Show a warning dialog
+        QMessageBox.warning(
+            None, 
+            "Missing Dependency", 
+            "The pydub library is not installed. This application will have limited audio format support.\n\n"
+            "To enable support for more audio formats, please install pydub:\n"
+            "pip install pydub"
+        )
+    
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
