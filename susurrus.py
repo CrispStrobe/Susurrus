@@ -1,3 +1,4 @@
+# susurrus.py
 import sys
 import os
 import logging
@@ -7,6 +8,10 @@ import shutil
 import platform
 import threading
 import json
+import io
+
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 def safe_create_symlink(src, dst):
     try:
@@ -18,6 +23,220 @@ def safe_create_symlink(src, dst):
         else:
             logging.error(f"Failed to create symlink from {src} to {dst}: {e}")
             raise
+    
+def check_nvidia_installation():
+    """Comprehensive check of NVIDIA and CUDA installation"""
+    import subprocess
+    import os
+    import platform
+    import sys
+    
+    diagnostics = {
+        "nvidia_driver": {
+            "detected": False,
+            "version": None,
+            "details": None
+        },
+        "cuda_toolkit": {
+            "detected": False,
+            "version": None,
+            "path": None
+        },
+        "pytorch": {
+            "cuda_available": False,
+            "version": None,
+            "cuda_version": None
+        },
+        "system": {
+            "os": platform.platform(),
+            "python": sys.version
+        }
+    }
+    
+    # Check NVIDIA driver with nvidia-smi
+    try:
+        result = subprocess.run(["nvidia-smi", "--query-gpu=driver_version,name,memory.total", "--format=csv,noheader"],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode == 0:
+            diagnostics["nvidia_driver"]["detected"] = True
+            parts = result.stdout.strip().split(", ")
+            if len(parts) >= 3:
+                diagnostics["nvidia_driver"]["version"] = parts[0]
+                diagnostics["nvidia_driver"]["details"] = f"{parts[1]} ({parts[2]})"
+            else:
+                diagnostics["nvidia_driver"]["details"] = result.stdout.strip()
+        else:
+            logging.warning("nvidia-smi failed with error: " + result.stderr)
+    except Exception as e:
+        logging.warning(f"Failed to run nvidia-smi: {e}")
+    
+    # Check CUDA Toolkit installation
+    cuda_path = os.environ.get("CUDA_PATH", "")
+    if cuda_path:
+        diagnostics["cuda_toolkit"]["path"] = cuda_path
+        diagnostics["cuda_toolkit"]["detected"] = True
+        
+        # Try to determine CUDA version
+        nvcc_path = os.path.join(cuda_path, "bin", "nvcc.exe" if platform.system() == "Windows" else "nvcc")
+        if os.path.exists(nvcc_path):
+            try:
+                result = subprocess.run([nvcc_path, "--version"], 
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                if result.returncode == 0:
+                    # Extract version from output like "Cuda compilation tools, release 11.8, V11.8.89"
+                    for line in result.stdout.splitlines():
+                        if "release" in line:
+                            parts = line.split("release")
+                            if len(parts) > 1:
+                                version_part = parts[1].split(",")[0].strip()
+                                diagnostics["cuda_toolkit"]["version"] = version_part
+            except Exception as e:
+                logging.warning(f"Failed to run nvcc: {e}")
+    
+    # Check PyTorch CUDA support
+    try:
+        import torch
+        diagnostics["pytorch"]["version"] = torch.__version__
+        
+        if torch.cuda.is_available():
+            diagnostics["pytorch"]["cuda_available"] = True
+            diagnostics["pytorch"]["cuda_version"] = torch.version.cuda
+            
+            # Additional test to verify CUDA is working
+            try:
+                test_tensor = torch.tensor([1.0], device='cuda')
+                test_result = test_tensor * 2
+                if test_result.item() == 2.0:
+                    diagnostics["pytorch"]["cuda_working"] = True
+                else:
+                    diagnostics["pytorch"]["cuda_working"] = False
+            except Exception as e:
+                diagnostics["pytorch"]["cuda_working"] = False
+                diagnostics["pytorch"]["error"] = str(e)
+    except ImportError:
+        logging.warning("PyTorch not installed")
+    except Exception as e:
+        logging.warning(f"Error checking PyTorch: {e}")
+    
+    return diagnostics
+
+def install_dependencies():
+    """Provides an interface to install missing dependencies"""
+    from PyQt6.QtWidgets import QDialog, QVBoxLayout, QPushButton, QLabel, QMessageBox
+    from PyQt6.QtCore import Qt
+    
+    try:
+        class DependencyInstallerDialog(QDialog):
+            def __init__(self, parent=None):
+                super().__init__(parent)
+                self.setWindowTitle("Install Dependencies")
+                self.setMinimumWidth(500)
+                
+                layout = QVBoxLayout()
+                
+                title = QLabel("<h2>Install Missing Dependencies</h2>")
+                title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                layout.addWidget(title)
+                
+                info = QLabel(
+                    "The following dependencies are needed for full functionality:"
+                )
+                layout.addWidget(info)
+                
+                # FFMPEG button
+                ffmpeg_btn = QPushButton("Install FFMPEG")
+                ffmpeg_btn.clicked.connect(self.install_ffmpeg)
+                layout.addWidget(ffmpeg_btn)
+                
+                # PyTorch with CUDA
+                pytorch_btn = QPushButton("Install PyTorch with CUDA support")
+                pytorch_btn.clicked.connect(self.install_pytorch_cuda)
+                layout.addWidget(pytorch_btn)
+                
+                # Pydub button
+                pydub_btn = QPushButton("Install pydub")
+                pydub_btn.clicked.connect(self.install_pydub)
+                layout.addWidget(pydub_btn)
+                
+                # Diarization dependencies button
+                diarize_btn = QPushButton("Install Diarization Dependencies")
+                diarize_btn.clicked.connect(self.install_diarization)
+                layout.addWidget(diarize_btn)
+                
+                # Close button
+                close_btn = QPushButton("Close")
+                close_btn.clicked.connect(self.reject)
+                layout.addWidget(close_btn)
+                
+                self.setLayout(layout)
+                
+            def install_ffmpeg(self):
+                # Open FFMPEG download page
+                import webbrowser
+                webbrowser.open("https://www.gyan.dev/ffmpeg/builds/")
+                
+                QMessageBox.information(self, "FFMPEG Installation Instructions", 
+                    "1. Download the 'essentials' build\n"
+                    "2. Extract the zip file to C:\\ffmpeg\n"
+                    "3. Add C:\\ffmpeg\\bin to your system PATH:\n"
+                    "   - Open Control Panel > System > Advanced System Settings\n"
+                    "   - Click 'Environment Variables'\n"
+                    "   - Edit the 'Path' variable and add C:\\ffmpeg\\bin\n"
+                    "   - Click OK and restart your terminal")
+                
+            def install_pytorch_cuda(self):
+                import subprocess
+                import sys
+                
+                reply = QMessageBox.question(self, "Install PyTorch with CUDA", 
+                    "This will reinstall PyTorch with CUDA support. Continue?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                
+                if reply == QMessageBox.StandardButton.Yes:
+                    try:
+                        # Uninstall current PyTorch
+                        subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "torch", "torchvision", "torchaudio"])
+                        
+                        # Install with CUDA support
+                        subprocess.run([sys.executable, "-m", "pip", "install", "torch", "torchvision", "torchaudio", 
+                                       "--index-url", "https://download.pytorch.org/whl/cu121"])
+                        
+                        QMessageBox.information(self, "Success", 
+                            "PyTorch has been reinstalled with CUDA support.\n"
+                            "Please restart the application.")
+                    except Exception as e:
+                        QMessageBox.critical(self, "Error", f"Installation failed: {str(e)}")
+            
+            def install_pydub(self):
+                import subprocess
+                import sys
+                
+                try:
+                    subprocess.run([sys.executable, "-m", "pip", "install", "pydub"])
+                    QMessageBox.information(self, "Success", "pydub has been installed.")
+                except Exception as e:
+                    QMessageBox.critical(self, "Error", f"Installation failed: {str(e)}")
+            
+            def install_diarization(self):
+                import subprocess
+                import sys
+                
+                try:
+                    subprocess.run([sys.executable, "-m", "pip", "install", 
+                                   "pyannote.audio", "huggingface_hub"])
+                    QMessageBox.information(self, "Success", 
+                        "Diarization dependencies have been installed.\n"
+                        "You will still need to get a Hugging Face token.")
+                except Exception as e:
+                    QMessageBox.critical(self, "Error", f"Installation failed: {str(e)}")
+        
+        # Create and show the dialog
+        dialog = DependencyInstallerDialog()
+        return dialog.exec()
+        
+    except Exception as e:
+        logging.error(f"Error creating dependency installer: {str(e)}")
+        return False
 
 def diagnose_pytorch():
     import sys
@@ -163,38 +382,75 @@ def get_default_device():
     return "CPU"
 
 def check_cuda():
+    """Enhanced CUDA detection with better diagnostics"""
     try:
         import torch
-
-        # Force CUDA initialization
-        if torch.cuda.is_available():
-            # Get CUDA device count
-            device_count = torch.cuda.device_count()
-
-            # Get CUDA device properties
-            if device_count > 0:
-                device_name = torch.cuda.get_device_name(0)
-                cuda_version = torch.version.cuda
-
-                logging.info(f"CUDA is available with {device_count} device(s)")
-                logging.info(f"Primary GPU: {device_name}")
-                logging.info(f"CUDA Version: {cuda_version}")
-
-                # Test CUDA by creating a small tensor
-                try:
-                    test_tensor = torch.tensor([1.0], device='cuda')
-                    logging.info("CUDA test successful - GPU is working")
-                    return True
-                except RuntimeError as e:
-                    logging.error(f"CUDA test failed: {e}")
-                    return False
+        
+        # First check basic CUDA availability
+        cuda_available = torch.cuda.is_available()
+        logging.info(f"torch.cuda.is_available(): {cuda_available}")
+        
+        if not cuda_available:
+            # If CUDA is not available, let's check why
+            logging.warning("CUDA not initially detected. Running diagnostics...")
+            
+            # Check if NVIDIA driver is installed
+            try:
+                import subprocess
+                nvidia_smi = subprocess.run(["nvidia-smi"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                if nvidia_smi.returncode == 0:
+                    logging.info("NVIDIA driver is installed, but PyTorch CUDA is not available.")
+                    logging.info("This likely means PyTorch was installed without CUDA support.")
+                    logging.info("PyTorch version: " + torch.__version__)
+                    logging.info("Please reinstall PyTorch with CUDA support from https://pytorch.org/")
+                    
+                    # Show a message box with instructions
+                    from PyQt6.QtWidgets import QMessageBox
+                    QMessageBox.warning(None, "CUDA Not Available", 
+                        "NVIDIA GPU detected, but PyTorch was installed without CUDA support.\n\n"
+                        "Please reinstall PyTorch with CUDA support:\n"
+                        "pip uninstall torch torchvision torchaudio\n"
+                        "pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121\n\n"
+                        "Then restart this application.")
+                else:
+                    logging.warning("NVIDIA driver not found. nvidia-smi failed.")
+            except Exception as e:
+                logging.warning(f"Could not check NVIDIA driver: {e}")
+            
+            # Check CUDA_PATH environment variable
+            cuda_path = os.environ.get("CUDA_PATH", "")
+            if cuda_path:
+                logging.info(f"CUDA_PATH environment variable is set to: {cuda_path}")
             else:
-                logging.warning("CUDA is available but no GPU devices found")
-                return False
-        else:
-            logging.warning("CUDA is not available")
+                logging.warning("CUDA_PATH environment variable is not set")
+            
             return False
 
+        # If we get here, basic CUDA is available
+        device_count = torch.cuda.device_count()
+        logging.info(f"CUDA device count: {device_count}")
+        
+        if device_count == 0:
+            logging.warning("CUDA is available but no devices found")
+            return False
+        
+        # Get CUDA and driver details
+        cuda_version = torch.version.cuda
+        device_name = torch.cuda.get_device_name(0)
+        
+        logging.info(f"CUDA Version: {cuda_version}")
+        logging.info(f"GPU: {device_name}")
+        
+        # Try a small CUDA operation to verify
+        try:
+            test_tensor = torch.tensor([1.0], device='cuda')
+            test_result = test_tensor * 2
+            logging.info(f"CUDA test successful: {test_result.cpu().item()} (expected: 2.0)")
+            return True
+        except Exception as e:
+            logging.error(f"CUDA operation failed: {e}")
+            return False
+            
     except ImportError as e:
         logging.warning(f"PyTorch import failed: {e}")
         return False
@@ -1010,7 +1266,35 @@ class MainWindow(QWidget):
         else:
             self.has_env_token = False
 
-        # Check system configuration - use a try-except to prevent crashes
+        # Enhanced diagnostics
+        logging.info("Starting system diagnostics...")
+        
+        # Check for FFMPEG
+        ffmpeg_available = check_ffmpeg_installation()
+        if not ffmpeg_available:
+            logging.warning("FFMPEG not found. Audio format support will be limited.")
+            # We'll show a dialog later in the initialization
+        
+        # Run improved CUDA detection
+        cuda_diagnostics = check_nvidia_installation()
+        if cuda_diagnostics['nvidia_driver']['detected']:
+            logging.info(f"NVIDIA GPU detected: {cuda_diagnostics['nvidia_driver']['details']}")
+            logging.info(f"Driver version: {cuda_diagnostics['nvidia_driver']['version']}")
+            
+            if not cuda_diagnostics['pytorch'].get('cuda_available', False):
+                logging.warning("NVIDIA GPU detected but PyTorch CUDA support is not available.")
+                logging.warning("PyTorch was likely installed without CUDA support.")
+                
+                # Store this info for later GUI notification
+                self.pytorch_needs_cuda = True
+            else:
+                logging.info("PyTorch CUDA support is available.")
+                self.pytorch_needs_cuda = False
+        else:
+            logging.info("No NVIDIA GPU detected.")
+            self.pytorch_needs_cuda = False
+        
+        # Run original diagnostics for compatibility
         try:
             diagnose_pytorch()
         except Exception as e:
@@ -1034,6 +1318,31 @@ class MainWindow(QWidget):
             self.dependencies = {}
 
         self.init_ui()
+        
+        # Show notifications about missing dependencies
+        if not ffmpeg_available:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self,
+                "FFMPEG Not Found",
+                "FFMPEG is not installed or not in your PATH. Audio format support will be limited.\n\n"
+                "You can install FFMPEG through the Tools > Install Dependencies menu."
+            )
+        
+        # Show notification about PyTorch CUDA if needed
+        if hasattr(self, 'pytorch_needs_cuda') and self.pytorch_needs_cuda:
+            from PyQt6.QtWidgets import QMessageBox
+            reply = QMessageBox.warning(
+                self,
+                "PyTorch CUDA Support Missing",
+                "An NVIDIA GPU was detected, but PyTorch was installed without CUDA support.\n\n"
+                "This means you won't be able to use GPU acceleration for transcription.\n\n"
+                "Would you like to reinstall PyTorch with CUDA support now?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                self.install_dependencies()
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -1330,7 +1639,378 @@ class MainWindow(QWidget):
         
         # Sync settings to disk
         self.settings.sync()
+    
+    def install_dependencies(self):
+        """Open the dependencies installer dialog"""
+        install_dependencies()
+        
+    def show_cuda_diagnostics(self):
+        """Show a dialog with detailed CUDA diagnostics"""
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QTextBrowser, QPushButton, QDialogButtonBox
+        from PyQt6.QtCore import Qt
+        
+        # Get diagnostics
+        diagnostics = check_nvidia_installation()
+        
+        # Create dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle("CUDA and NVIDIA Diagnostics")
+        dialog.setMinimumSize(600, 400)
+        
+        layout = QVBoxLayout()
+        
+        # Title
+        title = QLabel("<h2>CUDA and NVIDIA Diagnostics</h2>")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+        
+        # Text browser for detailed output
+        text_browser = QTextBrowser()
+        text_browser.setOpenExternalLinks(True)
+        
+        # Format the diagnostics information
+        html_content = "<style>table { width: 100%; border-collapse: collapse; }"
+        html_content += "th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }"
+        html_content += "th { background-color: #f2f2f2; }</style>"
+        
+        # System info
+        html_content += "<h3>System Information</h3>"
+        html_content += "<table><tr><th>Component</th><th>Details</th></tr>"
+        html_content += f"<tr><td>Operating System</td><td>{diagnostics['system']['os']}</td></tr>"
+        html_content += f"<tr><td>Python Version</td><td>{diagnostics['system']['python']}</td></tr>"
+        html_content += "</table><br>"
+        
+        # NVIDIA Driver
+        html_content += "<h3>NVIDIA Driver</h3>"
+        if diagnostics['nvidia_driver']['detected']:
+            html_content += "<table><tr><th>Component</th><th>Details</th></tr>"
+            html_content += f"<tr><td>Driver Detected</td><td>Yes</td></tr>"
+            html_content += f"<tr><td>Driver Version</td><td>{diagnostics['nvidia_driver']['version']}</td></tr>"
+            html_content += f"<tr><td>GPU</td><td>{diagnostics['nvidia_driver']['details']}</td></tr>"
+            html_content += "</table>"
+        else:
+            html_content += "<p>No NVIDIA driver detected. <a href='https://www.nvidia.com/Download/index.aspx'>Download NVIDIA drivers</a></p>"
+        
+        # CUDA Toolkit
+        html_content += "<h3>CUDA Toolkit</h3>"
+        if diagnostics['cuda_toolkit']['detected']:
+            html_content += "<table><tr><th>Component</th><th>Details</th></tr>"
+            html_content += f"<tr><td>CUDA Detected</td><td>Yes</td></tr>"
+            html_content += f"<tr><td>CUDA Version</td><td>{diagnostics['cuda_toolkit']['version'] or 'Unknown'}</td></tr>"
+            html_content += f"<tr><td>CUDA Path</td><td>{diagnostics['cuda_toolkit']['path']}</td></tr>"
+            html_content += "</table>"
+        else:
+            html_content += "<p>No CUDA Toolkit detected. <a href='https://developer.nvidia.com/cuda-downloads'>Download CUDA Toolkit</a></p>"
+        
+        # PyTorch
+        html_content += "<h3>PyTorch</h3>"
+        if 'version' in diagnostics['pytorch'] and diagnostics['pytorch']['version']:
+            html_content += "<table><tr><th>Component</th><th>Details</th></tr>"
+            html_content += f"<tr><td>PyTorch Version</td><td>{diagnostics['pytorch']['version']}</td></tr>"
+            
+            if '+cu' in str(diagnostics['pytorch']['version']):
+                cuda_version_from_pytorch = str(diagnostics['pytorch']['version']).split('+cu')[1]
+                html_content += f"<tr><td>CUDA Support</td><td>Yes (built with CUDA {cuda_version_from_pytorch})</td></tr>"
+            elif '+cpu' in str(diagnostics['pytorch']['version']):
+                html_content += f"<tr><td>CUDA Support</td><td>No (CPU-only build)</td></tr>"
+            
+            html_content += f"<tr><td>torch.cuda.is_available()</td><td>{diagnostics['pytorch']['cuda_available']}</td></tr>"
+            
+            if diagnostics['pytorch']['cuda_available']:
+                html_content += f"<tr><td>PyTorch CUDA Version</td><td>{diagnostics['pytorch']['cuda_version']}</td></tr>"
+                html_content += f"<tr><td>CUDA Working</td><td>{diagnostics['pytorch'].get('cuda_working', 'Not tested')}</td></tr>"
+                
+                if 'error' in diagnostics['pytorch']:
+                    html_content += f"<tr><td>CUDA Error</td><td>{diagnostics['pytorch']['error']}</td></tr>"
+            
+            html_content += "</table>"
+        else:
+            html_content += "<p>PyTorch not installed or not detected.</p>"
+        
+        # Recommendations
+        html_content += "<h3>Recommendations</h3>"
+        
+        if not diagnostics['nvidia_driver']['detected']:
+            html_content += "<p>• Install NVIDIA GPU drivers from the NVIDIA website</p>"
+        
+        if not diagnostics['pytorch']['cuda_available'] and diagnostics['nvidia_driver']['detected']:
+            html_content += "<p>• Reinstall PyTorch with CUDA support:</p>"
+            html_content += "<pre>pip uninstall torch torchvision torchaudio\npip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121</pre>"
+        
+        if 'cuda_working' in diagnostics['pytorch'] and not diagnostics['pytorch']['cuda_working']:
+            html_content += "<p>• Your CUDA setup has issues. Check the error message for details.</p>"
+        
+        text_browser.setHtml(html_content)
+        layout.addWidget(text_browser)
+        
+        # Buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+        
+        dialog.setLayout(layout)
+        dialog.exec()
 
+    def install_youtube_dependencies(self):
+        """Install dependencies needed for YouTube downloading"""
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QProgressBar, QMessageBox
+        from PyQt6.QtCore import Qt, QThread, pyqtSignal
+        import subprocess
+        import sys
+        
+        class DependencyInstallThread(QThread):
+            progress_signal = pyqtSignal(str)
+            finished_signal = pyqtSignal(bool, str)
+            
+            def run(self):
+                try:
+                    # Install yt-dlp
+                    self.progress_signal.emit("Installing yt-dlp...")
+                    result = subprocess.run(
+                        [sys.executable, "-m", "pip", "install", "-U", "yt-dlp"],
+                        capture_output=True, text=True
+                    )
+                    if result.returncode != 0:
+                        self.progress_signal.emit(f"Error installing yt-dlp: {result.stderr}")
+                    else:
+                        self.progress_signal.emit("yt-dlp installed successfully")
+                    
+                    # Install pytube
+                    self.progress_signal.emit("Installing pytube...")
+                    result = subprocess.run(
+                        [sys.executable, "-m", "pip", "install", "-U", "pytube"],
+                        capture_output=True, text=True
+                    )
+                    if result.returncode != 0:
+                        self.progress_signal.emit(f"Error installing pytube: {result.stderr}")
+                    else:
+                        self.progress_signal.emit("pytube installed successfully")
+                    
+                    # Install pydub
+                    self.progress_signal.emit("Installing pydub...")
+                    result = subprocess.run(
+                        [sys.executable, "-m", "pip", "install", "pydub"],
+                        capture_output=True, text=True
+                    )
+                    if result.returncode != 0:
+                        self.progress_signal.emit(f"Error installing pydub: {result.stderr}")
+                    else:
+                        self.progress_signal.emit("pydub installed successfully")
+                    
+                    # Copy dl_yt_mp3.py if needed
+                    import os
+                    script_dir = os.path.dirname(os.path.abspath(__file__))
+                    dl_yt_script = os.path.join(script_dir, 'dl_yt_mp3.py')
+                    
+                    if not os.path.exists(dl_yt_script):
+                        self.progress_signal.emit("Copying dl_yt_mp3.py script...")
+                        try:
+                            script_content = """# dl_yt_mp3.py
+    import sys
+    import os
+    import re
+    import argparse
+    import subprocess
+    from typing import Optional
+
+    def sanitize_filename(filename: str) -> str:
+        sanitized = re.sub(r'[<>:"/\\|?*\\u0000-\\u001F\\u007F-\\u009F]', '_', filename)
+        sanitized = sanitized.strip('. ')
+        return sanitized
+
+    def download_audio_with_yt_dlp(url: str) -> Optional[str]:
+        try:
+            import yt_dlp
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }],
+                'outtmpl': '%(title)s.%(ext)s',
+                'restrictfilenames': True,
+                'quiet': False,
+                'no_warnings': False,
+                'geo_bypass': True,
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0'
+                }
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                title = sanitize_filename(info['title'])
+                output_file = f"{title}.mp3"
+                return output_file
+        except Exception as e:
+            print(f"yt-dlp audio attempt failed: {str(e)}")
+            return None
+
+    def download_audio_with_pytube(url: str) -> Optional[str]:
+        try:
+            from pytube import YouTube
+            from pydub import AudioSegment
+            yt = YouTube(url)
+            audio_stream = yt.streams.filter(only_audio=True).order_by('abr').desc().first()
+            output_filename = sanitize_filename(yt.title)
+            temp_file = audio_stream.download(filename=output_filename)
+            output_file = os.path.splitext(temp_file)[0] + '.mp3'
+            audio = AudioSegment.from_file(temp_file)
+            audio.export(output_file, format='mp3')
+            os.remove(temp_file)
+            return output_file
+        except Exception as e:
+            print(f"PyTube audio attempt failed: {str(e)}")
+            return None
+
+    def download_audio_with_youtube_dl(url: str) -> Optional[str]:
+        try:
+            import youtube_dl
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }],
+                'restrictfilenames': True,
+                'quiet': False,
+                'no_warnings': False,
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0'
+                }
+            }
+            with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                title = sanitize_filename(info['title'])
+                output_file = f"{title}.mp3"
+                return output_file
+        except Exception as e:
+            print(f"youtube-dl audio attempt failed: {str(e)}")
+            return None
+
+    def main():
+        parser = argparse.ArgumentParser(description='Download YouTube content')
+        parser.add_argument('url', help='YouTube video URL')
+        parser.add_argument('--output', '-o', help='Output filename (without extension)')
+        parser.add_argument('--type', '-t', choices=['audio', 'video', 'noaudio', 'transcription'],
+                            default='audio', help='Type of download (default: audio)')
+        args = parser.parse_args()
+
+        # Original handling for other types
+        methods = [
+            ('yt-dlp', download_audio_with_yt_dlp),
+            ('PyTube', download_audio_with_pytube),
+            ('youtube-dl', download_audio_with_youtube_dl)
+        ]
+
+        for method_name, method in methods:
+            print(f"\\nAttempting {args.type} download with {method_name}...")
+            result = method(args.url)
+            if result:
+                if args.output:
+                    new_filename = f"{sanitize_filename(args.output)}{os.path.splitext(result)[1]}"
+                    try:
+                        os.rename(result, new_filename)
+                        result = new_filename
+                    except OSError as e:
+                        print(f"Warning: Could not rename file: {e}")
+                print(f"\\nSuccess! File saved as: {result}")
+                return
+
+        print("\\nAll download methods failed. Please check the URL and your internet connection.")
+
+    if __name__ == "__main__":
+        if len(sys.argv) < 2:
+            print("Usage: python dl_yt_mp3.py <youtube_url> [--output filename] [--type audio]")
+            sys.exit(1)
+        main()
+    """
+                            with open(dl_yt_script, 'w') as f:
+                                f.write(script_content)
+                            self.progress_signal.emit("dl_yt_mp3.py script created")
+                        except Exception as e:
+                            self.progress_signal.emit(f"Error creating dl_yt_mp3.py script: {str(e)}")
+                    
+                    # Check ffmpeg
+                    self.progress_signal.emit("Checking for ffmpeg...")
+                    result = subprocess.run(
+                        ["ffmpeg", "-version"],
+                        capture_output=True, text=True
+                    )
+                    if result.returncode != 0:
+                        self.progress_signal.emit("ffmpeg not found. You need to install ffmpeg for audio conversion to work correctly.")
+                        self.finished_signal.emit(False, "Dependencies installed but ffmpeg is missing")
+                    else:
+                        self.progress_signal.emit("ffmpeg found")
+                        self.finished_signal.emit(True, "All dependencies installed successfully")
+                    
+                except Exception as e:
+                    self.progress_signal.emit(f"Error: {str(e)}")
+                    self.finished_signal.emit(False, str(e))
+        
+        # Create installation dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Installing YouTube Downloader Dependencies")
+        dialog.setMinimumWidth(500)
+        
+        layout = QVBoxLayout()
+        
+        # Information label
+        info_label = QLabel(
+            "Installing dependencies required for YouTube downloading:\n"
+            "• yt-dlp\n"
+            "• pytube\n"
+            "• pydub\n\n"
+            "This may take a few moments."
+        )
+        layout.addWidget(info_label)
+        
+        # Progress bar
+        progress_bar = QProgressBar()
+        progress_bar.setMinimum(0)
+        progress_bar.setMaximum(0)  # Indeterminate
+        layout.addWidget(progress_bar)
+        
+        # Status label
+        status_label = QLabel("Preparing...")
+        layout.addWidget(status_label)
+        
+        # Cancel button
+        cancel_button = QPushButton("Cancel")
+        cancel_button.clicked.connect(dialog.reject)
+        layout.addWidget(cancel_button)
+        
+        dialog.setLayout(layout)
+        
+        # Create and start installation thread
+        install_thread = DependencyInstallThread()
+        
+        def update_status(message):
+            status_label.setText(message)
+        
+        def on_finished(success, message):
+            progress_bar.setMaximum(100)
+            progress_bar.setValue(100)
+            cancel_button.setText("Close")
+            
+            if success:
+                status_label.setText("Installation completed successfully!")
+                QMessageBox.information(dialog, "Success", 
+                    "YouTube downloader dependencies have been installed successfully.\n"
+                    "You can now download audio from YouTube URLs.")
+            else:
+                status_label.setText(f"Installation completed with issues: {message}")
+                QMessageBox.warning(dialog, "Warning", 
+                    f"Installation completed with some issues: {message}\n"
+                    "YouTube downloading may not work correctly.")
+        
+        install_thread.progress_signal.connect(update_status)
+        install_thread.finished_signal.connect(on_finished)
+        install_thread.start()
+        
+        dialog.exec()
+    
     def create_menu_bar(self):
         """Create application menu bar"""
         menu_bar = QMenuBar(self)
@@ -1381,6 +2061,21 @@ class MainWindow(QWidget):
         dependencies_action.triggered.connect(self.show_dependencies_dialog)
         tools_menu.addAction(dependencies_action)
         
+        # Install dependencies action
+        install_action = QAction("&Install Dependencies...", self)
+        install_action.triggered.connect(self.install_dependencies)
+        tools_menu.addAction(install_action)
+        
+        # CUDA diagnostics action
+        cuda_diagnostics_action = QAction("CUDA &Diagnostics...", self)
+        cuda_diagnostics_action.triggered.connect(self.show_cuda_diagnostics)
+        tools_menu.addAction(cuda_diagnostics_action)
+        
+        # Add after the CUDA diagnostics action in create_menu_bar
+        youtube_deps_action = QAction("Install &YouTube Dependencies...", self)
+        youtube_deps_action.triggered.connect(self.install_youtube_dependencies)
+        tools_menu.addAction(youtube_deps_action)
+        
         # Help menu
         help_menu = menu_bar.addMenu("&Help")
         
@@ -1393,6 +2088,34 @@ class MainWindow(QWidget):
         diarization_help_action = QAction("Speaker &Diarization Help", self)
         diarization_help_action.triggered.connect(self.show_diarization_help)
         help_menu.addAction(diarization_help_action)
+        
+    def check_for_updates(self):
+        """Check for updates to the application"""
+        from PyQt6.QtWidgets import QMessageBox
+        import webbrowser
+        
+        try:
+            import requests
+            response = requests.get("https://api.github.com/repos/CrispStrobe/Susurrus/releases/latest", timeout=5)
+            if response.status_code == 200:
+                latest_version = response.json().get("tag_name", "").strip("v")
+                current_version = "1.1.0"  # Update this with your version
+                
+                if latest_version and latest_version > current_version:
+                    reply = QMessageBox.question(
+                        self,
+                        "Update Available",
+                        f"A new version ({latest_version}) is available. You have version {current_version}.\n\n"
+                        "Would you like to visit the download page?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                    )
+                    
+                    if reply == QMessageBox.StandardButton.Yes:
+                        webbrowser.open("https://github.com/CrispStrobe/susurrus/releases/latest")
+            else:
+                logging.warning(f"Failed to check for updates: HTTP {response.status_code}")
+        except Exception as e:
+            logging.warning(f"Failed to check for updates: {e}")
 
     def show_about_dialog(self):
         """Show the about dialog"""
@@ -1890,6 +2613,48 @@ class MainWindow(QWidget):
 
         # Check if diarization is enabled
         diarization_enabled = self.diarization_box.enable_diarization.isChecked()
+        
+        # handle youtube download
+        if args['audio_url'] and ('youtube.com' in args['audio_url'] or 'youtu.be' in args['audio_url']):
+            # Check if yt-dlp is installed
+            try:
+                import yt_dlp
+            except ImportError:
+                try:
+                    import pytube
+                except ImportError:
+                    # Neither yt-dlp nor pytube is installed
+                    reply = QMessageBox.question(
+                        self,
+                        "YouTube Dependencies Required",
+                        "YouTube URL detected but required dependencies are not installed.\n\n"
+                        "Would you like to install the YouTube downloader dependencies now?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                    )
+                    
+                    if reply == QMessageBox.StandardButton.Yes:
+                        self.install_youtube_dependencies()
+                        QMessageBox.information(
+                            self,
+                            "Installation Complete",
+                            "Dependencies installed. Please try transcription again."
+                        )
+                        # Return early - user will need to try again after installation
+                        self.transcribe_button.setEnabled(True)
+                        self.progress_bar.setVisible(False)
+                        self.abort_button.setEnabled(False)
+                        return
+                    else:
+                        self.transcribe_button.setEnabled(True)
+                        self.progress_bar.setVisible(False)
+                        self.abort_button.setEnabled(False)
+                        QMessageBox.warning(
+                            self,
+                            "Transcription Cancelled",
+                            "YouTube URL requires additional dependencies.\n"
+                            "Please install them before continuing."
+                        )
+                        return
 
         if diarization_enabled:
             # Check if diarization is available
@@ -2084,8 +2849,10 @@ class MainWindow(QWidget):
             save_path, _ = QFileDialog.getSaveFileName(self, "Save Transcription", "", "Text Files (*.txt)")
             if save_path:
                 try:
-                    with open(save_path, 'w', encoding='utf-8') as dst:
-                        dst.write(self.transcription_text)
+                    # Ensure text is in proper encoding before saving
+                    text_to_save = self.transcription_text
+                    with open(save_path, 'w', encoding='utf-8', errors='replace') as dst:
+                        dst.write(text_to_save)
                     QMessageBox.information(self, "Success", f"Transcription saved to: {save_path}")
                 except Exception as e:
                     QMessageBox.critical(self, "Error", f"Failed to save transcription: {str(e)}")

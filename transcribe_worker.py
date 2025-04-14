@@ -13,6 +13,10 @@ import tempfile
 import shutil
 from pathlib import Path
 import re
+import sys
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 # Set up logging
 logging.basicConfig(
@@ -120,9 +124,12 @@ def get_original_model_id(model_id):
     return f"{base}{lang}"
 
 def download_with_yt_dlp(url, proxies=None):
-    """Download audio using yt-dlp with proper error handling."""
+    """Enhanced version of download_with_yt_dlp with better error handling and options."""
     logging.info("Downloading using yt-dlp...")
     import tempfile
+    import sys
+    import os
+    
     try:
         import yt_dlp
     except ImportError:
@@ -131,52 +138,85 @@ def download_with_yt_dlp(url, proxies=None):
 
     try:
         # Create a temporary directory
-        temp_dir = tempfile.mkdtemp()
-        output_template = os.path.join(temp_dir, '%(id)s.%(ext)s')
+        temp_dir = tempfile.mkdtemp(prefix="susurrus_ytdlp_")
+        output_template = os.path.join(temp_dir, '%(title)s.%(ext)s')
+        
         ydl_opts = {
             'format': 'bestaudio/best',
             'outtmpl': output_template,
             'noplaylist': True,
+            'geo_bypass': True,
+            'geo_bypass_country': 'US',
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'wav',  # Use WAV for better compatibility
+                'preferredcodec': 'mp3',  # Use MP3 for better compatibility
                 'preferredquality': '192',
             }],
-            'quiet': True,
-            'no_warnings': True,
+            'quiet': False,
+            'no_warnings': False,
             'logger': MyLogger(),
             'progress_hooks': [my_hook],
+            'ffmpeg_location': shutil.which('ffmpeg'),  # Find ffmpeg in PATH
         }
+        
         if proxies and proxies.get('http'):
             ydl_opts['proxy'] = proxies['http']
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            logging.info(f"Downloading {url}...")
             info = ydl.extract_info(url, download=True)
+            if not info:
+                logging.error("No metadata extracted for the URL")
+                return None
+                
             if 'entries' in info:
                 info = info['entries'][0]
-            output_file = ydl.prepare_filename(info)
-            output_file = os.path.splitext(output_file)[0] + '.wav'
+                
+            # Determine the output filename
+            output_base = ydl.prepare_filename(info)
+            output_file = os.path.splitext(output_base)[0] + '.mp3'
+            
             if os.path.exists(output_file):
                 logging.info(f"Downloaded audio: {output_file}")
                 return output_file
-            else:
-                raise Exception("yt-dlp did not produce an output file.")
+                
+            # If the MP3 file is not found, search the directory
+            mp3_files = [os.path.join(temp_dir, f) for f in os.listdir(temp_dir) if f.endswith('.mp3')]
+            if mp3_files:
+                logging.info(f"Found MP3 file: {mp3_files[0]}")
+                return mp3_files[0]
+                
+            # If still not found, look for any audio file
+            audio_extensions = ['.mp3', '.m4a', '.wav', '.flac', '.opus', '.ogg']
+            for root, _, files in os.walk(temp_dir):
+                for file in files:
+                    if any(file.endswith(ext) for ext in audio_extensions):
+                        audio_file = os.path.join(root, file)
+                        logging.info(f"Found audio file: {audio_file}")
+                        return audio_file
+                        
+            raise Exception("yt-dlp did not produce an output file.")
 
     except Exception as e:
         logging.error(f"yt_dlp download failed: {str(e)}")
+        # Check if yt-dlp needs updating
+        if "This video is unavailable" in str(e) or "HTTP Error 410" in str(e):
+            logging.error("YouTube may have changed their API. Try updating yt-dlp: pip install -U yt-dlp")
         # Clean up temp directory if something goes wrong
         if 'temp_dir' in locals():
             try:
-                import shutil
                 shutil.rmtree(temp_dir)
             except Exception:
                 pass
         return None
 
 def download_with_pytube(url, proxies=None):
-    """Download audio using pytube as a fallback option."""
+    """Enhanced version of download_with_pytube with better error handling and options."""
     logging.info("Downloading using pytube...")
     import tempfile
+    import sys
+    import os
+    
     try:
         from pytube import YouTube
     except ImportError:
@@ -185,42 +225,93 @@ def download_with_pytube(url, proxies=None):
 
     temp_dir = None
     try:
-        yt = YouTube(url)
+        # Use cipher bypass to handle common pytube errors
+        yt = YouTube(url, use_oauth=False, allow_oauth_cache=False)
+        
+        # Set proxy if needed
         if proxies and proxies.get('http'):
             yt.proxies = proxies
         
-        audio_stream = yt.streams.filter(only_audio=True).first()
+        logging.info(f"Video title: {yt.title}")
+        logging.info(f"Available audio streams: {len(yt.streams.filter(only_audio=True))}")
+        
+        # Try to get highest bitrate audio stream
+        audio_stream = yt.streams.filter(only_audio=True).order_by('abr').desc().first()
+        
         if audio_stream is None:
-            raise Exception("No audio streams available.")
+            # Try progressive streams as fallback
+            audio_stream = yt.streams.filter(progressive=True).order_by('resolution').desc().first()
+            logging.info("No audio streams found, using progressive video stream")
+            
+        if audio_stream is None:
+            raise Exception("No suitable streams available.")
         
-        temp_dir = tempfile.mkdtemp()
+        # Create temp directory
+        temp_dir = tempfile.mkdtemp(prefix="susurrus_pytube_")
+        
+        logging.info(f"Downloading stream: {audio_stream}")
         out_file = audio_stream.download(output_path=temp_dir)
-        base, ext = os.path.splitext(out_file)
-        new_file = base + '.wav'
         
-        # Convert to WAV using ffmpeg
+        # Get file extension to handle conversion appropriately
+        base, ext = os.path.splitext(out_file)
+        new_file = base + '.mp3'
+        
+        # Convert to MP3 using ffmpeg if available
         try:
-            subprocess.run([
-                'ffmpeg', '-i', out_file, '-acodec', 'pcm_s16le', 
-                '-ar', '44100', '-ac', '2', '-y', new_file
-            ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            os.remove(out_file)  # Remove original file
-        except (subprocess.SubprocessError, FileNotFoundError):
-            # If ffmpeg fails or isn't available, just rename
-            os.rename(out_file, new_file)
+            # Check if ffmpeg is available
+            ffmpeg_path = shutil.which('ffmpeg')
+            if ffmpeg_path:
+                logging.info(f"Converting to MP3 using ffmpeg at {ffmpeg_path}")
+                subprocess.run([
+                    ffmpeg_path, 
+                    '-i', out_file, 
+                    '-vn',  # No video
+                    '-acodec', 'libmp3lame', 
+                    '-ab', '192k',
+                    '-ar', '44100', 
+                    '-y',   # Overwrite output
+                    new_file
+                ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                
+                # Remove original file
+                if os.path.exists(new_file) and os.path.getsize(new_file) > 0:
+                    os.remove(out_file)
+                else:
+                    # If conversion failed, use original file
+                    new_file = out_file
+            else:
+                # No ffmpeg, just rename the file
+                logging.info("ffmpeg not found, using original download")
+                os.rename(out_file, new_file)
+                
+        except (subprocess.SubprocessError, FileNotFoundError) as e:
+            logging.warning(f"Error converting with ffmpeg: {e}. Using original file.")
+            # If ffmpeg fails, just rename
+            if os.path.exists(out_file):
+                if not os.path.exists(new_file):
+                    os.rename(out_file, new_file)
+                else:
+                    new_file = out_file
         
         if os.path.exists(new_file) and os.path.getsize(new_file) > 0:
-            logging.info(f"Downloaded and converted audio to: {new_file}")
+            logging.info(f"Downloaded and processed audio: {new_file}")
             return new_file
         else:
             raise Exception("Failed to produce a valid output file")
 
     except Exception as e:
-        logging.error(f"pytube download failed: {str(e)}")
+        error_msg = str(e)
+        logging.error(f"pytube download failed: {error_msg}")
+        
+        # Special handling for common pytube errors
+        if "decryption" in error_msg.lower() or "cipher" in error_msg.lower():
+            logging.error("YouTube cipher issue. Try updating pytube: pip install -U pytube")
+        elif "video is unavailable" in error_msg.lower():
+            logging.error("Video is unavailable or restricted. Try with a VPN or different URL.")
+        
         # Clean up temp directory if something goes wrong
         if temp_dir and os.path.exists(temp_dir):
             try:
-                import shutil
                 shutil.rmtree(temp_dir)
             except Exception:
                 pass
@@ -297,10 +388,16 @@ def download_with_ffmpeg(url, proxies=None, ffmpeg_path='ffmpeg'):
 
 def download_audio(url, proxies=None, ffmpeg_path='ffmpeg'):
     """
-    Download audio from URL using multiple fallback methods.
-    Returns the path to the downloaded file or None on failure.
+    Enhanced download_audio function with improved YouTube handling.
+    This is a direct replacement for the existing download_audio function.
     """
     from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+    import os
+    import sys
+    import logging
+    import tempfile
+    import shutil
+    import subprocess
 
     # Clean up the URL and remove any playlist parameters
     parsed_url = urlparse(url)
@@ -317,19 +414,70 @@ def download_audio(url, proxies=None, ffmpeg_path='ffmpeg'):
     # Determine if it's a YouTube URL
     is_youtube = any(domain in parsed_url.netloc for domain in ['youtube.com', 'youtu.be'])
 
+    # For YouTube URLs, first try using the dl_yt_mp3.py script if available
+    if is_youtube:
+        try:
+            logging.info("Checking for dl_yt_mp3.py...")
+            script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dl_yt_mp3.py')
+            
+            if os.path.exists(script_path):
+                logging.info(f"Found dl_yt_mp3.py at {script_path}, using it for YouTube download")
+                
+                # Create a temporary directory for the download
+                temp_dir = tempfile.mkdtemp(prefix="susurrus_yt_")
+                current_dir = os.getcwd()
+                
+                try:
+                    # Change to temp directory so the script saves files there
+                    os.chdir(temp_dir)
+                    
+                    # Run the script
+                    cmd = [sys.executable, script_path, url, '--type', 'audio']
+                    logging.info(f"Running command: {' '.join(cmd)}")
+                    
+                    proc = subprocess.run(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        timeout=300  # 5 minute timeout
+                    )
+                    
+                    logging.info(f"Process output: {proc.stdout}")
+                    if proc.returncode != 0:
+                        logging.warning(f"dl_yt_mp3.py returned non-zero: {proc.stderr}")
+                    
+                    # Find the downloaded mp3 file
+                    mp3_files = [f for f in os.listdir(temp_dir) if f.endswith('.mp3')]
+                    if mp3_files:
+                        mp3_path = os.path.join(temp_dir, mp3_files[0])
+                        logging.info(f"Downloaded MP3: {mp3_path}")
+                        return mp3_path
+                    else:
+                        logging.warning("No MP3 file found after running dl_yt_mp3.py")
+                finally:
+                    # Change back to original directory
+                    os.chdir(current_dir)
+        except Exception as e:
+            logging.warning(f"Error using dl_yt_mp3.py: {e}. Falling back to standard methods.")
+
     # Define download methods based on URL type
     if is_youtube:
         download_methods = [
             download_with_yt_dlp,
-            download_with_pytube
+            download_with_pytube,
+            lambda u, p: download_with_ffmpeg(u, p, ffmpeg_path)
         ]
     else:
         download_methods = [
             lambda u, p: download_with_ffmpeg(u, p, ffmpeg_path)
         ]
 
-    # Try each download method in sequence
+    # Try each download method in sequence with improved error handling
     for download_method in download_methods:
+        method_name = download_method.__name__ if hasattr(download_method, "__name__") else "download_method"
+        logging.info(f"Trying {method_name}...")
+        
         try:
             audio_file = download_method(url, proxies)
             
@@ -342,7 +490,7 @@ def download_audio(url, proxies=None, ffmpeg_path='ffmpeg'):
                             # Read first few bytes to verify it's readable
                             f.read(1024)
                         
-                        logging.info(f"Successfully downloaded audio using {download_method.__name__}")
+                        logging.info(f"Successfully downloaded audio using {method_name}")
                         return audio_file
                     except Exception as e:
                         logging.error(f"Downloaded file is corrupted: {str(e)}")
@@ -358,8 +506,50 @@ def download_audio(url, proxies=None, ffmpeg_path='ffmpeg'):
                         pass
             
         except Exception as e:
-            logging.error(f"{download_method.__name__} failed: {str(e)}")
+            logging.error(f"{method_name} failed: {str(e)}")
             continue
+
+    # Specially improved yt-dlp handling with direct command line call
+    if is_youtube:
+        try:
+            logging.info("Trying direct yt-dlp command line...")
+            
+            # Create temporary directory and file for output
+            temp_dir = tempfile.mkdtemp(prefix="susurrus_ytdl_")
+            output_template = os.path.join(temp_dir, '%(title)s.%(ext)s')
+            
+            # Build yt-dlp command
+            cmd = [
+                "yt-dlp",
+                "-x",  # Extract audio
+                "--audio-format", "mp3",
+                "-o", output_template,
+                url
+            ]
+            
+            # Add proxy if needed
+            if proxies and proxies.get('http'):
+                cmd.extend(["--proxy", proxies['http']])
+            
+            logging.info(f"Running command: {' '.join(cmd)}")
+            
+            proc = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            if proc.returncode == 0:
+                # Find the output file
+                mp3_files = [os.path.join(temp_dir, f) for f in os.listdir(temp_dir) if f.endswith('.mp3')]
+                if mp3_files:
+                    logging.info(f"Downloaded MP3: {mp3_files[0]}")
+                    return mp3_files[0]
+            else:
+                logging.error(f"yt-dlp command failed: {proc.stderr}")
+        except Exception as e:
+            logging.error(f"Direct yt-dlp command failed: {str(e)}")
 
     logging.error("All download methods failed")
     return None
@@ -844,7 +1034,8 @@ def main():
             except ImportError:
                 raise ImportError("faster_whisper package is required for faster-batched backend")
 
-            compute_type = quantization if quantization else 'float16' if device == 'cuda' else 'int8'
+            # compute_type = quantization if quantization else 'float16' if device == 'cuda' else 'int8'
+            compute_type = quantization if quantization else 'int8'
 
             logging.info(f"Loading model {model_id} with compute_type={compute_type}")
             model = WhisperModel(model_id, device=device, compute_type=compute_type)
@@ -853,7 +1044,7 @@ def main():
             logging.info("Starting batched transcription")
             segments, info = pipeline.transcribe(
                 audio_input, 
-                batch_size=16,  # Reasonable default batch size
+                batch_size=4,  # Reasonable default batch size
                 language=language,
                 word_timestamps=word_timestamps,
                 vad_filter=True,  # Filter out non-speech
@@ -866,15 +1057,26 @@ def main():
                 text = segment.text.strip()
                 start = segment.start
                 end = segment.end
-                print(f'[{start:.3f} --> {end:.3f}] {text}', flush=True)
                 
-                # Print word timestamps if requested
-                if word_timestamps and segment.words:
-                    for word in segment.words:
-                        word_text = word.word.strip()
-                        word_start = word.start
-                        word_end = word.end
-                        print(f'  [{word_start:.3f} --> {word_end:.3f}] {word_text}', flush=True)
+                # Ensure proper UTF-8 encoding for output
+                try:
+                    # Encode and decode to ensure proper UTF-8 handling
+                    text = text.encode('utf-8', errors='replace').decode('utf-8')
+                    print(f'[{start:.3f} --> {end:.3f}] {text}', flush=True)
+                    
+                    # Print word timestamps if requested
+                    if word_timestamps and segment.words:
+                        for word in segment.words:
+                            word_text = word.word.strip()
+                            # Encode and decode for proper UTF-8
+                            word_text = word_text.encode('utf-8', errors='replace').decode('utf-8')
+                            word_start = word.start
+                            word_end = word.end
+                            print(f'  [{word_start:.3f} --> {word_end:.3f}] {word_text}', flush=True)
+                except Exception as e:
+                    logging.error(f"Error printing segment text: {e}")
+                    # Fallback to printing without encoding conversion
+                    print(f'[{start:.3f} --> {end:.3f}] [Encoding issue with text]', flush=True)
         
         elif backend == 'faster-sequenced':
             try:
@@ -912,15 +1114,23 @@ def main():
                 text = segment.text.strip()
                 start = segment.start
                 end = segment.end
-                print(f'[{start:.3f} --> {end:.3f}] {text}', flush=True)
                 
-                # Print word timestamps if requested
-                if word_timestamps and segment.words:
-                    for word in segment.words:
-                        word_text = word.word.strip()
-                        word_start = word.start
-                        word_end = word.end
-                        print(f'  [{word_start:.3f} --> {word_end:.3f}] {word_text}', flush=True)
+                # Ensure proper UTF-8 encoding for output
+                try:
+                    text = text.encode('utf-8', errors='replace').decode('utf-8')
+                    print(f'[{start:.3f} --> {end:.3f}] {text}', flush=True)
+                    
+                    # Print word timestamps if requested
+                    if word_timestamps and segment.words:
+                        for word in segment.words:
+                            word_text = word.word.strip()
+                            word_text = word_text.encode('utf-8', errors='replace').decode('utf-8')
+                            word_start = word.start
+                            word_end = word.end
+                            print(f'  [{word_start:.3f} --> {word_end:.3f}] {word_text}', flush=True)
+                except Exception as e:
+                    logging.error(f"Error printing segment text: {e}")
+                    print(f'[{start:.3f} --> {end:.3f}] [Encoding issue with text]', flush=True)
         
         elif backend == 'insanely-fast-whisper':
             try:

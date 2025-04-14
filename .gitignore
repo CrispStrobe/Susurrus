@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+*.egg-info/
+*.log
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Model binaries and checkpoints
+models/
+*.bin
+*.pt
+*.ckpt
+
+# Media files
+*.mp3
+*.wav
+*.flac
+*.ogg
+*.mp4
+*.mkv
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# VSCode
+.vscode/
+
+# GitHub-specific
+.gitattributes
