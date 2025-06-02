@@ -157,8 +157,120 @@ def download_noaudio(method, url: str) -> Optional[str]:
             return video_file
     return None
 
-# ----- TRANSCRIPTION DOWNLOAD FUNCTION -----
+# ----- TRANSCRIPTION DOWNLOAD FUNCTIONS -----
+def convert_subtitle_format_builtin(input_file: str, output_format: str = 'srt') -> Optional[str]:
+    """Convert VTT to other formats using only built-in Python libraries (no dependencies)."""
+    try:
+        base_name = os.path.splitext(input_file)[0]
+        
+        with open(input_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        if output_format == 'txt':
+            output_file = f"{base_name}.txt"
+            
+            # Extract text content from VTT
+            lines = content.split('\n')
+            text_lines = []
+            prev_line = None
+            
+            # Skip VTT header and metadata
+            in_cue = False
+            for line in lines:
+                line = line.strip()
+                
+                # Skip empty lines, WEBVTT header, and NOTE lines
+                if not line or line.startswith('WEBVTT') or line.startswith('NOTE'):
+                    continue
+                
+                # Skip timestamp lines (contain -->)
+                if '-->' in line:
+                    in_cue = True
+                    continue
+                
+                # Skip cue identifiers (lines that are just numbers or IDs before timestamps)
+                if not in_cue and (line.isdigit() or ':' in line):
+                    continue
+                
+                # This should be subtitle text
+                if in_cue and line:
+                    # Remove VTT tags like <c.colorCCCCCC> or <i>
+                    import re
+                    clean_line = re.sub(r'<[^>]+>', '', line)
+                    clean_line = clean_line.strip()
+                    
+                    # Only add if not empty and not duplicate
+                    if clean_line and clean_line != prev_line:
+                        text_lines.append(clean_line)
+                        prev_line = clean_line
+                
+                # Reset cue flag on empty line
+                if not line:
+                    in_cue = False
+            
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(text_lines))
+            
+            return output_file
+            
+        elif output_format == 'srt':
+            output_file = f"{base_name}.srt"
+            
+            # Parse VTT and convert to SRT
+            lines = content.split('\n')
+            srt_content = []
+            cue_number = 1
+            current_cue = {}
+            
+            i = 0
+            while i < len(lines):
+                line = lines[i].strip()
+                
+                # Skip WEBVTT header and empty lines
+                if not line or line.startswith('WEBVTT') or line.startswith('NOTE'):
+                    i += 1
+                    continue
+                
+                # Look for timestamp line
+                if '-->' in line:
+                    # Parse timestamp
+                    timestamp = line.replace('.', ',')  # SRT uses comma instead of dot
+                    
+                    # Get subtitle text (next non-empty lines)
+                    subtitle_lines = []
+                    i += 1
+                    while i < len(lines) and lines[i].strip():
+                        text_line = lines[i].strip()
+                        # Remove VTT tags
+                        import re
+                        clean_text = re.sub(r'<[^>]+>', '', text_line)
+                        if clean_text:
+                            subtitle_lines.append(clean_text)
+                        i += 1
+                    
+                    # Add to SRT format
+                    if subtitle_lines:
+                        srt_content.append(f"{cue_number}")
+                        srt_content.append(timestamp)
+                        srt_content.extend(subtitle_lines)
+                        srt_content.append("")  # Empty line between cues
+                        cue_number += 1
+                else:
+                    i += 1
+            
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(srt_content))
+            
+            return output_file
+            
+    except Exception as e:
+        print(f"Built-in conversion failed: {str(e)}")
+        return None
+
 def convert_subtitle_format(input_file: str, output_format: str = 'srt') -> Optional[str]:
+    """Convert VTT to other formats, trying webvtt-py first, then built-in fallback."""
+    
+    # First try with webvtt-py (more accurate)
     try:
         import webvtt
         
@@ -201,15 +313,129 @@ def convert_subtitle_format(input_file: str, output_format: str = 'srt') -> Opti
             
             return output_file
             
+    except ImportError:
+        print("webvtt-py not found, using built-in conversion (may be less accurate)")
+        print("For better results, install webvtt-py: pip install webvtt-py")
+        return convert_subtitle_format_builtin(input_file, output_format)
     except Exception as e:
-        print(f"Conversion failed: {str(e)}")
-        print(f"If using txt/srt format, make sure webvtt-py is installed: pip install webvtt-py")
-        return None
+        print(f"webvtt-py conversion failed: {str(e)}")
+        print("Trying built-in conversion as fallback...")
+        return convert_subtitle_format_builtin(input_file, output_format)
 
-def download_transcription_with_yt_dlp(url: str, sub_lang: str = 'en', output_format: str = 'vtt') -> Optional[str]:
+def download_transcript_with_yt_dlp(url: str, sub_lang: str = 'en', output_format: str = 'vtt') -> Optional[str]:
+    """Download transcript using yt-dlp with enhanced options."""
     try:
         import yt_dlp
         import glob
+        
+        # Clean up any existing subtitle files first
+        existing_files = glob.glob(f"*.{sub_lang}.vtt") + glob.glob(f"*.{sub_lang}.*.vtt")
+        for f in existing_files:
+            try:
+                os.remove(f)
+            except:
+                pass
+        
+        # Try multiple subtitle download strategies
+        strategies = [
+            # Strategy 1: Standard subtitle download
+            {
+                'writesubtitles': True,
+                'writeautomaticsub': True,
+                'subtitlesformat': 'vtt',
+                'subtitleslangs': [sub_lang],
+            },
+            # Strategy 2: Try with all available subtitles if specific language fails
+            {
+                'writesubtitles': True,
+                'writeautomaticsub': True,
+                'subtitlesformat': 'vtt',
+                'allsubtitles': True,
+            },
+            # Strategy 3: Force automatic captions only
+            {
+                'writeautomaticsub': True,
+                'writesubtitles': False,
+                'subtitlesformat': 'vtt',
+                'subtitleslangs': [sub_lang],
+            }
+        ]
+        
+        for i, strategy in enumerate(strategies, 1):
+            print(f"Trying download strategy {i}/3...")
+            
+            ydl_opts = {
+                'skip_download': True,
+                'outtmpl': '%(title)s.%(ext)s',
+                'restrictfilenames': True,
+                'quiet': False,
+                'no_warnings': False,
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                },
+                **strategy
+            }
+
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                    
+                    # Look for subtitle files with various patterns
+                    search_patterns = [
+                        f"*.{sub_lang}.vtt",
+                        f"*.{sub_lang}.*.vtt", 
+                        "*.en.vtt",  # Fallback to English
+                        "*.vtt"      # Any VTT file
+                    ]
+                    
+                    vtt_file = None
+                    for pattern in search_patterns:
+                        vtt_files = glob.glob(pattern)
+                        if vtt_files:
+                            vtt_file = vtt_files[0]
+                            print(f"Found subtitle file: {vtt_file}")
+                            break
+                    
+                    if vtt_file and os.path.exists(vtt_file):
+                        if output_format != 'vtt':
+                            print(f"Converting to {output_format}...")
+                            converted_file = convert_subtitle_format(vtt_file, output_format)
+                            if converted_file and os.path.exists(converted_file):
+                                try:
+                                    os.remove(vtt_file)
+                                except OSError:
+                                    pass
+                                return converted_file
+                            else:
+                                print(f"Conversion to {output_format} failed, keeping VTT file")
+                                return vtt_file
+                        return vtt_file
+                        
+            except Exception as e:
+                print(f"Strategy {i} failed: {str(e)}")
+                continue
+                
+        return None
+
+    except Exception as e:
+        print(f"yt-dlp transcript download failed: {str(e)}")
+        return None
+
+def download_transcript_with_youtube_dl(url: str, sub_lang: str = 'en', output_format: str = 'vtt') -> Optional[str]:
+    """Download transcript using youtube-dl as fallback."""
+    try:
+        import youtube_dl
+        import glob
+        
+        print(f"Trying youtube-dl fallback...")
+        
+        # Clean up any existing subtitle files first
+        existing_files = glob.glob(f"*.{sub_lang}.vtt") + glob.glob(f"*.{sub_lang}.*.vtt")
+        for f in existing_files:
+            try:
+                os.remove(f)
+            except:
+                pass
         
         ydl_opts = {
             'skip_download': True,
@@ -220,39 +446,127 @@ def download_transcription_with_yt_dlp(url: str, sub_lang: str = 'en', output_fo
             'outtmpl': '%(title)s.%(ext)s',
             'restrictfilenames': True,
             'quiet': False,
-            'no_warnings': False
+            'no_warnings': False,
         }
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             
-            # Use glob to find the actual file
-            vtt_files = glob.glob(f"*.{sub_lang}.vtt")
-            if vtt_files:
-                vtt_file = vtt_files[0]  # Take the first match
-                print(f"Found subtitle file: {vtt_file}")
-                
+            # Look for subtitle files
+            search_patterns = [
+                f"*.{sub_lang}.vtt",
+                f"*.{sub_lang}.*.vtt",
+                "*.en.vtt",
+                "*.vtt"
+            ]
+            
+            vtt_file = None
+            for pattern in search_patterns:
+                vtt_files = glob.glob(pattern)
+                if vtt_files:
+                    vtt_file = vtt_files[0]
+                    print(f"Found subtitle file: {vtt_file}")
+                    break
+            
+            if vtt_file and os.path.exists(vtt_file):
                 if output_format != 'vtt':
                     print(f"Converting to {output_format}...")
                     converted_file = convert_subtitle_format(vtt_file, output_format)
                     if converted_file and os.path.exists(converted_file):
-                        # os.remove(vtt_file)  # Commented out VTT deletion
+                        try:
+                            os.remove(vtt_file)
+                        except OSError:
+                            pass
                         return converted_file
                     else:
                         print(f"Conversion to {output_format} failed, keeping VTT file")
                         return vtt_file
                 return vtt_file
-            else:
-                print(f"No .{sub_lang}.vtt files found after download")
-                return None
-
-    except Exception as e:
-        print(f"Error: {str(e)}")
+                
         return None
 
+    except Exception as e:
+        print(f"youtube-dl transcript download failed: {str(e)}")
+        return None
+
+def download_transcript_with_pytube(url: str, sub_lang: str = 'en', output_format: str = 'txt') -> Optional[str]:
+    """Download transcript using pytube as another fallback."""
+    try:
+        from pytube import YouTube
+        import xml.etree.ElementTree as ET
+        
+        print(f"Trying pytube fallback...")
+        
+        yt = YouTube(url)
+        
+        # Get captions
+        captions = yt.captions
+        
+        # Try to get the requested language, fallback to English, then any available
+        caption = None
+        for lang_code in [sub_lang, 'en', 'a.en']:  # 'a.en' is auto-generated English
+            if lang_code in captions:
+                caption = captions[lang_code]
+                print(f"Found captions in language: {lang_code}")
+                break
+        
+        if not caption:
+            # Try any available caption
+            if captions:
+                caption = list(captions.values())[0]
+                print(f"Using available caption: {caption.code}")
+            else:
+                print("No captions found")
+                return None
+        
+        # Get caption content
+        caption_content = caption.generate_srt_captions()
+        
+        # Generate filename
+        title = sanitize_filename(yt.title)
+        
+        if output_format == 'srt':
+            output_file = f"{title}.srt"
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write(caption_content)
+        elif output_format == 'txt':
+            output_file = f"{title}.txt"
+            # Convert SRT to plain text
+            import re
+            # Remove SRT formatting (numbers, timestamps, empty lines)
+            text_lines = []
+            lines = caption_content.split('\n')
+            for line in lines:
+                line = line.strip()
+                # Skip empty lines, numbers, and timestamp lines
+                if line and not line.isdigit() and not re.match(r'\d+:\d+:\d+', line):
+                    text_lines.append(line)
+            
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(text_lines))
+        else:  # vtt format
+            output_file = f"{title}.vtt"
+            # Convert to VTT format (basic conversion)
+            vtt_content = "WEBVTT\n\n" + caption_content.replace(',', '.')
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write(vtt_content)
+        
+        return output_file
+
+    except Exception as e:
+        print(f"pytube transcript download failed: {str(e)}")
+        return None
+
+def download_transcription_with_yt_dlp(url: str, sub_lang: str = 'en', output_format: str = 'vtt') -> Optional[str]:
+    """Legacy function name - redirects to download_transcript_with_yt_dlp"""
+    return download_transcript_with_yt_dlp(url, sub_lang, output_format)
+
 def list_available_subtitles(url: str):
+    """List all available subtitle languages for a video."""
     try:
         import yt_dlp
+        print("Checking available subtitles...")
+        
         ydl_opts = {
             'skip_download': True,
             'writesubtitles': False,
@@ -268,55 +582,150 @@ def list_available_subtitles(url: str):
             available = {}
             for lang, subs in {**subtitles, **automatic_captions}.items():
                 available[lang] = [sub['ext'] for sub in subs]
+            
             if available:
-                print("Available subtitles:")
+                print("\nAvailable subtitles:")
+                print("-" * 40)
                 for lang, exts in available.items():
                     print(f"  Language: {lang}, Formats: {', '.join(exts)}")
+                print("-" * 40)
+                print(f"Total languages available: {len(available)}")
             else:
                 print("No subtitles found for this video.")
+                
     except Exception as e:
         print(f"Failed to retrieve subtitles: {str(e)}")
 
 # ----- MAIN -----
 def main():
-    parser = argparse.ArgumentParser(description='Download YouTube content')
+    parser = argparse.ArgumentParser(
+        description='Download YouTube content (audio, video, or transcript only)',
+        epilog='''
+Examples:
+  python dl_yt.py <url>                           # Download audio (default)
+  python dl_yt.py <url> --type video              # Download video
+  python dl_yt.py <url> --type transcript         # Download transcript only
+  python dl_yt.py <url> --type transcript --sub-format txt  # Download as plain text
+  python dl_yt.py <url> --list-subs               # List available subtitle languages
+        ''',
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    
     parser.add_argument('url', help='YouTube video URL')
     parser.add_argument('--output', '-o', help='Output filename (without extension)')
-    parser.add_argument('--type', '-t', choices=['audio', 'video', 'noaudio', 'transcription'],
-                        default='audio', help='Type of download (default: audio)')
+    parser.add_argument('--type', '-t', 
+                        choices=['audio', 'video', 'noaudio', 'transcript', 'transcription'],
+                        default='audio', 
+                        help='Type of download: audio (default), video, noaudio, or transcript')
     parser.add_argument('--first-method', '-f', choices=['yt-dlp', 'PyTube', 'youtube-dl'],
-                        help='Method to try first')
-    parser.add_argument('--sub-lang', default='en', help='Subtitle language (default: en)')
-    parser.add_argument('--sub-format', choices=['vtt', 'srt', 'txt'], default='vtt',
-                        help='Subtitle format (default: vtt)')
-    parser.add_argument('--list-subs', action='store_true', help='List available subtitles and exit')
+                        help='Method to try first (for audio/video downloads)')
+    parser.add_argument('--sub-lang', default='en', 
+                        help='Subtitle language code (default: en). Use --list-subs to see available languages')
+    parser.add_argument('--sub-format', choices=['vtt', 'srt', 'txt'], default='txt',
+                        help='Transcript format: vtt (with timestamps), srt (SubRip), or txt (plain text, default)')
+    parser.add_argument('--list-subs', action='store_true', 
+                        help='List available subtitle languages and exit')
     
     args = parser.parse_args()
 
+    # Handle --list-subs flag
     if args.list_subs:
         list_available_subtitles(args.url)
         return
 
-    # Different handling for transcription vs other types
-    if args.type == 'transcription':
-        print(f"\nAttempting transcription download with yt-dlp...")
-        result = download_transcription_with_yt_dlp(args.url, args.sub_lang, args.sub_format)
+    # Handle transcript-only downloads (support both 'transcript' and 'transcription')
+    if args.type in ['transcript', 'transcription']:
+        print(f"\n{'='*50}")
+        print(f"TRANSCRIPT-ONLY DOWNLOAD")
+        print(f"{'='*50}")
+        print(f"URL: {args.url}")
+        print(f"Language: {args.sub_lang}")
+        print(f"Format: {args.sub_format}")
+        print(f"{'='*50}")
         
-        if result:
+        # Define transcript download methods with fallbacks
+        transcript_methods = [
+            ('yt-dlp', download_transcript_with_yt_dlp),
+            ('youtube-dl', download_transcript_with_youtube_dl),
+            ('pytube', download_transcript_with_pytube)
+        ]
+        
+        result = None
+        for method_name, method in transcript_methods:
+            print(f"\n🔄 Attempting transcript download with {method_name}...")
+            try:
+                result = method(args.url, args.sub_lang, args.sub_format)
+                if result and os.path.exists(result):
+                    print(f"✅ Success with {method_name}!")
+                    break
+                else:
+                    print(f"❌ {method_name} did not produce a valid transcript file")
+            except Exception as e:
+                print(f"❌ {method_name} failed: {str(e)}")
+                continue
+        
+        if result and os.path.exists(result):
+            # Handle custom output filename
             if args.output:
-                new_filename = f"{sanitize_filename(args.output)}.{args.sub_format}"
+                base_name = sanitize_filename(args.output)
+                new_filename = f"{base_name}.{args.sub_format}"
                 try:
-                    os.rename(result, new_filename)
-                    result = new_filename
+                    if os.path.exists(result):
+                        os.rename(result, new_filename)
+                        result = new_filename
+                        print(f"Renamed to: {new_filename}")
                 except OSError as e:
                     print(f"Warning: Could not rename file: {e}")
-            print(f"\nSuccess! File saved as: {result}")
+            
+            print(f"\n🎉 SUCCESS! Transcript saved as: {result}")
+            
+            # Show file info
+            try:
+                file_size = os.path.getsize(result)
+                print(f"📄 File size: {file_size:,} bytes")
+                if args.sub_format == 'txt':
+                    with open(result, 'r', encoding='utf-8') as f:
+                        lines = f.readlines()
+                        non_empty_lines = [line for line in lines if line.strip()]
+                        print(f"📝 Lines of text: {len(non_empty_lines)}")
+                        if non_empty_lines:
+                            # Show a preview of the first few lines
+                            preview_lines = non_empty_lines[:3]
+                            print("📖 Preview:")
+                            for line in preview_lines:
+                                print(f"   {line.strip()[:80]}{'...' if len(line.strip()) > 80 else ''}")
+            except Exception as e:
+                print(f"Could not read file info: {e}")
+                
             return
         else:
-            print("\nFailed to download subtitles. They might not be available for this video.")
+            print("\n❌ ALL TRANSCRIPT METHODS FAILED")
+            print("\n🔍 Troubleshooting steps:")
+            print("1. Check if the video has captions/subtitles available")
+            print("2. Try listing available languages: --list-subs")
+            print("3. Try a different language (e.g., --sub-lang en)")
+            print("4. Some videos may not have any captions available")
+            print("5. Check if the video URL is correct and publicly accessible")
+            
+            # Try to get video info to help with debugging
+            try:
+                print(f"\n🔍 Checking video accessibility...")
+                import yt_dlp
+                with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+                    info = ydl.extract_info(args.url, download=False)
+                    print(f"✅ Video found: {info.get('title', 'Unknown title')}")
+                    subs = info.get('subtitles', {})
+                    auto_subs = info.get('automatic_captions', {})
+                    if subs or auto_subs:
+                        print(f"📝 Available subtitle languages: {list((subs or {}).keys()) + list((auto_subs or {}).keys())}")
+                    else:
+                        print("❌ No subtitles found for this video")
+            except Exception as e:
+                print(f"❌ Could not access video: {e}")
+            
             return
     
-    # Original handling for other types
+    # Original handling for audio/video downloads
     methods = {
         'audio': [
             ('yt-dlp', download_audio_with_yt_dlp),
@@ -338,6 +747,10 @@ def main():
     if args.first_method:
         methods.sort(key=lambda m: 0 if m[0] == args.first_method else 1)
 
+    print(f"\n{'='*50}")
+    print(f"{args.type.upper()} DOWNLOAD")
+    print(f"{'='*50}")
+
     for method_name, method in methods:
         print(f"\nAttempting {args.type} download with {method_name}...")
         result = method(args.url)
@@ -349,13 +762,18 @@ def main():
                     result = new_filename
                 except OSError as e:
                     print(f"Warning: Could not rename file: {e}")
-            print(f"\nSuccess! File saved as: {result}")
+            print(f"\n✅ SUCCESS! File saved as: {result}")
             return
 
-    print("\nAll download methods failed. Please check the URL and your internet connection.")
+    print(f"\n❌ All {args.type} download methods failed.")
+    print("Please check the URL and your internet connection.")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python dl_yt.py <youtube_url> [--output filename] [--type audio|video|noaudio|transcription] [--first-method yt-dlp|PyTube|youtube-dl]")
+        print("Usage examples:")
+        print("  python dl_yt.py <youtube_url>                    # Download audio")
+        print("  python dl_yt.py <youtube_url> --type transcript  # Download transcript only")
+        print("  python dl_yt.py <youtube_url> --list-subs        # List available languages")
+        print("  python dl_yt.py <youtube_url> --help             # Show all options")
         sys.exit(1)
     main()
