@@ -19,3 +19,4 @@ jaxlib>=0.4.1
 whisper-jax>=0.1.0
 librosa
 pytube
+mistral-common[audio]>=1.0.0

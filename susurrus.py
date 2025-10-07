@@ -120,6 +120,8 @@ def check_nvidia_installation():
     
     return diagnostics
 
+
+
 def install_dependencies():
     """Provides an interface to install missing dependencies"""
     from PyQt6.QtWidgets import QDialog, QVBoxLayout, QPushButton, QLabel, QMessageBox
@@ -642,13 +644,23 @@ def get_default_backend():
             import mlx
             return 'mlx-whisper'
         except ImportError:
-            return 'faster-batched'
+            # Try Voxtral as a fallback for Apple Silicon
+            try:
+                from transformers import VoxtralForConditionalGeneration
+                return 'voxtral-local'
+            except ImportError:
+                return 'faster-batched'
     else:  # Linux and others
         cuda_available = check_cuda()
         if cuda_available:
             return 'faster-batched'
         else:
-            return 'whisper.cpp'
+            # Try Voxtral as CPU option
+            try:
+                from transformers import VoxtralForConditionalGeneration
+                return 'voxtral-local'
+            except ImportError:
+                return 'whisper.cpp'
 
 def get_default_model_for_backend(backend):
     defaults = {
@@ -1247,7 +1259,100 @@ class DiarizationSettingsBox(CollapsibleBox):
             "especially for phone calls and naturalistic conversations."
         )
     
-
+class VoxtralSettingsBox(CollapsibleBox):
+    """Collapsible box for Voxtral API settings"""
+    
+    def __init__(self, parent=None):
+        super().__init__("Voxtral API Settings", parent)
+        layout = QVBoxLayout()
+        
+        # Info label
+        info_label = QLabel(
+            "Voxtral is Mistral AI's speech recognition model.\n"
+            "It supports 8 languages and offers both local and API-based inference."
+        )
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("color: #888888; font-style: italic;")
+        layout.addWidget(info_label)
+        
+        # API key input
+        api_key_layout = QHBoxLayout()
+        api_key_layout.addWidget(QLabel("Mistral API Key:"))
+        self.mistral_api_key = QLineEdit()
+        self.mistral_api_key.setPlaceholderText("Enter your Mistral AI API key (for voxtral-api)")
+        self.mistral_api_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.mistral_api_key.setToolTip(
+            "Required for voxtral-api backend.\n"
+            "Get your API key from: https://console.mistral.ai/"
+        )
+        api_key_layout.addWidget(self.mistral_api_key)
+        
+        # Show/Hide password button
+        self.show_key_button = QPushButton("👁")
+        self.show_key_button.setMaximumWidth(30)
+        self.show_key_button.setCheckable(True)
+        self.show_key_button.clicked.connect(self.toggle_api_key_visibility)
+        api_key_layout.addWidget(self.show_key_button)
+        
+        # API key help button
+        self.api_key_help_button = QPushButton("?")
+        self.api_key_help_button.setMaximumWidth(30)
+        self.api_key_help_button.clicked.connect(self.show_api_key_help)
+        api_key_layout.addWidget(self.api_key_help_button)
+        
+        layout.addLayout(api_key_layout)
+        
+        # Supported languages info
+        languages_label = QLabel(
+            "<b>Supported Languages:</b> English, French, Spanish, German, "
+            "Italian, Portuguese, Polish, Dutch"
+        )
+        languages_label.setWordWrap(True)
+        languages_label.setStyleSheet("font-size: 11px; color: #999999;")
+        layout.addWidget(languages_label)
+        
+        # Performance note
+        note_label = QLabel(
+            "<b>Note:</b> voxtral-local requires transformers from GitHub. "
+            "Run install_voxtral.sh/bat to set up."
+        )
+        note_label.setWordWrap(True)
+        note_label.setStyleSheet("font-size: 11px; color: #ff9900;")
+        layout.addWidget(note_label)
+        
+        # Add layout to content area
+        self.setContentLayout(layout)
+    
+    def toggle_api_key_visibility(self):
+        """Toggle API key visibility"""
+        if self.show_key_button.isChecked():
+            self.mistral_api_key.setEchoMode(QLineEdit.EchoMode.Normal)
+            self.show_key_button.setText("🙈")
+        else:
+            self.mistral_api_key.setEchoMode(QLineEdit.EchoMode.Password)
+            self.show_key_button.setText("👁")
+    
+    def show_api_key_help(self):
+        """Show help dialog for Mistral API key"""
+        QMessageBox.information(
+            self,
+            "Mistral API Key Help",
+            "<h3>Mistral AI API Key</h3>"
+            "<p>The Mistral API key is required for the <b>voxtral-api</b> backend.</p>"
+            "<h4>How to get your API key:</h4>"
+            "<ol>"
+            "<li>Create a free account at <a href='https://console.mistral.ai/'>console.mistral.ai</a></li>"
+            "<li>Navigate to API Keys section</li>"
+            "<li>Create a new API key</li>"
+            "<li>Copy and paste it here</li>"
+            "</ol>"
+            "<h4>Alternatively:</h4>"
+            "<p>You can set the <code>MISTRAL_API_KEY</code> environment variable:</p>"
+            "<p><b>PowerShell:</b> <code>$env:MISTRAL_API_KEY = 'your-key'</code></p>"
+            "<p><b>CMD:</b> <code>set MISTRAL_API_KEY=your-key</code></p>"
+            "<p><b>Linux/Mac:</b> <code>export MISTRAL_API_KEY='your-key'</code></p>"
+        )
+        
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -2010,6 +2115,91 @@ class MainWindow(QWidget):
         install_thread.start()
         
         dialog.exec()
+        
+    def install_voxtral_dependencies(self):
+        """Install Voxtral dependencies"""
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QProgressBar, QMessageBox
+        import subprocess
+        import sys
+        
+        reply = QMessageBox.question(
+            self,
+            "Install Voxtral Dependencies",
+            "This will install the development version of transformers and Voxtral dependencies.\n\n"
+            "The following packages will be installed:\n"
+            "• transformers (from GitHub)\n"
+            "• mistral-common[audio]\n"
+            "• soundfile\n\n"
+            "This may take several minutes. Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.No:
+            return
+        
+        # Create progress dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Installing Voxtral Dependencies")
+        dialog.setMinimumWidth(500)
+        
+        layout = QVBoxLayout()
+        
+        status_label = QLabel("Installing dependencies...")
+        layout.addWidget(status_label)
+        
+        progress_bar = QProgressBar()
+        progress_bar.setMinimum(0)
+        progress_bar.setMaximum(0)  # Indeterminate
+        layout.addWidget(progress_bar)
+        
+        dialog.setLayout(layout)
+        dialog.show()
+        
+        try:
+            # Uninstall existing transformers
+            status_label.setText("Uninstalling existing transformers...")
+            subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "transformers"])
+            
+            # Install transformers from GitHub
+            status_label.setText("Installing transformers from GitHub...")
+            subprocess.run([
+                sys.executable, "-m", "pip", "install",
+                "git+https://github.com/huggingface/transformers.git"
+            ], check=True)
+            
+            # Install mistral-common with audio support
+            status_label.setText("Installing mistral-common...")
+            subprocess.run([
+                sys.executable, "-m", "pip", "install",
+                "mistral-common[audio]"
+            ], check=True)
+            
+            # Install soundfile
+            status_label.setText("Installing soundfile...")
+            subprocess.run([
+                sys.executable, "-m", "pip", "install",
+                "soundfile"
+            ], check=True)
+            
+            progress_bar.setMaximum(100)
+            progress_bar.setValue(100)
+            status_label.setText("Installation completed successfully!")
+            
+            QMessageBox.information(
+                self,
+                "Success",
+                "Voxtral dependencies have been installed successfully.\n\n"
+                "You can now use the voxtral-local backend for transcription."
+            )
+            
+        except subprocess.CalledProcessError as e:
+            QMessageBox.critical(
+                self,
+                "Installation Failed",
+                f"Failed to install Voxtral dependencies:\n\n{str(e)}"
+            )
+        finally:
+            dialog.close()
     
     def create_menu_bar(self):
         """Create application menu bar"""
@@ -2071,10 +2261,13 @@ class MainWindow(QWidget):
         cuda_diagnostics_action.triggered.connect(self.show_cuda_diagnostics)
         tools_menu.addAction(cuda_diagnostics_action)
         
-        # Add after the CUDA diagnostics action in create_menu_bar
         youtube_deps_action = QAction("Install &YouTube Dependencies...", self)
         youtube_deps_action.triggered.connect(self.install_youtube_dependencies)
         tools_menu.addAction(youtube_deps_action)
+        
+        voxtral_deps_action = QAction("Install &Voxtral Dependencies...", self)
+        voxtral_deps_action.triggered.connect(self.install_voxtral_dependencies)
+        tools_menu.addAction(voxtral_deps_action)
         
         # Help menu
         help_menu = menu_bar.addMenu("&Help")
@@ -2209,6 +2402,12 @@ class MainWindow(QWidget):
                 ("openai/whisper-base", "openai/whisper-base"),
                 ("openai/whisper-tiny", "openai/whisper-tiny"),
             ],
+            'voxtral-local': [
+                ("mistralai/Voxtral-Mini-3B-2507", "mistralai/Voxtral-Mini-3B-2507"),
+            ],
+            'voxtral-api': [
+                ("voxtral-mini-latest", "voxtral-mini-latest"),
+            ],
         }
 
         main_layout = QVBoxLayout()
@@ -2277,6 +2476,35 @@ class MainWindow(QWidget):
 
         self.diarization_box = DiarizationSettingsBox()
         main_layout.addWidget(self.diarization_box)
+        
+        # Voxtral settings box
+        self.voxtral_box = VoxtralSettingsBox()
+        main_layout.addWidget(self.voxtral_box)
+        
+        # Pre-fill Mistral API key from environment if available
+        mistral_api_key = os.environ.get("MISTRAL_API_KEY", "")
+        if mistral_api_key:
+            self.voxtral_box.mistral_api_key.setText("Using MISTRAL_API_KEY from environment")
+            self.voxtral_box.mistral_api_key.setEnabled(False)
+            self.has_env_mistral_key = True
+            env_key_note = QLabel("API key loaded from environment variable")
+            env_key_note.setStyleSheet("color: green; font-style: italic;")
+            env_key_layout = QHBoxLayout()
+            env_key_layout.addWidget(env_key_note)
+            env_key_layout.addStretch()
+            # Add this note to the Voxtral box's layout
+            self.voxtral_box.layout().addLayout(env_key_layout)
+        else:
+            self.has_env_mistral_key = False
+
+        # Load previous Voxtral settings from QSettings
+        if self.settings.contains("mistral_api_key"):
+            saved_key = self.settings.value("mistral_api_key")
+            if saved_key and not mistral_api_key:  # Only use saved key if no env var
+                self.voxtral_box.mistral_api_key.setText(saved_key)
+
+        # Connect Voxtral settings changes to save function
+        self.voxtral_box.mistral_api_key.textChanged.connect(self.save_voxtral_settings)
 
         # Pre-fill Hugging Face token from environment if available
         if self.has_env_token:
@@ -2348,7 +2576,9 @@ class MainWindow(QWidget):
             "OpenAI Whisper",
             "ctranslate2",
             "whisper-jax",
-            "insanely-fast-whisper"
+            "insanely-fast-whisper",
+            "voxtral-local",
+            "voxtral-api"    
         ]
 
         # Add mlx-whisper only on macOS
@@ -2558,24 +2788,35 @@ class MainWindow(QWidget):
             self.audio_input_path.setText(file_name)
 
     def update_model_options(self, backend):
-        backend = backend.lower()
-        models = self.backend_model_map.get(backend, [])
+        backend_lower = backend.lower()
+        models = self.backend_model_map.get(backend_lower, [])
         self.model_id.clear()
         for model_tuple in models:
             model_id = model_tuple[0]
             self.model_id.addItem(model_id)
 
         # Show/hide chunking selection based on backend
-        if backend in ['openai whisper', 'transformers']:
+        if backend_lower in ['openai whisper', 'transformers', 'voxtral-local']:
             self.chunk_row_widget.setVisible(True)
         else:
             self.chunk_row_widget.setVisible(False)
 
         # Show/hide output format selection based on backend
-        if backend == 'whisper.cpp':
+        if backend_lower == 'whisper.cpp':
             self.output_format_row_widget.setVisible(True)
         else:
             self.output_format_row_widget.setVisible(False)
+        
+        # Show/hide Voxtral settings box based on backend
+        if backend_lower in ['voxtral-local', 'voxtral-api']:
+            self.voxtral_box.setVisible(True)
+            # Expand the box if using voxtral-api
+            if backend_lower == 'voxtral-api':
+                self.voxtral_box.toggle_button.setChecked(True)
+                self.voxtral_box.content_area.setVisible(True)
+                self.voxtral_box.update_toggle_button_text()
+        else:
+            self.voxtral_box.setVisible(False)
 
 
     def replace_transcription_output(self, text):
@@ -2613,6 +2854,63 @@ class MainWindow(QWidget):
 
         # Check if diarization is enabled
         diarization_enabled = self.diarization_box.enable_diarization.isChecked()
+        
+        # Voxtral-specific arguments
+        if args['backend'] == 'voxtral-api':
+            mistral_api_key = self.voxtral_box.mistral_api_key.text().strip()
+            
+            # Check if using environment variable
+            if self.has_env_mistral_key:
+                mistral_api_key = os.environ.get("MISTRAL_API_KEY", "")
+            
+            # Validate API key
+            if not mistral_api_key:
+                QMessageBox.critical(
+                    self,
+                    "Missing API Key",
+                    "Mistral AI API key is required for voxtral-api backend.\n\n"
+                    "Please enter your API key in the Voxtral API Settings section,\n"
+                    "or set the MISTRAL_API_KEY environment variable.\n\n"
+                    "Get your API key from: https://console.mistral.ai/"
+                )
+                self.transcribe_button.setEnabled(True)
+                return
+            
+            args['mistral_api_key'] = mistral_api_key
+            logging.info("Using Voxtral API backend with provided API key")
+        
+        elif args['backend'] == 'voxtral-local':
+            # Check if transformers with Voxtral support is available
+            try:
+                from transformers import VoxtralForConditionalGeneration
+                logging.info("Voxtral local backend available")
+            except ImportError:
+                reply = QMessageBox.question(
+                    self,
+                    "Voxtral Dependencies Missing",
+                    "The voxtral-local backend requires the development version of transformers.\n\n"
+                    "Would you like to view installation instructions?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                
+                if reply == QMessageBox.StandardButton.Yes:
+                    QMessageBox.information(
+                        self,
+                        "Voxtral Installation Instructions",
+                        "<h3>Installing Voxtral Dependencies</h3>"
+                        "<p>Run these commands:</p>"
+                        "<p><b>Windows:</b></p>"
+                        "<pre>install_voxtral.bat</pre>"
+                        "<p><b>Linux/Mac:</b></p>"
+                        "<pre>./install_voxtral.sh</pre>"
+                        "<p><b>Or manually:</b></p>"
+                        "<pre>pip uninstall transformers -y\n"
+                        "pip install git+https://github.com/huggingface/transformers.git\n"
+                        "pip install mistral-common[audio] soundfile</pre>"
+                    )
+                
+                self.transcribe_button.setEnabled(True)
+                return
         
         # handle youtube download
         if args['audio_url'] and ('youtube.com' in args['audio_url'] or 'youtu.be' in args['audio_url']):
@@ -2843,6 +3141,17 @@ class MainWindow(QWidget):
     def update_diarization_status(self, status_msg):
         """Update UI with diarization status"""
         self.metrics_output.appendPlainText(status_msg)
+        
+    def save_voxtral_settings(self):
+        """Save Voxtral settings to QSettings"""
+        api_key = self.voxtral_box.mistral_api_key.text().strip()
+        
+        # Only save if not using environment variable
+        if not self.has_env_mistral_key and api_key:
+            self.settings.setValue("mistral_api_key", api_key)
+        
+        # Sync settings to disk
+        self.settings.sync()
 
     def save_transcription(self):
         if hasattr(self, 'transcription_text'):

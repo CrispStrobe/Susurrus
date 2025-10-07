@@ -16,6 +16,7 @@ models/
 *.bin
 *.pt
 *.ckpt
+whisper.cpp/
 
 # Media files
 *.mp3

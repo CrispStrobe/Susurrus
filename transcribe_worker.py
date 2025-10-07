@@ -34,6 +34,8 @@ device_fallbacks = {
     'openai-whisper': [('mps', 'cpu')],
     'whisper-jax': [('mps', 'cpu')],
     'ctranslate2': [('mps', 'cpu'), ('cuda', 'cpu')],
+    'voxtral-local': [], # Voxtral works on all devices
+    'voxtral-api': [],  # API doesn't use local device
 }
 
 def get_supported_device(backend, device):
@@ -847,7 +849,7 @@ def main():
         parser = argparse.ArgumentParser(description='Susurrus Transcription worker script')
         parser.add_argument('--audio-input', help='Path to the audio input file')
         parser.add_argument('--audio-url', help='URL to the audio file')
-        parser.add_argument('--model-id', type=str, required=True, help='Model ID to use')
+        parser.add_argument('--model-id', type=str, default=None, help='Model ID to use')
         parser.add_argument('--word-timestamps', action='store_true', help='Enable word timestamps')
         parser.add_argument('--language', default=None, help='Language code')
         parser.add_argument('--backend', type=str, default='mlx-whisper', help='Backend to use')
@@ -864,6 +866,10 @@ def main():
         parser.add_argument('--proxy-username', type=str, default=None, help='Proxy username')
         parser.add_argument('--proxy-password', type=str, default=None, help='Proxy password')
         parser.add_argument('--ffmpeg-path', type=str, default='ffmpeg', help='Path to ffmpeg executable')
+        parser.add_argument('--mistral-api-key', type=str, default=None, 
+                   help='Mistral AI API key for voxtral-api backend')
+        parser.add_argument('--temperature', type=float, default=0.0,
+                   help='Sampling temperature for generation (0.0 = greedy)')
 
         args = parser.parse_args()
 
@@ -974,6 +980,21 @@ def main():
 
         audio_input = working_audio_path
         start_time_perf = time.time()
+        
+        # Set default model_id based on backend if not provided
+        if model_id is None:
+            if backend == 'voxtral-local':
+                model_id = 'mistralai/Voxtral-Mini-3B-2507'
+                logging.info(f"Using default Voxtral model: {model_id}")
+            elif backend == 'voxtral-api':
+                model_id = 'voxtral-mini-latest'
+                logging.info(f"Using default API model: {model_id}")
+            elif backend in ['mlx-whisper', 'faster-batched', 'faster-sequenced', 'transformers']:
+                model_id = 'base'
+                logging.info(f"Using default model: {model_id}")
+            else:
+                logging.warning("No model ID specified, using 'base' as default")
+                model_id = 'base'
 
         #
         # Backend-specific transcription code
@@ -1077,6 +1098,124 @@ def main():
                     logging.error(f"Error printing segment text: {e}")
                     # Fallback to printing without encoding conversion
                     print(f'[{start:.3f} --> {end:.3f}] [Encoding issue with text]', flush=True)
+                    
+        elif backend == 'voxtral-local':
+            try:
+                from voxtral_local import VoxtralLocal
+            except ImportError:
+                raise ImportError(
+                    "voxtral_local module is required for voxtral-local backend.\n"
+                    "Install dependencies:\n"
+                    "pip uninstall transformers -y\n"
+                    "pip install git+https://github.com/huggingface/transformers.git\n"
+                    "pip install mistral-common[audio] librosa soundfile"
+                )
+            
+            logging.info(f"Using Voxtral (local) with model {model_id}")
+            
+            # Initialize Voxtral
+            voxtral = VoxtralLocal(model_id=model_id, device=device)
+            
+            # Set chunk length from parameters
+            chunk_length_s = max_chunk_length if max_chunk_length > 0 else 1500
+            
+            logging.info("Starting transcription with Voxtral...")
+            segments = voxtral.transcribe(
+                audio_input,
+                language=language,
+                temperature=temperature if hasattr(args, 'temperature') else 0.0,
+                chunk_length=chunk_length_s
+            )
+            
+            # Output segments
+            for segment in segments:
+                text = segment['text'].strip()
+                start = segment['start']
+                end = segment['end']
+                print(f'[{start:.3f} --> {end:.3f}] {text}', flush=True)
+            
+            # Unload model
+            voxtral.unload_model()
+
+        elif backend == 'voxtral-api':
+            try:
+                from voxtral_api import VoxtralAPI
+            except ImportError:
+                raise ImportError("voxtral_api module is required for voxtral-api backend")
+            
+            logging.info("Using Voxtral (API)")
+            
+            # Try to get API key from multiple sources
+            api_key = None
+            
+            # 1. Try command line argument
+            if hasattr(args, 'mistral_api_key') and args.mistral_api_key:
+                api_key = args.mistral_api_key
+                logging.info("Using API key from command line argument")
+            
+            # 2. Try environment variable
+            if not api_key:
+                api_key = os.environ.get('MISTRAL_API_KEY')
+                if api_key:
+                    logging.info("Using API key from MISTRAL_API_KEY environment variable")
+            
+            # 3. Try config file
+            if not api_key:
+                config_file = os.path.expanduser('~/.mistral/api_key')
+                if os.path.exists(config_file):
+                    try:
+                        with open(config_file, 'r') as f:
+                            api_key = f.read().strip()
+                            if api_key:
+                                logging.info("Using API key from ~/.mistral/api_key file")
+                    except Exception as e:
+                        logging.debug(f"Could not read config file: {e}")
+            
+            if not api_key:
+                raise ValueError(
+                    "Mistral API key required for voxtral-api backend.\n"
+                    "Provide via one of these methods:\n"
+                    "  1. Command line: --mistral-api-key YOUR_KEY\n"
+                    "  2. PowerShell: $env:MISTRAL_API_KEY = 'YOUR_KEY'\n"
+                    "  3. CMD: set MISTRAL_API_KEY=YOUR_KEY\n"
+                    "  4. Config file: ~/.mistral/api_key\n"
+                    "\nGet your API key from: https://console.mistral.ai/"
+                )
+            
+            # Initialize API client
+            voxtral_api = VoxtralAPI(api_key=api_key)
+            
+            logging.info("Starting transcription with Voxtral API...")
+            
+            # Use chunking for long audio
+            segments = voxtral_api.transcribe_with_chunking(
+                audio_input,
+                language=language,
+                max_duration=600  # 10 minutes per chunk
+            )
+            
+            # DEBUG: Check what we got
+            logging.info(f"Received {len(segments)} segments from API")
+            
+            if not segments:
+                logging.warning("No segments returned from API!")
+                print("No transcription returned from API", flush=True)
+            else:
+                # Output segments
+                for i, segment in enumerate(segments):
+                    text = segment.get('text', '').strip()
+                    start = segment.get('start', 0.0)
+                    end = segment.get('end', 0.0)
+                    
+                    if text:  # Only print if there's text
+                        print(f'[{start:.3f} --> {end:.3f}] {text}', flush=True)
+                        logging.info(f"Segment {i+1}: [{start:.3f} --> {end:.3f}] {text[:50]}...")
+                    else:
+                        logging.warning(f"Segment {i+1} has no text: {segment}")
+                
+                # Print a summary
+                total_text = ' '.join(seg.get('text', '') for seg in segments)
+                logging.info(f"Total transcription length: {len(total_text)} characters")
         
         elif backend == 'faster-sequenced':
             try:
