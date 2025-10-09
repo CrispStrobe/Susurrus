@@ -1,0 +1,21 @@
+# Linting and code quality
+flake8>=6.0.0
+pylint>=3.0.0
+mypy>=1.7.0
+isort>=5.12.0
+black>=23.0.0
+bandit>=1.7.5
+pydocstyle>=6.3.0
+
+# Import checking
+pyflakes>=3.1.0
+vulture>=2.10  # Find unused code
+pydeps>=1.12.0  # Visualize dependencies
+
+# Pre-commit hooks
+pre-commit>=3.5.0
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.12.0
