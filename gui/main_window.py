@@ -598,7 +598,6 @@ class MainWindow(QWidget):
             
             args['mistral_api_key'] = mistral_api_key
         
-        # === CHANGE THIS SECTION ===
         # Handle ctranslate2 specific logic
         if args['backend'] == 'ctranslate2':
             logging.info("ctranslate2 selected. Checking...")
@@ -606,10 +605,11 @@ class MainWindow(QWidget):
             if args['device_arg'] == 'mps':
                 args['device_arg'] = 'cpu'
             
-            # Use the modularized converter
+            # Use the modularized converter - PASS parent_widget (self)
             try:
                 model_dir, original_model_id = CTranslate2ModelConverter.find_or_convert_model(
-                    args['model_id']
+                    args['model_id'],
+                    parent_widget=self  # <-- ADD THIS PARAMETER
                 )
                 if model_dir is None:
                     self.progress_bar.setVisible(False)
@@ -629,7 +629,6 @@ class MainWindow(QWidget):
                 self.transcribe_button.setEnabled(True)
                 self.abort_button.setEnabled(False)
                 return None
-        # === END CHANGED SECTION ===
         
         return args
     

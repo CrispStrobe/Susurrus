@@ -1,9 +1,10 @@
-# models/model_config.py
 """Model configuration and management utilities"""
 import os
+import shutil
 import platform
 import logging
 from pathlib import Path
+from PyQt6.QtWidgets import QMessageBox, QInputDialog
 
 class ModelConfig:
     """Model configuration and mapping utilities"""
@@ -180,10 +181,18 @@ class CTranslate2ModelConverter:
     """Utilities for converting models to CTranslate2 format"""
     
     @staticmethod
-    def find_or_convert_model(model_id, original_model_id=None):
-        """Find or convert a CTranslate2 model"""
-            # Extract the original model ID
-        original_model_id = self.get_original_model_id(model_id)
+    def find_or_convert_model(model_id, parent_widget=None):
+        """Find or convert a CTranslate2 model
+        
+        Args:
+            model_id: Model identifier
+            parent_widget: Parent widget for dialogs (optional)
+            
+        Returns:
+            Tuple of (model_dir, original_model_id) or (None, None) on error
+        """
+        # Extract the original model ID
+        original_model_id = ModelConfig.get_original_model_id(model_id)
         logging.info(f"Original model ID determined as: {original_model_id}")
 
         model_dir_name = model_id.replace('/', '_')
@@ -201,7 +210,6 @@ class CTranslate2ModelConverter:
             else:
                 logging.info(f"Model already converted and exists locally in: {local_model_dir}")
             return local_model_dir, original_model_id
-
         else:
             # If the directory exists but model.bin is missing or empty, remove the directory
             if os.path.exists(local_model_dir):
@@ -213,7 +221,11 @@ class CTranslate2ModelConverter:
             try:
                 from huggingface_hub import hf_hub_download, HfApi
             except ImportError:
-                QMessageBox.critical(self, "Error", "huggingface_hub package is not installed. Cannot proceed.")
+                QMessageBox.critical(
+                    parent_widget, 
+                    "Error", 
+                    "huggingface_hub package is not installed. Cannot proceed."
+                )
                 logging.error("huggingface_hub package is not installed.")
                 return None, None
 
@@ -241,7 +253,7 @@ class CTranslate2ModelConverter:
 
         # Ask for quantization
         quantization, ok_pressed = QInputDialog.getItem(
-            self,
+            parent_widget,
             "Select Quantization",
             "Choose quantization for model conversion:",
             ["float32", "int8_float16", "int16", "int8"],
@@ -249,28 +261,40 @@ class CTranslate2ModelConverter:
             False
         )
         if not ok_pressed:
-            QMessageBox.information(self, "Information", "Quantization selection cancelled by user.")
+            QMessageBox.information(
+                parent_widget, 
+                "Information", 
+                "Quantization selection cancelled by user."
+            )
             logging.info("Quantization selection cancelled by user.")
             return None, None
 
         reply = QMessageBox.question(
-            self,
+            parent_widget,
             "Model Conversion Required",
             f"The model {model_id} needs to be converted to CTranslate2 format with quantization '{quantization}'. This may take several minutes. Do you want to proceed?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         if reply == QMessageBox.StandardButton.No:
-            QMessageBox.information(self, "Information", "Model conversion cancelled by user.")
+            QMessageBox.information(
+                parent_widget, 
+                "Information", 
+                "Model conversion cancelled by user."
+            )
             logging.info("Model conversion cancelled by user.")
             return None, None
 
         # Perform the model conversion
         try:
-            self.convert_model_to_ctranslate2(model_id, local_model_dir, quantization)
+            CTranslate2ModelConverter.convert_model(model_id, local_model_dir, quantization, parent_widget)
             logging.info(f"Model converted and saved to: {local_model_dir}")
         except Exception as e:
             logging.error(f"Error during model conversion: {e}")
-            QMessageBox.critical(self, "Error", f"Error during model conversion: {str(e)}")
+            QMessageBox.critical(
+                parent_widget, 
+                "Error", 
+                f"Error during model conversion: {str(e)}"
+            )
             return None, None
 
         # Download the preprocessor files and save them in the same directory
@@ -278,7 +302,11 @@ class CTranslate2ModelConverter:
             try:
                 from transformers import WhisperProcessor
             except ImportError:
-                QMessageBox.critical(self, "Error", "transformers package is not installed. Cannot load the preprocessor files.")
+                QMessageBox.critical(
+                    parent_widget, 
+                    "Error", 
+                    "transformers package is not installed. Cannot load the preprocessor files."
+                )
                 logging.error("transformers package is not installed.")
                 return None, None
 
@@ -288,19 +316,34 @@ class CTranslate2ModelConverter:
             logging.info(f"Preprocessor files saved to: {local_model_dir}")
         except Exception as e:
             logging.error(f"Error downloading preprocessor files: {e}")
-            QMessageBox.critical(self, "Error", f"Error downloading preprocessor files: {str(e)}")
+            QMessageBox.critical(
+                parent_widget, 
+                "Error", 
+                f"Error downloading preprocessor files: {str(e)}"
+            )
             return None, None
 
-        return local_model_dir, original_model_id  # Return both values
+        return local_model_dir, original_model_id
     
     @staticmethod
-    def convert_model(model_id, output_dir, quantization):
-        """Convert model to CTranslate2 format"""
+    def convert_model(model_id, output_dir, quantization, parent_widget=None):
+        """Convert model to CTranslate2 format
+        
+        Args:
+            model_id: Model identifier
+            output_dir: Output directory for converted model
+            quantization: Quantization type
+            parent_widget: Parent widget for dialogs (optional)
+        """
         try:
             from ctranslate2.converters.transformers import TransformersConverter
             from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
         except ImportError:
-            QMessageBox.critical(self, "Error", "Required packages for model conversion are not installed. Please install 'ctranslate2' and 'transformers'.")
+            QMessageBox.critical(
+                parent_widget, 
+                "Error", 
+                "Required packages for model conversion are not installed. Please install 'ctranslate2' and 'transformers'."
+            )
             logging.error("Required packages 'ctranslate2' and 'transformers' are not installed.")
             return
 
@@ -317,7 +360,7 @@ class CTranslate2ModelConverter:
         if not os.path.exists(model_bin_path) or os.path.getsize(model_bin_path) == 0:
             error_msg = f"Failed to convert model. model.bin not found or empty in {output_dir}"
             logging.error(error_msg)
-            QMessageBox.critical(self, "Error", error_msg)
+            QMessageBox.critical(parent_widget, "Error", error_msg)
             return
         if os.path.islink(model_bin_path):
             real_path = os.path.realpath(model_bin_path)
@@ -326,7 +369,6 @@ class CTranslate2ModelConverter:
 
         logging.info(f"Model successfully converted and saved to: {output_dir}")
 
-    
 
 # Convenience functions
 def get_original_model_id(model_id):
