@@ -1,0 +1,31 @@
+[flake8]
+# Maximum line length
+max-line-length = 100
+
+# Exclude directories
+exclude = 
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    build,
+    dist,
+    *.egg-info,
+    .pytest_cache,
+    .mypy_cache
+
+# Error codes to ignore
+ignore = 
+    E203,  # whitespace before ':'
+    E266,  # too many leading '#' for block comment
+    E501,  # line too long (handled by black)
+    W503,  # line break before binary operator
+    F401,  # imported but unused (handled separately)
+
+# Complexity
+max-complexity = 15
+
+# Per-file ignores
+per-file-ignores =
+    __init__.py:F401,F403
+    test_*.py:F401,F811

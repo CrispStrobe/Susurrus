@@ -1,0 +1,475 @@
+# ============================================================================
+# Susurrus - Audio Transcription Application
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Python
+# ----------------------------------------------------------------------------
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# poetry
+poetry.lock
+
+# pdm
+.pdm.toml
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# ----------------------------------------------------------------------------
+# IDEs and Editors
+# ----------------------------------------------------------------------------
+# PyCharm
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# ----------------------------------------------------------------------------
+# Operating System
+# ----------------------------------------------------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.directory
+.Trash-*
+.nfs*
+
+# ----------------------------------------------------------------------------
+# Audio & Media Files
+# ----------------------------------------------------------------------------
+# Downloaded audio files
+*.mp3
+*.wav
+*.flac
+*.m4a
+*.aac
+*.ogg
+*.opus
+*.webm
+*.wma
+*.mp4
+*.avi
+*.mkv
+*.mov
+
+# EXCEPT example/test files in specific directories
+!tests/fixtures/*.mp3
+!tests/fixtures/*.wav
+!resources/samples/*.mp3
+!docs/examples/*.mp3
+
+# ----------------------------------------------------------------------------
+# Transcription Outputs & Temporary Files
+# ----------------------------------------------------------------------------
+# Transcription outputs
+transcriptions/
+output/
+outputs/
+*.srt
+*.vtt
+transcripts/
+*.transcript.txt
+
+# Temporary directories
+tmp/
+temp/
+temporary/
+susurrus_*tmp*/
+susurrus_ytdl_*/
+susurrus_ytdlp_*/
+susurrus_pytube_*/
+susurrus_yt_*/
+
+# Diarization outputs
+diarization/
+diarization*.json
+segments/
+speaker_*.wav
+
+# ----------------------------------------------------------------------------
+# ML Models & Caches
+# ----------------------------------------------------------------------------
+# Hugging Face cache
+.cache/
+huggingface/
+.huggingface/
+
+# PyTorch
+*.pt
+*.pth
+*.ckpt
+checkpoint/
+checkpoints/
+lightning_logs/
+
+# Model directories
+models/cache/
+models/downloads/
+models/converted/
+ctranslate2_models/
+whisper_models/
+ggml-*.bin
+
+# EXCEPT model config files
+!models/*.json
+!models/*.yaml
+!models/*.py
+
+# Transformers cache
+transformers_cache/
+
+# Whisper.cpp models (large binary files)
+ggml-*.bin
+*.gguf
+
+# MLX models cache
+mlx_models/
+
+# ----------------------------------------------------------------------------
+# API Keys & Secrets
+# ----------------------------------------------------------------------------
+# API keys and tokens
+*.key
+*.token
+.env
+.env.*
+!.env.example
+secrets/
+secrets.json
+.secrets
+config/secrets.py
+api_keys.py
+tokens.py
+
+# Hugging Face token
+.huggingface/token
+
+# Mistral AI token
+.mistral/api_key
+
+# ----------------------------------------------------------------------------
+# Application Specific
+# ----------------------------------------------------------------------------
+# Qt settings and cache
+*.ini.lock
+.qt/
+QtProject.conf
+
+# Application logs
+*.log
+logs/
+log/
+susurrus.log
+susurrus-*.log
+
+# User settings
+settings.json
+user_settings.json
+.susurrus/
+susurrus_config.json
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# ----------------------------------------------------------------------------
+# Development & Testing
+# ----------------------------------------------------------------------------
+# Test outputs
+test_outputs/
+test_results/
+test-results/
+.pytest_cache/
+htmlcov/
+
+# Profiling
+*.prof
+*.lprof
+profile_*.txt
+
+# Benchmark results
+benchmarks/
+benchmark_results/
+
+# Coverage
+.coverage
+coverage.xml
+*.cover
+
+# ----------------------------------------------------------------------------
+# Build & Distribution
+# ----------------------------------------------------------------------------
+# Build artifacts
+build/
+dist/
+*.app
+*.dmg
+*.exe
+*.deb
+*.rpm
+*.pkg
+*.pkg.tar.xz
+
+# Wheel files
+*.whl
+
+# setuptools
+.eggs/
+*.egg-info/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# ----------------------------------------------------------------------------
+# Documentation
+# ----------------------------------------------------------------------------
+# Sphinx
+docs/_build/
+docs/_static/
+docs/_templates/
+
+# MkDocs
+site/
+
+# ----------------------------------------------------------------------------
+# Miscellaneous
+# ----------------------------------------------------------------------------
+# Backup files
+*.bak
+*.backup
+*~
+*.orig
+
+# Lock files
+*.lock
+package-lock.json
+yarn.lock
+
+# Node modules (if you ever add web components)
+node_modules/
+
+# Data directories
+data/raw/
+data/processed/
+data/downloads/
+
+# Large sample files
+samples/*.mp3
+samples/*.wav
+samples/*.flac
+
+# Except small test samples
+!samples/test_*.mp3
+!samples/sample_5s.wav
+
+# Custom ignore patterns
+TODO.txt
+NOTES.md
+scratch/
+experiments/
+
+# ----------------------------------------------------------------------------
+# Project Specific Temporary Files
+# ----------------------------------------------------------------------------
+# downloads in progress
+*.part
+*.ytdl
+*.temp
+*.tmp
+
+# Converted audio files
+*_converted.wav
+*_trimmed.wav
+*_noaudio.*
+
+# Subtitle downloads
+*.vtt.part
+*.srt.part
+
+# FFmpeg temp files
+ffmpeg2pass-*.log

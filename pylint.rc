@@ -1,0 +1,41 @@
+[MASTER]
+# Pickle collected data for later comparisons
+persistent=yes
+
+# Discover python modules and packages in the file system subtree
+recursive=yes
+
+# Add files or directories to the blacklist
+ignore=CVS,.git,__pycache__,.venv,venv,build,dist
+
+# Use multiple processes
+jobs=4
+
+[MESSAGES CONTROL]
+# Disable specific warnings
+disable=
+    C0103,  # Invalid name (we use short names sometimes)
+    C0111,  # Missing docstring (handle with pydocstyle)
+    R0903,  # Too few public methods
+    R0913,  # Too many arguments
+    W0212,  # Access to protected member (needed for some PyQt)
+    C0302,  # Too many lines in module
+    R0914,  # Too many local variables
+    R0915,  # Too many statements
+
+[FORMAT]
+max-line-length=100
+indent-string='    '
+
+[DESIGN]
+max-args=10
+max-locals=25
+max-returns=6
+max-branches=15
+max-statements=60
+max-attributes=15
+
+[IMPORTS]
+# Check for circular imports
+ext-import-graph=
+deprecated-modules=optparse,imp
