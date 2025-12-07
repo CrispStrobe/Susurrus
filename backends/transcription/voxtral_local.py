@@ -220,7 +220,7 @@ class VoxtralLocal:
             logging.warning(f"Language '{language}' not in supported list, using anyway")
 
         # Apply transcription request
-        inputs = self.processor.apply_transcrition_request(
+        inputs = self.processor.apply_transcription_request(
             language=language, audio=audio_path, model_id=self.REPO_ID
         )
         inputs = inputs.to(self.device, dtype=torch.bfloat16)
@@ -273,7 +273,7 @@ class VoxtralLocal:
                 lang = language if language else "en"
 
                 # Apply transcription request
-                inputs = self.processor.apply_transcrition_request(
+                inputs = self.processor.apply_transcription_request(
                     language=lang, audio=chunk_path, model_id=self.REPO_ID
                 )
                 inputs = inputs.to(self.device, dtype=torch.bfloat16)
