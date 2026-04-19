@@ -10,6 +10,7 @@ from .whisper_jax_backend import WhisperJaxBackend
 from .insanely_fast_backend import InsanelyFastBackend
 from .openai_whisper_backend import OpenAIWhisperBackend
 from .voxtral_backend import VoxtralLocalBackend, VoxtralAPIBackend
+from .crispasr_backend import CrispasrBackend
 
 def get_backend(backend_name, **kwargs):
     """Get backend instance by name"""
@@ -25,6 +26,7 @@ def get_backend(backend_name, **kwargs):
         'openai whisper': OpenAIWhisperBackend,
         'voxtral-local': VoxtralLocalBackend,
         'voxtral-api': VoxtralAPIBackend,
+        'crispasr': CrispasrBackend,
     }
     
     backend_class = backends.get(backend_name.lower())
