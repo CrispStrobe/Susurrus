@@ -17,8 +17,76 @@ import threading
 from .base import TranscriptionBackend
 
 
+_GITHUB_RELEASE_URL = "https://github.com/CrispStrobe/CrispASR/releases/latest/download"
+_CACHE_DIR = os.path.join(os.path.expanduser("~"), ".cache", "susurrus", "crispasr")
+
+
+def _download_crispasr():
+    """Download the latest CrispASR release for this platform."""
+    import platform
+    import zipfile
+    import tarfile
+    import urllib.request
+
+    system = platform.system().lower()
+    machine = platform.machine().lower()
+
+    if system == "linux" and machine in ("x86_64", "amd64"):
+        asset = "crispasr-linux-x86_64.tar.gz"
+    elif system == "darwin":
+        asset = "crispasr-macos.tar.gz"
+    elif system == "windows":
+        asset = "crispasr-windows-x86_64.zip"
+    else:
+        logging.warning(f"No pre-built CrispASR binary for {system}/{machine}")
+        return None
+
+    os.makedirs(_CACHE_DIR, exist_ok=True)
+    exe_name = "crispasr.exe" if system == "windows" else "crispasr"
+    cached_exe = os.path.join(_CACHE_DIR, exe_name)
+
+    if os.path.isfile(cached_exe) and os.access(cached_exe, os.X_OK):
+        return cached_exe
+
+    url = f"{_GITHUB_RELEASE_URL}/{asset}"
+    archive_path = os.path.join(_CACHE_DIR, asset)
+    logging.info(f"Downloading CrispASR from {url} ...")
+
+    try:
+        urllib.request.urlretrieve(url, archive_path)
+    except Exception as e:
+        logging.warning(f"Failed to download CrispASR: {e}")
+        return None
+
+    try:
+        if asset.endswith(".tar.gz"):
+            with tarfile.open(archive_path, "r:gz") as tf:
+                tf.extractall(_CACHE_DIR)
+        elif asset.endswith(".zip"):
+            with zipfile.ZipFile(archive_path, "r") as zf:
+                zf.extractall(_CACHE_DIR)
+    except Exception as e:
+        logging.warning(f"Failed to extract CrispASR: {e}")
+        return None
+    finally:
+        if os.path.isfile(archive_path):
+            os.remove(archive_path)
+
+    # The archive contains a subdirectory — find the binary
+    for root, _dirs, files in os.walk(_CACHE_DIR):
+        for f in files:
+            if f == exe_name:
+                path = os.path.join(root, f)
+                if system != "windows":
+                    os.chmod(path, 0o755)
+                return path
+
+    logging.warning("CrispASR binary not found in downloaded archive")
+    return None
+
+
 def _find_crispasr():
-    """Locate the crispasr binary."""
+    """Locate the crispasr binary — search PATH, common locations, then auto-download."""
     # Explicit env var
     env = os.environ.get("CRISPASR_EXECUTABLE")
     if env and os.path.isfile(env):
@@ -30,13 +98,20 @@ def _find_crispasr():
         os.path.expanduser("~/.local/bin/crispasr"),
         "/usr/local/bin/crispasr",
     ]
-    # Also check whisper.cpp build dirs
+    # Also check whisper.cpp / CrispASR build dirs
     for base in [
         os.path.join(os.path.dirname(__file__), "..", "..", "..", "whisper.cpp"),
         os.path.expanduser("~/whisper.cpp"),
         os.path.expanduser("~/CrispASR"),
     ]:
         candidates.append(os.path.join(base, "build", "bin", "crispasr"))
+
+    # Check cached download
+    exe_name = "crispasr.exe" if os.name == "nt" else "crispasr"
+    candidates.append(os.path.join(_CACHE_DIR, exe_name))
+    # Also check subdirectory from archive extraction
+    for sub in ("crispasr-linux-x86_64", "crispasr-macos", "crispasr-windows-x86_64"):
+        candidates.append(os.path.join(_CACHE_DIR, sub, exe_name))
 
     import shutil
     for c in candidates:
@@ -46,7 +121,10 @@ def _find_crispasr():
                 return found
         elif os.path.isfile(c) and os.access(c, os.X_OK):
             return c
-    return None
+
+    # Not found anywhere — try to download
+    logging.info("CrispASR not found locally, attempting to download latest release...")
+    return _download_crispasr()
 
 
 class CrispasrBackend(TranscriptionBackend):

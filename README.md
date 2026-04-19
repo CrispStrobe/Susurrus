@@ -6,15 +6,15 @@ Susurrus is a professional, modular audio transcription application that leverag
 
 | Project | Role |
 |---|---|
-| **Susurrus** | This repo — Python ASR GUI with 9 backends |
-| **[CrispASR](https://github.com/CrispStrobe/CrispASR)** | C++ ASR engine — 11 backends, ggml inference, 3.8x faster than voxtral.c. Also available as a Susurrus backend via whisper.cpp. |
+| **Susurrus** | This repo — Python ASR GUI + CLI with 12 backends |
+| **[CrispASR](https://github.com/CrispStrobe/CrispASR)** | C++ ASR engine — 11 backends, ggml inference. Available as a Susurrus backend (auto-downloads if not found). |
 | **[CrisperWeaver](https://github.com/CrispStrobe/CrisperWeaver)** | Flutter transcription app powered by CrispASR — desktop + mobile, fully offline |
 | **[CrispEmbed](https://github.com/CrispStrobe/CrispEmbed)** | Text embedding engine (ggml) — XLM-R, Qwen3-Embed, Gemma3, dense + sparse + ColBERT |
 
 ## ✨ Features
 
 ### Core Transcription
-- **Multiple Backend Support**: mlx-whisper, OpenAI Whisper, faster-whisper, transformers, whisper.cpp, ctranslate2, whisper-jax, insanely-fast-whisper, Voxtral
+- **Multiple Backend Support**: mlx-whisper, OpenAI Whisper, faster-whisper, transformers, whisper.cpp, ctranslate2, whisper-jax, insanely-fast-whisper, Voxtral, **CrispASR** (11 ggml backends — parakeet, canary, qwen3, granite, voxtral, wav2vec2, etc.; auto-downloads if not installed)
 - **Flexible Input**: Local files, URLs, also of videos
 - **Audio Format Support**: MP3, WAV, FLAC, M4A, AAC, OGG, OPUS, WebM, MP4, WMA
 - **Language Detection**: Automatic or manual language selection
@@ -476,3 +476,28 @@ pytest tests/
 - [Mistral AI](https://mistral.ai/) - Voxtral model
 - [Hugging Face](https://huggingface.co/) - Model hosting and transformers
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) - For URL downloading
+- [CrispASR](https://github.com/CrispStrobe/CrispASR) - C++ ggml ASR engine (11 backends)
+
+## CLI Usage
+
+Susurrus also works headless without the GUI:
+
+```bash
+# List available backends
+python cli.py --list-backends
+
+# Transcribe with CrispASR (auto-downloads binary if not found)
+python cli.py -b crispasr -m parakeet-tdt-0.6b-v3.gguf -f audio.wav
+
+# Transcribe with faster-whisper
+python cli.py -b faster-sequenced -m large-v3 -f audio.wav
+
+# CrispASR with specific sub-backend + VAD
+python cli.py -b crispasr -m model.gguf -f audio.wav --vad --split-on-punct
+```
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+**Model licenses vary.** Most ASR models (Whisper, Parakeet, Canary, Voxtral, Qwen3-ASR) are permissive (MIT/Apache/CC-BY). Pyannote speaker-diarization-3.1 is MIT. Check the individual model card on HuggingFace for the exact terms before commercial deployment.
