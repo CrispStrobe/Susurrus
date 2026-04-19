@@ -2,6 +2,15 @@
 
 Susurrus is a professional, modular audio transcription application that leverages various AI models and backends to convert speech to text. Built with a clean architecture, it supports multiple Whisper implementations, speaker diarization, and extensive customization options.
 
+### Part of the Crisp ecosystem
+
+| Project | Role |
+|---|---|
+| **Susurrus** | This repo — Python ASR GUI with 9 backends |
+| **[CrispASR](https://github.com/CrispStrobe/CrispASR)** | C++ ASR engine — 11 backends, ggml inference, 3.8x faster than voxtral.c. Also available as a Susurrus backend via whisper.cpp. |
+| **[CrisperWeaver](https://github.com/CrispStrobe/CrisperWeaver)** | Flutter transcription app powered by CrispASR — desktop + mobile, fully offline |
+| **[CrispEmbed](https://github.com/CrispStrobe/CrispEmbed)** | Text embedding engine (ggml) — XLM-R, Qwen3-Embed, Gemma3, dense + sparse + ColBERT |
+
 ## ✨ Features
 
 ### Core Transcription
