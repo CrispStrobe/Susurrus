@@ -13,7 +13,7 @@ vulture>=2.10  # Find unused code
 pydeps>=1.12.0  # Visualize dependencies
 
 # Pre-commit hooks
-pre-commit>=3.5.0
+pre-commit>=4.3.0
 
 # Testing
 pytest>=7.4.0
