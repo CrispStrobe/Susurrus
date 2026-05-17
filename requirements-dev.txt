@@ -1,5 +1,5 @@
 # Linting and code quality
-flake8>=6.0.0
+flake8>=7.3.0
 pylint>=3.0.0
 mypy>=1.7.0
 isort>=5.12.0
