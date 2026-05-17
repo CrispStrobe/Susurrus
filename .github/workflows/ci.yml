@@ -37,7 +37,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.9", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v6
 
@@ -48,8 +48,14 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -e ".[dev]" || pip install -e .
           pip install pytest pytest-cov pytest-mock
+          pip install --no-deps -e .
 
-      - name: Run unit tests
-        run: pytest tests/unit -v --tb=short
+      - name: Install optional heavy deps (best-effort)
+        continue-on-error: true
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short -x
