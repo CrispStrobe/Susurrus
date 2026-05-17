@@ -20,6 +20,7 @@ from .manager import DiarizationManager, verify_authentication
 # Set up logging
 logging.basicConfig(level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler()])
 
+
 # Create a custom progress indicator for transcription
 class TranscriptionProgress:
     """Simple progress indicator for transcription process"""
@@ -185,7 +186,7 @@ def main():
         logging.warning(
             f"Invalid diarization model: {args.diarization_model}. Valid options are: {valid_models}"
         )
-        logging.warning(f"Falling back to Default model.")
+        logging.warning("Falling back to Default model.")
         diarization_model = "Default"
     else:
         diarization_model = args.diarization_model
@@ -234,14 +235,14 @@ def main():
                 logging.error("2. Make sure you've accepted the model licenses:")
                 model_id = diarization_manager.get_model_id()
                 logging.error(f"   - https://huggingface.co/{model_id.split('@')[0]}")
-                logging.error(f"   - https://huggingface.co/pyannote/segmentation")
+                logging.error("   - https://huggingface.co/pyannote/segmentation")
                 logging.error(
                     "3. Try again with the --verify-auth flag to test your authentication"
                 )
 
                 # Suggest using the verify-auth command
                 logging.error("\nTry running with the verify-auth flag:")
-                logging.error(f"    python diarize_worker.py --verify-auth --hf-token YOUR_TOKEN")
+                logging.error("    python diarize_worker.py --verify-auth --hf-token YOUR_TOKEN")
                 sys.exit(1)
 
             elif (
@@ -250,10 +251,10 @@ def main():
                 or "access" in error_msg.lower()
             ):
                 model_id = diarization_manager.get_model_id()
-                logging.error(f"You need to accept the model license on Hugging Face Hub.")
-                logging.error(f"Please visit:")
+                logging.error("You need to accept the model license on Hugging Face Hub.")
+                logging.error("Please visit:")
                 logging.error(f"1. https://huggingface.co/{model_id.split('@')[0]}")
-                logging.error(f"2. https://huggingface.co/pyannote/segmentation")
+                logging.error("2. https://huggingface.co/pyannote/segmentation")
                 logging.error(
                     "Accept the user conditions on both pages while logged in to your account."
                 )
@@ -277,9 +278,9 @@ def main():
 
             for i, segment in enumerate(segments):
                 segment_file = segment["file"]
-                speaker = segment["speaker"]
-                start = segment["start"]
-                end = segment["end"]
+                segment["speaker"]
+                segment["start"]
+                segment["end"]
 
                 # Prepare a temporary file to capture transcription output
                 temp_output = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")

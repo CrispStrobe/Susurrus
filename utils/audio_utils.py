@@ -1,10 +1,9 @@
 # utils/audio_utils.py:
 """Audio processing utilities"""
+
 import logging
 import os
 import tempfile
-
-from pydub import AudioSegment
 
 
 def convert_audio_to_wav(audio_path):

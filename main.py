@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Susurrus - Main entry point"""
+
 import logging
 import sys
 
@@ -14,8 +15,8 @@ logging.basicConfig(
 )
 
 # import after logging is configured
-from gui.main_window import MainWindow
-from utils.dependency_check import check_ffmpeg_installation
+from gui.main_window import MainWindow  # noqa: E402
+from utils.dependency_check import check_ffmpeg_installation  # noqa: E402
 
 
 def main():

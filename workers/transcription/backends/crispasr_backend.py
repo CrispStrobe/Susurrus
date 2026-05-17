@@ -9,13 +9,14 @@ can be forced with the `crispasr_backend` kwarg.
 Requires the `crispasr` binary on PATH or at CRISPASR_EXECUTABLE.
 Build from https://github.com/CrispStrobe/CrispASR
 """
+
 import logging
 import os
 import re
 import subprocess
 import threading
-from .base import TranscriptionBackend
 
+from .base import TranscriptionBackend
 
 _GITHUB_RELEASE_URL = "https://github.com/CrispStrobe/CrispASR/releases/latest/download"
 _CACHE_DIR = os.path.join(os.path.expanduser("~"), ".cache", "susurrus", "crispasr")
@@ -24,9 +25,9 @@ _CACHE_DIR = os.path.join(os.path.expanduser("~"), ".cache", "susurrus", "crispa
 def _download_crispasr():
     """Download the latest CrispASR release for this platform."""
     import platform
-    import zipfile
     import tarfile
     import urllib.request
+    import zipfile
 
     system = platform.system().lower()
     machine = platform.machine().lower()
@@ -61,10 +62,14 @@ def _download_crispasr():
     try:
         if asset.endswith(".tar.gz"):
             with tarfile.open(archive_path, "r:gz") as tf:
-                tf.extractall(_CACHE_DIR)
+                tf.extractall(_CACHE_DIR, filter="data")
         elif asset.endswith(".zip"):
             with zipfile.ZipFile(archive_path, "r") as zf:
-                zf.extractall(_CACHE_DIR)
+                for member in zf.namelist():
+                    # Reject path traversal attempts
+                    if os.path.isabs(member) or ".." in member.split("/"):
+                        raise ValueError(f"Unsafe zip member: {member}")
+                zf.extractall(_CACHE_DIR)  # nosec B202
     except Exception as e:
         logging.warning(f"Failed to extract CrispASR: {e}")
         return None
@@ -114,6 +119,7 @@ def _find_crispasr():
         candidates.append(os.path.join(_CACHE_DIR, sub, exe_name))
 
     import shutil
+
     for c in candidates:
         if c == "crispasr":
             found = shutil.which(c)
@@ -142,8 +148,7 @@ class CrispasrBackend(TranscriptionBackend):
         best_of: int — best-of-N candidates with temperature > 0
     """
 
-    def __init__(self, model_id, device, language=None, word_timestamps=False,
-                 **kwargs):
+    def __init__(self, model_id, device, language=None, word_timestamps=False, **kwargs):
         super().__init__(model_id, device, language, **kwargs)
         self.word_timestamps = word_timestamps
         self.crispasr_backend = kwargs.get("crispasr_backend", None)
@@ -160,6 +165,7 @@ class CrispasrBackend(TranscriptionBackend):
         if ext in (".wav", ".mp3", ".flac", ".ogg"):
             return audio_path
         from utils.audio_utils import convert_audio_to_wav
+
         wav_path = convert_audio_to_wav(audio_path)
         if wav_path != audio_path:
             self.temp_files.append(wav_path)
@@ -182,9 +188,12 @@ class CrispasrBackend(TranscriptionBackend):
 
         cmd = [
             exe,
-            "-m", self.model_id,
-            "-f", audio_path,
-            "-t", str(min(os.cpu_count() or 4, 8)),
+            "-m",
+            self.model_id,
+            "-f",
+            audio_path,
+            "-t",
+            str(min(os.cpu_count() or 4, 8)),
             "-np",  # no progress prints on stderr
         ]
 

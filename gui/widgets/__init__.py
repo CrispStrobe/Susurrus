@@ -5,3 +5,10 @@ from .advanced_options import AdvancedOptionsBox
 from .collapsible_box import CollapsibleBox
 from .diarization_settings import DiarizationSettingsBox
 from .voxtral_settings import VoxtralSettingsBox
+
+__all__ = [
+    "AdvancedOptionsBox",
+    "CollapsibleBox",
+    "DiarizationSettingsBox",
+    "VoxtralSettingsBox",
+]

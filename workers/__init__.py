@@ -3,5 +3,4 @@
 
 from .transcription_thread import TranscriptionThread
 
-# from .transcription_coordinator import TranscriptionCoordinator
-# from .diarization_coordinator import DiarizationCoordinator
+__all__ = ["TranscriptionThread"]

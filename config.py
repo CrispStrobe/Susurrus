@@ -1,6 +1,5 @@
 """Configuration and constants"""
 
-import logging
 import os
 import platform
 

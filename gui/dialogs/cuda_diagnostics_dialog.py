@@ -1,14 +1,14 @@
 # gui/dialogs/cuda_diagnostics_dialog.py
 """CUDA diagnostics dialog"""
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QDialog,
-    QVBoxLayout,
+    QDialogButtonBox,
     QLabel,
     QTextBrowser,
-    QDialogButtonBox,
-) 
-from PyQt6.QtCore import Qt
+    QVBoxLayout,
+)
 
 from utils.device_detection import check_nvidia_installation
 
@@ -63,7 +63,7 @@ class CUDADiagnosticsDialog(QDialog):
         html_content += "<h3>NVIDIA Driver</h3>"
         if diagnostics["nvidia_driver"]["detected"]:
             html_content += "<table><tr><th>Component</th><th>Details</th></tr>"
-            html_content += f"<tr><td>Driver Detected</td><td>Yes</td></tr>"
+            html_content += "<tr><td>Driver Detected</td><td>Yes</td></tr>"
             html_content += f"<tr><td>Driver Version</td><td>{diagnostics['nvidia_driver']['version']}</td></tr>"
             html_content += (
                 f"<tr><td>GPU</td><td>{diagnostics['nvidia_driver']['details']}</td></tr>"
@@ -76,7 +76,7 @@ class CUDADiagnosticsDialog(QDialog):
         html_content += "<h3>CUDA Toolkit</h3>"
         if diagnostics["cuda_toolkit"]["detected"]:
             html_content += "<table><tr><th>Component</th><th>Details</th></tr>"
-            html_content += f"<tr><td>CUDA Detected</td><td>Yes</td></tr>"
+            html_content += "<tr><td>CUDA Detected</td><td>Yes</td></tr>"
             html_content += f"<tr><td>CUDA Version</td><td>{diagnostics['cuda_toolkit']['version'] or 'Unknown'}</td></tr>"
             html_content += (
                 f"<tr><td>CUDA Path</td><td>{diagnostics['cuda_toolkit']['path']}</td></tr>"
@@ -97,7 +97,7 @@ class CUDADiagnosticsDialog(QDialog):
                 cuda_version_from_pytorch = str(diagnostics["pytorch"]["version"]).split("+cu")[1]
                 html_content += f"<tr><td>CUDA Support</td><td>Yes (built with CUDA {cuda_version_from_pytorch})</td></tr>"
             elif "+cpu" in str(diagnostics["pytorch"]["version"]):
-                html_content += f"<tr><td>CUDA Support</td><td>No (CPU-only build)</td></tr>"
+                html_content += "<tr><td>CUDA Support</td><td>No (CPU-only build)</td></tr>"
 
             html_content += f"<tr><td>torch.cuda.is_available()</td><td>{diagnostics['pytorch']['cuda_available']}</td></tr>"
 

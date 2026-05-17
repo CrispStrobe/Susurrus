@@ -2,6 +2,7 @@
 """
 Thin diarization worker script - delegates to DiarizationCoordinator
 """
+
 import os
 import sys
 

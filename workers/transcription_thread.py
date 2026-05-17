@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Transcription worker thread"""
+
 import json
 import logging
 import os

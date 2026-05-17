@@ -48,9 +48,9 @@ def patched_load(path_or_url, map_location=None):
                 result = torch.load(path_or_url, map_location=map_location, weights_only=True)
                 print("🔄 Loaded checkpoint with safe_globals context manager")
                 return result
-        except Exception as e2:
+        except Exception:
             # If both methods fail, raise the original error
-            print(f"⚠️ Both loading methods failed!")
+            print("⚠️ Both loading methods failed!")
             raise e1
 
 
@@ -84,7 +84,7 @@ try:
 
                     with safe_globals([TorchVersion]):
                         return torch.load(checkpoint_path, map_location=map_location)
-                except:
+                except Exception:
                     # If all else fails, raise the original error
                     raise e
 
@@ -114,7 +114,7 @@ if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
         temp_tensor = torch.zeros(1024, 1024, 64, device="mps")
         del temp_tensor
         print("✅ MPS memory pre-allocated")
-    except:
+    except Exception:
         print("⚠️ MPS memory pre-allocation failed")
 
 elif torch.cuda.is_available():
@@ -164,7 +164,7 @@ class EnhancedProgress:
                 print(
                     f"📊 Audio duration: {self.audio_duration:.1f} seconds ({self.audio_duration/60:.1f} minutes)"
                 )
-            except:
+            except Exception:
                 try:
                     import soundfile as sf
 
@@ -173,7 +173,7 @@ class EnhancedProgress:
                     print(
                         f"📊 Audio duration: {self.audio_duration:.1f} seconds ({self.audio_duration/60:.1f} minutes)"
                     )
-                except:
+                except Exception:
                     print("ℹ️ Could not determine audio duration")
 
         # Processing stages

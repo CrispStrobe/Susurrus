@@ -32,9 +32,7 @@ def fix_file(filepath: Path):
                     import_buffer = [line]
                 elif in_import:
                     if line.strip() and not line.strip().startswith("#"):
-                        if ")" not in line and not any(
-                            x in line for x in ["import", ",", "from"]
-                        ):
+                        if ")" not in line and not any(x in line for x in ["import", ",", "from"]):
                             # End of import block, add closing paren
                             import_buffer[-1] = import_buffer[-1].rstrip() + ")"
                             new_lines.extend(import_buffer)

@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 try:
-    import pydeps
+    import pydeps  # noqa: F401
     from pydeps.cli import main as pydeps_main
 except ImportError:
     print("❌ Install pydeps: pip install pydeps")

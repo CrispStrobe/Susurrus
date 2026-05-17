@@ -1,5 +1,6 @@
 # gui/dialogs/installer_dialog.py:
 """Installation dialogs for various dependencies"""
+
 import subprocess
 import sys
 
@@ -306,7 +307,7 @@ class InstallerDialog(QDialog):
         self._run_installer_thread(
             "yt-dlp",
             "Installing yt-dlp Dependencies",
-            "Installing dependencies for yt-dlp downloading...\n"
+            "Installing dependencies for yt-dlp downloading...\n",
         )
 
     def install_voxtral(self):

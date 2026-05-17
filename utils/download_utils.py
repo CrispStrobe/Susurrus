@@ -1,10 +1,10 @@
 # utils/download_utils.py
 """Download utilities"""
+
 import logging
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
@@ -16,11 +16,6 @@ def download_audio(url, proxies=None, ffmpeg_path="ffmpeg"):
     """
     import logging
     import os
-    import shutil
-    import subprocess
-    import sys
-    import tempfile
-    from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
     # Clean up the URL and remove any playlist parameters (still good practice)
     parsed_url = urlparse(url)
@@ -88,7 +83,6 @@ def download_with_yt_dlp(url, proxies=None):
     """Enhanced version of download_with_yt_dlp for generic URLs."""
     logging.info("Downloading using yt-dlp...")
     import os
-    import sys
     import tempfile
 
     try:
@@ -249,20 +243,26 @@ def download_with_ffmpeg(url, proxies=None, ffmpeg_path="ffmpeg"):
                 pass
         return None
 
+
 # Helper classes for yt-dlp logging
 class MyLogger:
     def debug(self, msg):
-        if 'yt-dlp' in msg:
+        if "yt-dlp" in msg:
             logging.debug(msg)
         else:
             logging.info(msg)
+
     def warning(self, msg):
         logging.warning(msg)
+
     def error(self, msg):
         logging.error(msg)
 
+
 def my_hook(d):
-    if d['status'] == 'downloading':
-        logging.info(f"Downloading: {d['_percent_str']} of {d['_total_bytes_str']} at {d['_speed_str']}")
-    elif d['status'] == 'finished':
+    if d["status"] == "downloading":
+        logging.info(
+            f"Downloading: {d['_percent_str']} of {d['_total_bytes_str']} at {d['_speed_str']}"
+        )
+    elif d["status"] == "finished":
         logging.info(f"Done downloading, now post-processing... {d.get('filename', '')}")

@@ -20,7 +20,7 @@ from backends.diarization import DiarizationManager, default_device, verify_auth
 
 def test_diarization(audio_path, hf_token=None, device=None, num_speakers=None):
     """Test the diarization functionality"""
-    logging.info(f"Starting speaker diarization...")
+    logging.info("Starting speaker diarization...")
 
     # Use the provided device or fall back to default
     if device is None:

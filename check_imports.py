@@ -6,9 +6,10 @@ Improved import checker with fewer false positives.
 import ast
 import os
 import sys
-from pathlib import Path
 from collections import defaultdict
-from typing import List, Dict, Set, Tuple  
+from pathlib import Path
+from typing import Dict, List, Set
+
 
 class ImprovedImportChecker:
     """Check imports with better false positive filtering"""

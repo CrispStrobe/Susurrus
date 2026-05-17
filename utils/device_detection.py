@@ -1,11 +1,10 @@
 # utils/device_detection.py
 """Device detection and CUDA diagnostics"""
+
 import logging
 import os
 import platform
 import subprocess
-
-import torch
 
 
 def check_cuda():
@@ -98,8 +97,6 @@ def check_cuda():
 def check_nvidia_installation():
     """Comprehensive check of NVIDIA and CUDA installation"""
     import os
-    import platform
-    import subprocess
     import sys
 
     diagnostics = {
@@ -204,7 +201,6 @@ def get_default_device():
 
 def diagnose_pytorch():
     import logging
-    import platform
     import sys
 
     logging.info(f"Python version: {sys.version}")

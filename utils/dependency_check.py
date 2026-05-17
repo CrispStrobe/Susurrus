@@ -1,9 +1,9 @@
 # utils/dependency_check.py:
 """Dependency checking utilities"""
-import importlib
+
 import logging
 import os
-import subprocess
+import platform
 
 
 def check_dependencies():
@@ -78,7 +78,7 @@ def check_dependencies():
                 try:
                     cuda_available = module.cuda.is_available()
                     logging.info(f"CUDA available: {cuda_available}")
-                except:
+                except Exception:
                     logging.info("Could not check CUDA availability")
 
                 # Safer MPS check that won't crash
@@ -86,7 +86,7 @@ def check_dependencies():
                     if hasattr(module.backends, "mps"):
                         mps_available = module.backends.mps.is_available()
                         logging.info(f"MPS available: {mps_available}")
-                except:
+                except Exception:
                     logging.info("Could not check MPS availability")
 
         except ImportError:
@@ -114,7 +114,7 @@ def check_dependencies():
         dependencies["PyAnnote Audio"]["installed"] = True
         dependencies["PyAnnote Audio"]["version"] = pyannote_version
         logging.info(f"PyAnnote Audio v{pyannote_version} is installed")
-    except:
+    except Exception:
         # Already handled in the main loop
         pass
 
@@ -247,16 +247,21 @@ def check_developer_mode():
                 value, _ = winreg.QueryValueEx(key, "AllowDevelopmentWithoutDevMode")
                 if value != 1:
                     logging.warning("Developer Mode is not enabled")
-                    QMessageBox.warning(
-                        None,
-                        "Developer Mode Not Enabled",
-                        "Please enable Developer Mode in Windows Settings:\n"
-                        "1. Open Windows Settings\n"
-                        "2. Navigate to Privacy & security > For developers\n"
-                        "3. Enable 'Developer Mode'\n\n"
-                        "This will improve cache performance.",
-                    )
-            except WindowsError as e:
+                    try:
+                        from PyQt6.QtWidgets import QMessageBox
+
+                        QMessageBox.warning(
+                            None,
+                            "Developer Mode Not Enabled",
+                            "Please enable Developer Mode in Windows Settings:\n"
+                            "1. Open Windows Settings\n"
+                            "2. Navigate to Privacy & security > For developers\n"
+                            "3. Enable 'Developer Mode'\n\n"
+                            "This will improve cache performance.",
+                        )
+                    except ImportError:
+                        pass
+            except OSError as e:
                 logging.warning(f"Could not check Developer Mode registry: {e}")
 
         except Exception as e:

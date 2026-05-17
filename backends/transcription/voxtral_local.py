@@ -4,11 +4,11 @@
 import logging
 import os
 import tempfile
+from typing import List, Tuple
 
 import numpy as np
 import soundfile as sf
 import torch
-from typing import List, Tuple
 
 # Try to import librosa, but make it optional
 try:

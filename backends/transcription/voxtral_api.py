@@ -5,9 +5,10 @@ import logging
 import os
 import tempfile
 import time
+from typing import Dict, List
 
 import requests
-from typing import List, Dict
+
 
 class VoxtralAPI:
     """Voxtral inference via Mistral AI API"""
@@ -175,7 +176,7 @@ class VoxtralAPI:
 
         chunks = []
         chunk_start = 0.0
-        max_duration_ms = max_duration * 1000  # Convert to milliseconds
+        max_duration * 1000  # Convert to milliseconds
 
         while chunk_start < duration:
             chunk_end = min(chunk_start + max_duration, duration)
