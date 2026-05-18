@@ -67,7 +67,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   publish-pypi:
+    needs: build-binaries
     runs-on: ubuntu-latest
+    continue-on-error: true
     environment: pypi
     permissions:
       id-token: write
