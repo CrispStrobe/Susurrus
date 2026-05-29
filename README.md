@@ -1,503 +1,240 @@
-# Susurrus: Audio Transcription Suite
+# Susurrus: Audio Transcription, TTS & Translation Suite
 
-Susurrus is a professional, modular audio transcription application that leverages various AI models and backends to convert speech to text. Built with a clean architecture, it supports multiple Whisper implementations, speaker diarization, and extensive customization options.
+Susurrus is a professional, modular audio suite providing transcription, text-to-speech, and translation through a unified GUI and CLI. Built with a clean architecture, it supports 30+ ASR backends (via CrispASR), 12 TTS engines, multi-language translation, speaker diarization, and extensive customization options.
 
 ### Part of the Crisp ecosystem
 
 | Project | Role |
 |---|---|
-| **Susurrus** | This repo — Python ASR GUI + CLI with 12 backends |
-| **[CrispASR](https://github.com/CrispStrobe/CrispASR)** | C++ ASR engine — 11 backends, ggml inference. Available as a Susurrus backend (auto-downloads if not found). |
+| **Susurrus** | This repo — Python GUI + CLI with 30+ ASR, 12 TTS, translation |
+| **[CrispASR](https://github.com/CrispStrobe/CrispASR)** | C++ ASR/TTS engine — 24+ backends, ggml inference. Two integration paths: subprocess (binary) or FFI (libcrispasr Python bindings) |
 | **[CrisperWeaver](https://github.com/CrispStrobe/CrisperWeaver)** | Flutter transcription app powered by CrispASR — desktop + mobile, fully offline |
+| **[CrispTTS](https://github.com/CrispStrobe/CrispTTS)** | Python TTS suite — 20+ handlers, German focus |
 | **[CrispEmbed](https://github.com/CrispStrobe/CrispEmbed)** | Text embedding engine (ggml) — XLM-R, Qwen3-Embed, Gemma3, dense + sparse + ColBERT |
 
-## ✨ Features
+## Features
 
-### Core Transcription
-- **Multiple Backend Support**: mlx-whisper, OpenAI Whisper, faster-whisper, transformers, whisper.cpp, ctranslate2, whisper-jax, insanely-fast-whisper, Voxtral, **CrispASR** (11 ggml backends — parakeet, canary, qwen3, granite, voxtral, wav2vec2, etc.; auto-downloads if not installed)
-- **Flexible Input**: Local files, URLs, also of videos
+### Transcription (30+ backends)
+
+- **CrispASR engine** (24+ sub-backends): whisper, parakeet, canary, cohere, qwen3, voxtral, voxtral4b, granite, moonshine, kyutai-stt, fastconformer-ctc, wav2vec2, firered-asr, funasr, glm-asr, omniasr, vibevoice-asr, gemma4-e2b, and more
+- **CrispASR FFI** (`crispasr-ffi`): In-process inference via Python ctypes to libcrispasr — zero IPC overhead, persistent model sessions, native word-level timestamps and confidence scores
+- **CrispASR subprocess** (`crispasr`): Binary execution with full 142-parameter passthrough — works with just the binary, no shared library needed
+- **Python backends**: mlx-whisper, faster-whisper (batched + sequenced), transformers, whisper.cpp, ctranslate2, whisper-jax, insanely-fast-whisper, OpenAI Whisper, Voxtral (local + API)
+- **Flexible Input**: Local files, URLs, video audio extraction
 - **Audio Format Support**: MP3, WAV, FLAC, M4A, AAC, OGG, OPUS, WebM, MP4, WMA
-- **Language Detection**: Automatic or manual language selection
-- **Time-based Trimming**: Transcribe specific portions of audio
-- **Word-level Timestamps**: Precise timing information (backend-dependent)
+- **Language Detection**: Automatic or manual, multiple LID backends (whisper, silero, firered, ecapa)
+- **Word-level Timestamps**: Native or CTC aligner-based
+- **Performance Metrics**: Real-time factor (RTF) and words-per-second (WPS)
+- **Backend Availability Probing**: Auto-detects which CrispASR backends are compiled in
+
+### Text-to-Speech (12 engines)
+
+- **CrispASR TTS** (7 C++ backends): kokoro, orpheus, qwen3-tts, chatterbox, vibevoice-tts, indextts, voxcpm2-tts
+- **Python-native TTS** (5 backends): Edge TTS (cloud), Piper (MIT, ONNX), Kokoro ONNX (Apache 2.0), Chatterbox (MIT), SpeechT5 (MIT)
+- **Voice cloning**: Reference audio support for applicable backends
+- **Text extraction**: Load text from TXT, Markdown, HTML, PDF, EPUB files for synthesis
+- **Voice selection**: Per-backend voice lists with configurable presets
+
+### Translation
+
+- **CrispASR translation**: m2m100 (100 languages), MadLad (419 languages), Gemma4-E2B (140+ languages)
+- **Bidirectional**: Any source → any target language pair
 
 ### Speaker Diarization
-- **Multi-speaker Identification**: Automatically detect and label different speakers
-- **Language-specific Models**: Optimized models for English, German, Chinese, Spanish, Japanese
-- **Configurable Parameters**: Set min/max speaker counts
-- **Multiple Output Formats**: TXT, SRT, VTT, JSON with speaker labels
-- **PyAnnote.audio Integration**: State-of-the-art diarization engine
 
-### Voxtral Support (New!)
-- **Voxtral Local**: On-device inference with Mistral's speech model
-- **Voxtral API**: Cloud-based inference via Mistral AI API
-- **8 Language Support**: EN, FR, ES, DE, IT, PT, PL, NL
-- **Long Audio Processing**: Automatic chunking for files over 25 minutes
+- **PyAnnote.audio**: State-of-the-art neural diarization (requires HF token)
+- **CrispASR methods**: energy, xcorr, vad-turns, pyannote, sherpa, ecapa
+- **Language-specific models**: English, German, Chinese, Spanish, Japanese
+- **Configurable**: Min/max speaker counts, cluster thresholds
 
-### Advanced Features
-- **Proxy Support**: HTTP/SOCKS5 proxy for network requests
-- **Device Selection**: Auto-detect or manually choose CPU/GPU/MPS
-- **Model Conversion**: Automatic CTranslate2 model conversion
-- **Progress Tracking**: Real-time progress with ETA estimation
-- **Settings Persistence**: Save your preferences between sessions
-- **Dependency Management**: Built-in installer for missing components
-- **CUDA Diagnostics**: Detailed GPU/CUDA troubleshooting tools
+### Advanced CrispASR Features
 
-## 📦 Installation
+- **VAD**: Silero, FireRed, with configurable thresholds
+- **Streaming**: Live microphone, stdin, rolling-window transcription
+- **Server mode**: OpenAI-compatible HTTP API
+- **Grammar constraints**: GBNF constrained decoding
+- **Punctuation restoration**: FireRedPunc post-processing
+- **Forced alignment**: CTC aligner for word timestamps
+- **Speaker verification**: TitaNet embeddings, speaker profile DB
+- **Model auto-download**: Registry-based with SHA-256 verification
+- **Companion model resolution**: Auto-resolves codec/voice dependencies
+
+### GUI
+
+- **3-tab layout**: Transcription / Text-to-Speech / Translation
+- **CrispASR advanced settings**: Collapsible panel for VAD, diarization, LID, alignment, grammar, streaming
+- **TTS panel**: Text input, file loading, backend/voice selection, reference audio, playback
+- **Translation panel**: Source/target language, backend selection
+- **Dark theme**: Professional dark UI with tab navigation
+- **Settings persistence**: QSettings across sessions
+
+## Installation
 
 ### Quick Start
 
 ```bash
-# Clone the repository
 git clone https://github.com/CrispStrobe/Susurrus.git
 cd Susurrus
 
-# Create virtual environment
 python -m venv venv
+source venv/bin/activate  # or venv\Scripts\activate on Windows
 
-# Activate virtual environment
-# Windows:
-venv\Scripts\activate
-# macOS/Linux:
-source venv/bin/activate
+pip install -e .
 
-# Install dependencies
-pip install -r requirements.txt
-
-# Run the application
+# GUI
 python main.py
-# Or as a module:
-python -m susurrus
+
+# CLI
+python cli.py --list-backends
+```
+
+### Optional Dependencies
+
+```bash
+# TTS backends
+pip install -e ".[tts]"
+
+# Text extraction (PDF, EPUB, HTML, Markdown)
+pip install -e ".[text-extraction]"
+
+# All dev tools
+pip install -e ".[dev]"
 ```
 
 ### Prerequisites
 
-- **Python 3.8+**
+- **Python 3.9+**
 - **FFmpeg** (for audio format conversion)
-- **Git**
-- **C++ compiler** (for whisper.cpp, optional)
-- **CUDA Toolkit** (for GPU acceleration, optional)
+- **CrispASR binary** (auto-downloaded if not found) or **libcrispasr.so** (for FFI backend)
 
-### Platform-Specific Setup
-
-#### Windows
-```powershell
-# Install Chocolatey (if not installed)
-Set-ExecutionPolicy Bypass -Scope Process -Force
-iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
-
-# Install dependencies
-choco install cmake ffmpeg git python
-
-# For GPU support
-choco install cuda
-```
-
-#### macOS
-```bash
-# Install Homebrew (if not installed)
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# Install dependencies
-brew install ffmpeg cmake python git
-
-# For Apple Silicon optimization
-pip install mlx mlx-whisper
-```
-
-#### Linux (Ubuntu/Debian)
-```bash
-# Install dependencies
-sudo apt update
-sudo apt install ffmpeg cmake build-essential python3 python3-pip git
-
-# For GPU support
-# Follow CUDA installation guide for your distribution
-```
-
-### Optional Backend Installation
+## CLI Usage
 
 ```bash
-# MLX (Apple Silicon only)
-pip install mlx-whisper
+# List all backends
+python cli.py --list-backends
 
-# Faster Whisper (recommended)
-pip install faster-whisper
+# Transcription — CrispASR sub-backend with auto-download
+python cli.py --backend crispasr:parakeet --model auto --file audio.wav --auto-download
 
-# Transformers
-pip install transformers torch torchaudio
+# Transcription — CrispASR FFI (in-process, requires libcrispasr.so)
+python cli.py --backend crispasr-ffi --model /path/to/model.gguf --file audio.wav
 
-# Whisper.cpp (manual build required)
-git clone https://github.com/ggerganov/whisper.cpp
-cd whisper.cpp && mkdir build && cd build
-cmake .. && make
+# Transcription — faster-whisper
+python cli.py --backend faster-sequenced --model large-v3 --file audio.wav
 
-# CTranslate2
-pip install ctranslate2
+# TTS — Edge TTS (cloud, no model download)
+python cli.py --mode tts --tts-backend edge-tts --text "Hello world" --tts-output out.wav
 
-# Whisper-JAX
-pip install whisper-jax
+# TTS — CrispASR Orpheus
+python cli.py --mode tts --backend crispasr:orpheus --model auto --text "Hello" --voice Tara
 
-# Insanely Fast Whisper
-pip install insanely-fast-whisper
+# Translation — m2m100
+python cli.py --mode translate --backend crispasr:m2m100 --model auto \
+  --text "Hello world" --source-lang en --target-lang de
 
-# Voxtral (requires dev transformers)
-pip uninstall transformers -y
-pip install git+https://github.com/huggingface/transformers.git
-pip install mistral-common[audio] soundfile
-```
+# Streaming (live microphone)
+python cli.py --mode stream --backend crispasr --model auto --mic --auto-download
 
-### Speaker Diarization Setup
+# Server mode
+python cli.py --mode server --backend crispasr --model auto --port 8080
 
-```bash
-# Install pyannote.audio
-pip install pyannote.audio
-
-# Get Hugging Face token
-# 1. Sign up at https://huggingface.co
-# 2. Create token at https://huggingface.co/settings/tokens
-# 3. Accept license at https://huggingface.co/pyannote/speaker-diarization
-
-# Set token (choose one method):
-# Method 1: Environment variable
-export HF_TOKEN="your_token_here"  # Linux/macOS
-setx HF_TOKEN "your_token_here"    # Windows
-
-# Method 2: Config file
-mkdir -p ~/.huggingface
-echo "your_token_here" > ~/.huggingface/token
-
-# Method 3: Enter in GUI
-```
-
-### Voxtral API Setup
-
-```bash
-# Get Mistral API key from https://console.mistral.ai/
-
-# Set API key (choose one method):
-# Method 1: Environment variable
-export MISTRAL_API_KEY="your_key_here"  # Linux/macOS
-setx MISTRAL_API_KEY "your_key_here"    # Windows
-
-# Method 2: Config file
-mkdir -p ~/.mistral
-echo "your_key_here" > ~/.mistral/api_key
-
-# Method 3: Enter in GUI
-```
-
-## 🚀 Usage
-
-### GUI Application
-
-```bash
-# Start the application
-python main.py
-
-# Or as a module
-python -m susurrus
-```
-
-**Basic Workflow**:
-1. **Select Audio Source**: Choose file or enter URL
-2. **Choose Backend**: Select transcription engine
-3. **Configure Options**: Set language, model, device
-4. **Enable Diarization** (optional): Identify speakers
-5. **Start Transcription**: Click "Transcribe"
-6. **Save Results**: Export to TXT, SRT, or VTT
-
-### Command Line Workers
-
-#### Transcription Worker
-```bash
-python workers/transcribe_worker.py \
-  --audio-input audio.mp3 \
-  --backend faster-batched \
-  --model-id large-v3 \
-  --language en \
-  --device auto
-```
-
-#### Diarization Worker
-```bash
-python workers/diarize_worker.py \
-  --audio-input audio.mp3 \
-  --hf-token YOUR_TOKEN \
-  --transcribe \
-  --model-id base \
-  --backend faster-batched \
-  --output-formats txt,srt,vtt
+# CrispASR with VAD, diarization, punctuation
+python cli.py --backend crispasr:parakeet --model auto --file audio.wav \
+  --vad --diarize --diarize-method pyannote --punc-model auto --auto-download
 ```
 
 ### Python API
 
 ```python
-# Transcription backend example
+# Transcription
 from workers.transcription.backends import get_backend
 
-backend = get_backend(
-    'faster-batched',
-    model_id='large-v3',
-    device='auto',
-    language='en'
-)
+backend = get_backend("crispasr:parakeet", model_id="auto", device="cpu", auto_download=True)
+for start, end, text in backend.transcribe("audio.wav"):
+    print(f"[{start:.2f} --> {end:.2f}] {text}")
+backend.cleanup()
 
-for start, end, text in backend.transcribe('audio.mp3'):
-    print(f"[{start:.2f}s -> {end:.2f}s] {text}")
+# TTS
+from workers.tts.backends import get_tts_backend
+
+tts = get_tts_backend("edge-tts", voice="de-DE-KatjaNeural")
+tts.synthesize("Hallo Welt", "output.wav")
+tts.cleanup()
+
+# Translation
+from workers.translation.backends import get_translation_backend
+
+tr = get_translation_backend("crispasr:m2m100", model_id="auto", auto_download=True)
+print(tr.translate("Hello world", "en", "de"))
+tr.cleanup()
 ```
 
-```python
-# Diarization example
-from backends.diarization import DiarizationManager
-
-manager = DiarizationManager(hf_token="YOUR_TOKEN")
-segments, files = manager.diarize_and_split('audio.mp3')
-
-for segment in segments:
-    print(f"{segment['speaker']}: {segment['text']}")
-```
-
-## 🧪 Development
-
-### Architecture Overview
+## Architecture
 
 ```
 susurrus/
-├── main.py                    # Application entry point
-├── config.py                  # Central configuration
-├── backends/                  # Transcription & diarization backends
-│   ├── diarization/          # Speaker diarization module
-│   │   ├── manager.py        # Diarization orchestration
-│   │   └── progress.py       # Enhanced progress tracking
-│   └── transcription/        # Transcription backends
-│       ├── voxtral_local.py  # Voxtral local inference
-│       └── voxtral_api.py    # Voxtral API integration
-├── gui/                       # User interface components
-│   ├── main_window.py        # Main application window
-│   ├── widgets/              # Custom widgets
-│   │   ├── collapsible_box.py
-│   │   ├── diarization_settings.py
-│   │   ├── voxtral_settings.py
-│   │   └── advanced_options.py
-│   └── dialogs/              # Dialog windows
-│       ├── dependencies_dialog.py
-│       ├── installer_dialog.py
-│       └── cuda_diagnostics_dialog.py
-├── workers/                   # Background processing
-│   ├── transcription_thread.py    # GUI thread wrapper
-│   ├── transcribe_worker.py       # Standalone transcription worker
-│   ├── diarize_worker.py          # Standalone diarization worker
-│   └── transcription/             # Transcription backend implementations
-│       ├── backends/
-│       │   ├── base.py           # Base backend interface
-│       │   ├── mlx_backend.py
-│       │   ├── faster_whisper_backend.py
-│       │   ├── transformers_backend.py
-│       │   ├── whisper_cpp_backend.py
-│       │   ├── ctranslate2_backend.py
-│       │   ├── whisper_jax_backend.py
-│       │   ├── insanely_fast_backend.py
-│       │   ├── openai_whisper_backend.py
-│       │   └── voxtral_backend.py
-│       └── utils.py
-├── utils/                     # Utility modules
-│   ├── device_detection.py   # CUDA/MPS/CPU detection
-│   ├── audio_utils.py        # Audio processing utilities
-│   ├── download_utils.py     # URL downloading
-│   ├── dependency_check.py   # Dependency verification
-│   └── format_utils.py       # Time formatting utilities
-├── models/                    # Model configuration
-│   └── model_config.py       # Model mappings & utilities
-└── scripts/                   # Standalone utility scripts
-    ├── test_voxtral.py       # Voxtral testing
-    └── pyannote_torch26.py   # PyTorch 2.6+ compatibility
+├── cli.py                          # Multi-mode CLI (transcribe/tts/translate/stream/server)
+├── config.py                       # Backend maps, TTS config, companion models
+├── main.py                         # GUI entry point
+├── gui/
+│   ├── main_window.py              # 3-tab main window
+│   └── widgets/
+│       ├── tts_settings.py         # TTS panel
+│       ├── translation_settings.py # Translation panel
+│       ├── crispasr_advanced_settings.py  # CrispASR options
+│       ├── diarization_settings.py
+│       ├── voxtral_settings.py
+│       └── advanced_options.py
+├── workers/
+│   ├── transcription/backends/
+│   │   ├── base.py                 # TranscriptionBackend ABC
+│   │   ├── crispasr_backend.py     # Subprocess (142-param PARAM_MAP)
+│   │   ├── crispasr_ffi_backend.py # FFI (in-process via libcrispasr)
+│   │   ├── faster_whisper_backend.py
+│   │   ├── voxtral_backend.py
+│   │   └── ...                     # 12 total ASR backends
+│   ├── tts/backends/
+│   │   ├── base.py                 # TTSBackend ABC
+│   │   ├── crispasr_tts_backend.py # CrispASR TTS (7 engines)
+│   │   ├── edge_tts_backend.py
+│   │   ├── piper_tts_backend.py
+│   │   ├── kokoro_onnx_tts_backend.py
+│   │   ├── chatterbox_tts_backend.py
+│   │   └── speecht5_tts_backend.py
+│   ├── translation/backends/
+│   │   ├── base.py                 # TranslationBackend ABC
+│   │   └── crispasr_translation_backend.py
+│   ├── tts_thread.py               # QThread for TTS/Translation
+│   └── transcription_thread.py
+└── utils/
+    ├── crispasr_utils.py           # Binary discovery, probing, SHA verification, metrics
+    ├── text_extraction.py          # PDF/EPUB/HTML/MD extraction
+    ├── audio_utils.py
+    └── device_detection.py
 ```
 
-### Running Tests
+## Environment Variables
 
-```bash
-# Run all tests
-pytest tests/
-
-# Run specific test file
-pytest tests/test_backends.py
-
-# Run with coverage
-pytest --cov=. --cov-report=html
-```
-
-### Code Quality
-
-```bash
-# Format code
-black .
-
-# Lint
-flake8 .
-pylint susurrus/
-
-# Type checking
-mypy .
-```
-
-### Adding a New Backend
-
-1. Create a new file in `workers/transcription/backends/`
-2. Inherit from `TranscriptionBackend`
-3. Implement required methods:
-   ```python
-   class MyBackend(TranscriptionBackend):
-       def transcribe(self, audio_path):
-           # Yield (start, end, text) tuples
-           pass
-       
-       def preprocess_audio(self, audio_path):
-           # Optional preprocessing
-           return audio_path
-       
-       def cleanup(self):
-           # Optional cleanup
-           pass
-   ```
-4. Register in `workers/transcription/backends/__init__.py`
-5. Add to `config.py` BACKEND_MODEL_MAP
-
-## 🔧 Configuration
-
-### Settings Location
-
-- **Windows**: `%APPDATA%\Susurrus\AudioTranscription.ini`
-- **macOS**: `~/Library/Preferences/com.Susurrus.AudioTranscription.plist`
-- **Linux**: `~/.config/Susurrus/AudioTranscription.conf`
-
-### Environment Variables
-
+- `CRISPASR_EXECUTABLE`: Path to crispasr binary
 - `HF_TOKEN`: Hugging Face API token (diarization)
-- `MISTRAL_API_KEY`: Mistral AI API key (Voxtral)
-- `PYTORCH_MPS_HIGH_WATERMARK_RATIO`: MPS memory optimization
+- `MISTRAL_API_KEY`: Mistral AI API key (Voxtral API)
 - `CUDA_VISIBLE_DEVICES`: GPU selection
+- `PYTORCH_MPS_HIGH_WATERMARK_RATIO`: MPS memory optimization
 
-## 📊 Performance Tips
-
-### GPU Acceleration
-
-```bash
-# Install PyTorch with CUDA support
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-
-# Verify CUDA is available
-python -c "import torch; print(torch.cuda.is_available())"
-```
-
-### Apple Silicon Optimization
+## Testing
 
 ```bash
-# Use MLX backend for best performance
-pip install mlx-whisper
+# Run all unit tests (45 tests)
+python -m unittest discover -s tests/unit -v
 
-# Or use MPS device with other backends
-# Will auto-detect in GUI
-```
-
-### Memory Management
-
-- Use smaller models for limited RAM
-- Enable chunking for long audio files
-- Use `faster-batched` backend with appropriate batch size
-- Close other applications during processing
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**"No module named 'X'"**
-```bash
-pip install X
-```
-
-**FFmpeg not found**
-```bash
-# Verify installation
-ffmpeg -version
-
-# Add to PATH if needed (Windows)
-setx PATH "%PATH%;C:\path\to\ffmpeg\bin"
-```
-
-**CUDA errors**
-```bash
-# Check CUDA availability
-python -c "import torch; print(torch.cuda.is_available())"
-
-# Use Tools > CUDA Diagnostics in GUI for detailed info
-```
-
-**Diarization authentication fails**
-```bash
-# Verify token
-python -c "from huggingface_hub import HfApi; HfApi().whoami(token='YOUR_TOKEN')"
-
-# Accept license
-# Visit: https://huggingface.co/pyannote/speaker-diarization
-```
-
-**PyTorch 2.6+ compatibility issues**
-```bash
-# Run the compatibility script
-python scripts/pyannote_torch26.py
-```
-
-### Development Setup
-
-```bash
-# Fork and clone
-git clone https://github.com/YOUR_USERNAME/Susurrus.git
-cd Susurrus
-
-# Create feature branch
-git checkout -b feature-name
-
-# Install dev dependencies
-pip install -r requirements-dev.txt
-
-# Make changes and test
-pytest tests/
-
-# Submit PR
-```
-
-## 🙏 Acknowledgements
-
-- [OpenAI Whisper](https://github.com/openai/whisper) - Original Whisper model
-- [MLX](https://github.com/ml-explore/mlx) - Apple Silicon acceleration
-- [Faster Whisper](https://github.com/guillaumekln/faster-whisper) - Optimized inference
-- [PyAnnote.audio](https://github.com/pyannote/pyannote-audio) - Speaker diarization
-- [Mistral AI](https://mistral.ai/) - Voxtral model
-- [Hugging Face](https://huggingface.co/) - Model hosting and transformers
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) - For URL downloading
-- [CrispASR](https://github.com/CrispStrobe/CrispASR) - C++ ggml ASR engine (11 backends)
-
-## CLI Usage
-
-Susurrus also works headless without the GUI:
-
-```bash
-# List available backends
-python cli.py --list-backends
-
-# Transcribe with CrispASR (auto-downloads binary if not found)
-python cli.py -b crispasr -m parakeet-tdt-0.6b-v3.gguf -f audio.wav
-
-# Transcribe with faster-whisper
-python cli.py -b faster-sequenced -m large-v3 -f audio.wav
-
-# CrispASR with specific sub-backend + VAD
-python cli.py -b crispasr -m model.gguf -f audio.wav --vad --split-on-punct
+# Run specific test suite
+python -m unittest tests.unit.test_crispasr_params -v
+python -m unittest tests.unit.test_tts_backends -v
+python -m unittest tests.unit.test_crispasr_ffi -v
 ```
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
 
-**Model licenses vary.** Most ASR models (Whisper, Parakeet, Canary, Voxtral, Qwen3-ASR) are permissive (MIT/Apache/CC-BY). Pyannote speaker-diarization-3.1 is MIT. Check the individual model card on HuggingFace for the exact terms before commercial deployment.
+**Model licenses vary.** Most ASR models (Whisper, Parakeet, Canary, Voxtral, Qwen3-ASR) are permissive (MIT/Apache/CC-BY). TTS models: Piper (MIT), Kokoro (Apache 2.0), Chatterbox (MIT), SpeechT5 (MIT), Edge TTS (MS ToS). Check individual model cards on HuggingFace for exact terms before commercial deployment.

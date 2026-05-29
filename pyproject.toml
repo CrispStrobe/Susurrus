@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "susurrus"
-version = "1.1.0"
-description = "Whisper Audio Transcription GUI with multiple backends"
+version = "2.0.0"
+description = "Audio Transcription, TTS & Translation suite with multiple backends"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
@@ -28,6 +28,19 @@ dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
     "pytest-mock>=3.12.0",
+]
+tts = [
+    "edge-tts>=6.1.0",
+    "piper-tts>=1.2.0",
+    "kokoro-onnx>=0.4.0",
+    "chatterbox-tts>=0.1.2",
+    "soundfile>=0.12.0",
+]
+text-extraction = [
+    "pypdfium2>=4.0.0",
+    "ebooklib>=0.18",
+    "beautifulsoup4>=4.12.0",
+    "markdown>=3.5.0",
 ]
 
 [project.scripts]

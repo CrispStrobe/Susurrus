@@ -15,11 +15,12 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from config import APP_NAME, BACKEND_MODEL_MAP, get_settings
+from config import APP_NAME, APP_VERSION, BACKEND_MODEL_MAP, get_settings
 from models.model_config import CTranslate2ModelConverter
 from utils.dependency_check import (
     check_dependencies,
@@ -28,9 +29,17 @@ from utils.dependency_check import (
 )
 from utils.device_detection import check_nvidia_installation, get_default_device
 from workers.transcription_thread import TranscriptionThread
+from workers.tts_thread import TranslationThread, TTSThread
 
 from .dialogs import CUDADiagnosticsDialog, DependenciesDialog, InstallerDialog
-from .widgets import AdvancedOptionsBox, DiarizationSettingsBox, VoxtralSettingsBox
+from .widgets import (
+    AdvancedOptionsBox,
+    CrispASRAdvancedSettingsBox,
+    DiarizationSettingsBox,
+    TranslationSettingsWidget,
+    TTSSettingsWidget,
+    VoxtralSettingsBox,
+)
 
 
 class MainWindow(QWidget):
@@ -38,11 +47,13 @@ class MainWindow(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f"{APP_NAME}: Whisper Audio Transcription")
-        self.setMinimumSize(800, 600)
+        self.setWindowTitle(f"{APP_NAME}: Audio Transcription & Speech")
+        self.setMinimumSize(900, 700)
         self.setAcceptDrops(True)
 
         self.thread = None
+        self.tts_thread = None
+        self.translation_thread = None
         self.settings = get_settings()
         self.backend_model_map = BACKEND_MODEL_MAP
 
@@ -108,47 +119,79 @@ class MainWindow(QWidget):
 
         # Title
         title_label = QLabel(
-            "<h1 style='color: #FFFFFF;'>Susurrus: Whisper Audio Transcription</h1>"
+            f"<h1 style='color: #FFFFFF;'>{APP_NAME}: Audio Transcription & Speech</h1>"
         )
         subtitle_label = QLabel(
-            "<p style='color: #666666;'>Transcribe audio using various (Whisper-) backends.</p>"
+            "<p style='color: #666666;'>Transcribe, synthesize, and translate audio using "
+            "multiple backends.</p>"
         )
         main_layout.addWidget(title_label)
         main_layout.addWidget(subtitle_label)
 
+        # --- Tab widget for modes ---
+        self.tab_widget = QTabWidget()
+        main_layout.addWidget(self.tab_widget)
+
+        # Transcription tab
+        transcription_tab = self._create_transcription_tab()
+        self.tab_widget.addTab(transcription_tab, "Transcription")
+
+        # TTS tab
+        tts_tab = self._create_tts_tab()
+        self.tab_widget.addTab(tts_tab, "Text-to-Speech")
+
+        # Translation tab
+        translation_tab = self._create_translation_tab()
+        self.tab_widget.addTab(translation_tab, "Translation")
+
+        # Apply styling
+        self._apply_styling()
+
+    # ---- Transcription Tab ----
+
+    def _create_transcription_tab(self):
+        """Create the transcription tab (preserves original layout)."""
+        tab = QWidget()
+        layout = QVBoxLayout()
+        tab.setLayout(layout)
+
         # Input row
         input_row = self._create_input_row()
-        main_layout.addLayout(input_row)
+        layout.addLayout(input_row)
 
         # Action buttons
         button_layout = self._create_button_row()
-        main_layout.addLayout(button_layout)
+        layout.addLayout(button_layout)
 
         # Settings boxes
         self.diarization_box = DiarizationSettingsBox()
         self._configure_diarization_box()
-        main_layout.addWidget(self.diarization_box)
+        layout.addWidget(self.diarization_box)
 
         self.voxtral_box = VoxtralSettingsBox()
         self._configure_voxtral_box()
-        main_layout.addWidget(self.voxtral_box)
+        layout.addWidget(self.voxtral_box)
+
+        # CrispASR advanced settings
+        self.crispasr_box = CrispASRAdvancedSettingsBox()
+        self.crispasr_box.setVisible(False)
+        layout.addWidget(self.crispasr_box)
 
         self.advanced_options_box = AdvancedOptionsBox()
         self._configure_advanced_options()
-        main_layout.addWidget(self.advanced_options_box)
+        layout.addWidget(self.advanced_options_box)
 
         # Output area
         output_layout = self._create_output_area()
-        main_layout.addLayout(output_layout)
+        layout.addLayout(output_layout)
 
         # Progress bar
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 0)
         self.progress_bar.setVisible(False)
-        main_layout.addWidget(self.progress_bar)
+        layout.addWidget(self.progress_bar)
 
-        # Apply styling
-        self._apply_styling()
+        return tab
 
     def _create_input_row(self):
         """Create audio input row"""
@@ -187,7 +230,7 @@ class MainWindow(QWidget):
         self.abort_button.setEnabled(False)
         self.abort_button.clicked.connect(self.abort_transcription)
 
-        self.save_button = QPushButton("💾")
+        self.save_button = QPushButton("Save")
         self.save_button.setToolTip("Save Transcription")
         self.save_button.clicked.connect(self.save_transcription)
 
@@ -223,9 +266,27 @@ class MainWindow(QWidget):
 
         return layout
 
+    # ---- TTS Tab ----
+
+    def _create_tts_tab(self):
+        """Create the TTS tab."""
+        self.tts_widget = TTSSettingsWidget()
+        self.tts_widget.synthesize_btn.clicked.connect(self.start_synthesis)
+        self.tts_widget.play_btn.clicked.connect(self._play_tts_output)
+        return self.tts_widget
+
+    # ---- Translation Tab ----
+
+    def _create_translation_tab(self):
+        """Create the translation tab."""
+        self.translation_widget = TranslationSettingsWidget()
+        self.translation_widget.translate_btn.clicked.connect(self.start_translation)
+        return self.translation_widget
+
+    # ---- Configuration ----
+
     def _configure_diarization_box(self):
         """Configure diarization settings from saved settings"""
-        # Pre-fill Hugging Face token from environment if available
         if self.has_env_token:
             self.diarization_box.hf_token.setText("Using HF_TOKEN from environment")
             self.diarization_box.hf_token.setEnabled(False)
@@ -234,10 +295,8 @@ class MainWindow(QWidget):
             env_token_layout = QHBoxLayout()
             env_token_layout.addWidget(env_token_note)
             env_token_layout.addStretch()
-            # Add this note to the diarization box's layout
             self.diarization_box.content_area.layout().addLayout(env_token_layout)
 
-        # Load previous diarization settings from QSettings
         if self.settings.contains("diarization_enabled"):
             enabled = self.settings.value("diarization_enabled", type=bool)
             self.diarization_box.enable_diarization.setChecked(enabled)
@@ -258,7 +317,6 @@ class MainWindow(QWidget):
             if max_speakers:
                 self.diarization_box.max_speakers.setText(str(max_speakers))
 
-        # Connect diarization settings changes to save function
         self.diarization_box.enable_diarization.toggled.connect(self.save_diarization_settings)
         self.diarization_box.diarization_model.currentTextChanged.connect(
             self.save_diarization_settings
@@ -274,7 +332,6 @@ class MainWindow(QWidget):
         self.settings.setValue("diarization_enabled", enabled)
         self.settings.setValue("diarization_model", model)
 
-        # Optional: save min/max speakers if needed
         min_speakers = self.diarization_box.min_speakers.text().strip()
         max_speakers = self.diarization_box.max_speakers.text().strip()
 
@@ -283,12 +340,10 @@ class MainWindow(QWidget):
         if max_speakers:
             self.settings.setValue("max_speakers", max_speakers)
 
-        # Sync settings to disk
         self.settings.sync()
 
     def _configure_voxtral_box(self):
         """Configure Voxtral settings from saved settings"""
-        # Pre-fill Mistral API key from environment if available
         mistral_api_key = os.environ.get("MISTRAL_API_KEY", "")
         if mistral_api_key:
             self.voxtral_box.mistral_api_key.setText("Using MISTRAL_API_KEY from environment")
@@ -298,28 +353,21 @@ class MainWindow(QWidget):
             env_key_layout = QHBoxLayout()
             env_key_layout.addWidget(env_key_note)
             env_key_layout.addStretch()
-            # Add this note to the Voxtral box's layout
             self.voxtral_box.content_area.layout().addLayout(env_key_layout)
         else:
             self.has_env_mistral_key = False
-            # Load previous Voxtral settings from QSettings
             if self.settings.contains("mistral_api_key"):
                 saved_key = self.settings.value("mistral_api_key")
                 if saved_key:
                     self.voxtral_box.mistral_api_key.setText(saved_key)
 
-        # Connect Voxtral settings changes to save function
         self.voxtral_box.mistral_api_key.textChanged.connect(self.save_voxtral_settings)
 
     def save_voxtral_settings(self):
         """Save Voxtral settings to QSettings"""
         api_key = self.voxtral_box.mistral_api_key.text().strip()
-
-        # Only save if not using environment variable
         if not self.has_env_mistral_key and api_key:
             self.settings.setValue("mistral_api_key", api_key)
-
-        # Sync settings to disk
         self.settings.sync()
 
     def _configure_advanced_options(self):
@@ -328,19 +376,19 @@ class MainWindow(QWidget):
 
         from config import get_default_backend, get_default_model_for_backend
 
-        # Store reference to proxy row widget for toggle
         self.proxy_row_widget = self.advanced_options_box.proxy_row
         self.chunk_row_widget = self.advanced_options_box.chunk_row
         self.output_format_row_widget = self.advanced_options_box.output_format_row
 
-        # Store references to input widgets for easy access
         self.model_id = self.advanced_options_box.model_id
         self.backend_selection = self.advanced_options_box.backend_selection
         self.device_selection = self.advanced_options_box.device_selection
         self.language = self.advanced_options_box.language
 
-        # Set up available backends
+        # Set up available backends — now including crispasr and sub-backends
         available_backends = [
+            "crispasr",
+            "crispasr-ffi",
             "faster-batched",
             "faster-sequenced",
             "whisper.cpp",
@@ -353,27 +401,26 @@ class MainWindow(QWidget):
             "voxtral-api",
         ]
 
-        # Add mlx-whisper only on macOS
+        # Add CrispASR sub-backends
+        from config import CRISPASR_SUB_BACKENDS
+        for sub in CRISPASR_SUB_BACKENDS:
+            available_backends.append(f"crispasr:{sub}")
+
         if platform.system().lower() == "darwin":
             available_backends.insert(0, "mlx-whisper")
 
         self.backend_selection.addItems(available_backends)
 
-        # Get default backend and set it
         default_backend = get_default_backend()
         self.backend_selection.setCurrentText(default_backend)
 
-        # Set default device
         default_device = get_default_device()
         self.device_selection.setCurrentText(default_device)
 
-        # Connect backend selection to update models
         self.backend_selection.currentTextChanged.connect(self.update_model_options)
 
-        # Initialize models for default backend
         self.update_model_options(default_backend)
 
-        # Set default model
         default_model = get_default_model_for_backend(default_backend)
         self.model_id.setCurrentText(default_model)
 
@@ -408,6 +455,27 @@ class MainWindow(QWidget):
                 padding: 5px;
                 font-size: 14px;
             }
+            QTabWidget::pane {
+                border: 1px solid #555555;
+                background-color: #2b2b2b;
+            }
+            QTabBar::tab {
+                background-color: #3a3a3a;
+                color: #cccccc;
+                padding: 8px 20px;
+                border: 1px solid #555555;
+                border-bottom: none;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+            }
+            QTabBar::tab:selected {
+                background-color: #2b2b2b;
+                color: #ffffff;
+                font-weight: bold;
+            }
+            QTabBar::tab:hover {
+                background-color: #4a4a4a;
+            }
         """)
 
     def create_menu_bar(self):
@@ -418,13 +486,11 @@ class MainWindow(QWidget):
         # File menu
         file_menu = menu_bar.addMenu("&File")
 
-        # Open audio file action
         open_action = QAction("&Open Audio File...", self)
         open_action.setShortcut("Ctrl+O")
         open_action.triggered.connect(self.select_audio_file)
         file_menu.addAction(open_action)
 
-        # Save transcript action
         save_action = QAction("&Save Transcript...", self)
         save_action.setShortcut("Ctrl+S")
         save_action.triggered.connect(self.save_transcription)
@@ -432,7 +498,6 @@ class MainWindow(QWidget):
 
         file_menu.addSeparator()
 
-        # Exit action
         exit_action = QAction("E&xit", self)
         exit_action.setShortcut("Ctrl+Q")
         exit_action.triggered.connect(self.close)
@@ -441,13 +506,11 @@ class MainWindow(QWidget):
         # Tools menu
         tools_menu = menu_bar.addMenu("&Tools")
 
-        # Transcribe action
         transcribe_action = QAction("&Transcribe", self)
         transcribe_action.setShortcut("F5")
         transcribe_action.triggered.connect(self.start_transcription)
         tools_menu.addAction(transcribe_action)
 
-        # Abort action
         abort_action = QAction("&Abort Transcription", self)
         abort_action.setShortcut("Esc")
         abort_action.triggered.connect(self.abort_transcription)
@@ -455,17 +518,26 @@ class MainWindow(QWidget):
 
         tools_menu.addSeparator()
 
-        # Check dependencies action
+        synthesize_action = QAction("&Synthesize (TTS)", self)
+        synthesize_action.setShortcut("F6")
+        synthesize_action.triggered.connect(self.start_synthesis)
+        tools_menu.addAction(synthesize_action)
+
+        translate_action = QAction("Trans&late", self)
+        translate_action.setShortcut("F7")
+        translate_action.triggered.connect(self.start_translation)
+        tools_menu.addAction(translate_action)
+
+        tools_menu.addSeparator()
+
         dependencies_action = QAction("Check &Dependencies...", self)
         dependencies_action.triggered.connect(self.show_dependencies_dialog)
         tools_menu.addAction(dependencies_action)
 
-        # Install dependencies action
         install_action = QAction("&Install Dependencies...", self)
         install_action.triggered.connect(self.install_dependencies)
         tools_menu.addAction(install_action)
 
-        # CUDA diagnostics action
         cuda_diagnostics_action = QAction("CUDA &Diagnostics...", self)
         cuda_diagnostics_action.triggered.connect(self.show_cuda_diagnostics)
         tools_menu.addAction(cuda_diagnostics_action)
@@ -481,12 +553,10 @@ class MainWindow(QWidget):
         # Help menu
         help_menu = menu_bar.addMenu("&Help")
 
-        # About action
         about_action = QAction("&About Susurrus", self)
         about_action.triggered.connect(self.show_about_dialog)
         help_menu.addAction(about_action)
 
-        # Diarization help action
         diarization_help_action = QAction("Speaker &Diarization Help", self)
         diarization_help_action.triggered.connect(self.show_diarization_help)
         help_menu.addAction(diarization_help_action)
@@ -528,18 +598,14 @@ class MainWindow(QWidget):
         else:
             self.proxy_row_widget.setVisible(False)
 
+    # ---- Transcription ----
+
     def start_transcription(self):
         """Start transcription process"""
-        # we use TranscriptionThread]
-
-        # Collect arguments
         args = self._collect_transcription_args()
-
-        # Validate arguments
         if not self._validate_transcription_args(args):
             return
 
-        # Create and start thread
         self.thread = TranscriptionThread(args)
         self.thread.progress_signal.connect(self.update_outputs)
         self.thread.error_signal.connect(self.show_error)
@@ -551,7 +617,6 @@ class MainWindow(QWidget):
 
         self.thread.start()
 
-        # Update UI state
         self.transcribe_button.setEnabled(False)
         self.progress_bar.setVisible(True)
         self.abort_button.setEnabled(True)
@@ -578,19 +643,24 @@ class MainWindow(QWidget):
             "output_format": self.advanced_options_box.output_format_selection.currentText(),
         }
 
-        # Normalize backend and device arguments
         args["backend"] = args["backend"].strip().lower()
         args["device_arg"] = args["device_arg"].strip().lower()
 
-        # Check if diarization is enabled
+        # CrispASR advanced settings (both binary and FFI)
+        if args["backend"].startswith("crispasr"):
+            crispasr_kwargs = self.crispasr_box.get_kwargs()
+            args["crispasr_kwargs"] = crispasr_kwargs
+            # If backend is crispasr:<sub> or crispasr-ffi:<sub>, extract the sub-backend
+            if ":" in args["backend"]:
+                sub = args["backend"].split(":", 1)[1]
+                crispasr_kwargs.setdefault("crispasr_backend", sub)
+
+        # Diarization
         diarization_enabled = self.diarization_box.enable_diarization.isChecked()
         args["diarization_enabled"] = diarization_enabled
 
         if diarization_enabled:
-            # Get diarization parameters
             hf_token = self.diarization_box.hf_token.text().strip()
-
-            # Try to get token from environment if not provided
             if not hf_token or hf_token == "Using HF_TOKEN from environment":
                 hf_token = os.environ.get("HF_TOKEN", "")
 
@@ -599,30 +669,25 @@ class MainWindow(QWidget):
             args["max_speakers"] = self.diarization_box.max_speakers.text().strip() or None
             args["diarization_model"] = self.diarization_box.diarization_model.currentText()
 
-        # Voxtral-specific arguments
+        # Voxtral-specific
         if args["backend"] == "voxtral-api":
             mistral_api_key = self.voxtral_box.mistral_api_key.text().strip()
-
-            # Check if using environment variable
             if (
                 self.has_env_mistral_key
                 or mistral_api_key == "Using MISTRAL_API_KEY from environment"
             ):
                 mistral_api_key = os.environ.get("MISTRAL_API_KEY", "")
-
             args["mistral_api_key"] = mistral_api_key
 
-        # Handle ctranslate2 specific logic
+        # ctranslate2-specific
         if args["backend"] == "ctranslate2":
             logging.info("ctranslate2 selected. Checking...")
-            # Force device to CPU if device is MPS
             if args["device_arg"] == "mps":
                 args["device_arg"] = "cpu"
 
-            # Use the modularized converter - PASS parent_widget (self)
             try:
                 model_dir, original_model_id = CTranslate2ModelConverter.find_or_convert_model(
-                    args["model_id"], parent_widget=self  # <-- ADD THIS PARAMETER
+                    args["model_id"], parent_widget=self
                 )
                 if model_dir is None:
                     self.progress_bar.setVisible(False)
@@ -650,7 +715,6 @@ class MainWindow(QWidget):
         if args is None:
             return False
 
-        # Check if we have audio input
         if not args["audio_input"] and not args["audio_url"]:
             QMessageBox.warning(
                 self, "No Audio Input", "Please provide either an audio file or URL."
@@ -658,7 +722,25 @@ class MainWindow(QWidget):
             self.transcribe_button.setEnabled(True)
             return False
 
-        # Block YouTube URLs to be absolutely sure we comply with ToS
+        # CrispASR backend availability check (like CrisperWeaver)
+        if args["backend"].startswith("crispasr") and ":" in args["backend"]:
+            sub = args["backend"].split(":", 1)[1]
+            try:
+                from utils.crispasr_utils import probe_backends
+                available = probe_backends()
+                if available and sub not in available:
+                    QMessageBox.warning(
+                        self,
+                        "Backend Not Available",
+                        f"The '{sub}' backend is not compiled into the CrispASR binary.\n\n"
+                        f"Available backends: {', '.join(available)}\n\n"
+                        "Rebuild CrispASR with the required backend enabled.",
+                    )
+                    self.transcribe_button.setEnabled(True)
+                    return False
+            except Exception:
+                pass  # Probe failed — let the backend report the error
+
         if args["audio_url"] and (
             "youtube.com" in args["audio_url"] or "youtu.be" in args["audio_url"]
         ):
@@ -672,7 +754,6 @@ class MainWindow(QWidget):
             self.progress_bar.setVisible(False)
             return False
 
-        # Validate Voxtral API key if using voxtral-api backend
         if args["backend"] == "voxtral-api":
             mistral_api_key = args.get("mistral_api_key", "")
             if not mistral_api_key:
@@ -687,7 +768,6 @@ class MainWindow(QWidget):
                 self.transcribe_button.setEnabled(True)
                 return False
 
-        # Validate Voxtral local backend availability
         if args["backend"] == "voxtral-local":
             try:
                 from backends.transcription import VoxtralLocal  # noqa: F401
@@ -719,10 +799,7 @@ class MainWindow(QWidget):
                 self.transcribe_button.setEnabled(True)
                 return False
 
-        # Validate diarization settings if enabled
         if args.get("diarization_enabled", False):
-            # from utils.dependency_check import is_diarization_available
-
             if not is_diarization_available():
                 QMessageBox.critical(
                     self,
@@ -736,7 +813,6 @@ class MainWindow(QWidget):
                 self.transcribe_button.setEnabled(True)
                 return False
 
-            # Validate token
             hf_token = args.get("hf_token", "")
             if not hf_token:
                 QMessageBox.critical(
@@ -749,16 +825,15 @@ class MainWindow(QWidget):
                 self.transcribe_button.setEnabled(True)
                 return False
 
-            # Show a warning for first-time users
             if not self.settings.value("diarization_warning_shown", False):
                 reply = QMessageBox.information(
                     self,
                     "Speaker Diarization Information",
                     "You are using speaker diarization for the first time.\n\n"
                     "Important notes:\n"
-                    "• The first run will download the diarization model (approx. 1GB)\n"
-                    "• Processing may take longer than standard transcription\n"
-                    "• For language-specific content, consider using the matching language model\n\n"
+                    "- The first run will download the diarization model (approx. 1GB)\n"
+                    "- Processing may take longer than standard transcription\n"
+                    "- For language-specific content, consider using the matching language model\n\n"
                     "Do you want to continue?",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 )
@@ -768,7 +843,6 @@ class MainWindow(QWidget):
                     self.transcribe_button.setEnabled(True)
                     return False
 
-                # Don't show this warning again
                 self.settings.setValue("diarization_warning_shown", True)
 
         return True
@@ -796,15 +870,13 @@ class MainWindow(QWidget):
         if transcription:
             self.transcription_output.appendPlainText(transcription)
             self.save_button.setEnabled(True)
-            # self.transcription_text += transcription + '\n' # check!
-            # alternatively:
-            self.transcription_text = self.transcription_output.toPlainText()  # check!
+            self.transcription_text = self.transcription_output.toPlainText()
 
     def replace_transcription_output(self, text):
         self.transcription_output.clear()
         self.transcription_output.setPlainText(text)
         self.save_button.setEnabled(True)
-        self.transcription_text = text  # Update the transcription text used for saving
+        self.transcription_text = text
 
     def update_diarization_status(self, status_msg):
         """Update UI with diarization status"""
@@ -818,6 +890,109 @@ class MainWindow(QWidget):
         self.abort_button.setEnabled(False)
         self.progress_bar.setVisible(False)
 
+    # ---- TTS ----
+
+    def start_synthesis(self):
+        """Start TTS synthesis."""
+        text = self.tts_widget.get_text()
+        if not text:
+            QMessageBox.warning(self, "No Text", "Please enter text or load a text file.")
+            return
+
+        args = {
+            "tts_backend": self.tts_widget.tts_backend.currentText(),
+            "text": text,
+            "output_path": self.tts_widget.output_path.text().strip() or "tts_output.wav",
+            "voice": self.tts_widget.voice_selection.currentText() or None,
+            "model_id": self.tts_widget.model_id.currentText() or "auto",
+            "device": self.tts_widget.device_selection.currentText().lower(),
+            "language": self.tts_widget.language.text().strip() or None,
+            "reference_audio": self.tts_widget.reference_audio.text().strip() or None,
+        }
+
+        self.tts_widget.status_output.clear()
+        self.tts_widget.status_output.appendPlainText("Starting synthesis...")
+        self.tts_widget.synthesize_btn.setEnabled(False)
+
+        self.tts_thread = TTSThread(args)
+        self.tts_thread.progress_signal.connect(
+            lambda msg: self.tts_widget.status_output.appendPlainText(msg)
+        )
+        self.tts_thread.error_signal.connect(self._on_tts_error)
+        self.tts_thread.finished_signal.connect(self._on_tts_finished)
+        self.tts_thread.start()
+
+    def _on_tts_finished(self, output_path):
+        self.tts_widget.synthesize_btn.setEnabled(True)
+        self.tts_widget.play_btn.setEnabled(True)
+        self.tts_widget.status_output.appendPlainText(f"Done! Audio saved to: {output_path}")
+        self._tts_output_path = output_path
+
+    def _on_tts_error(self, error_msg):
+        self.tts_widget.synthesize_btn.setEnabled(True)
+        self.tts_widget.status_output.appendPlainText(f"Error: {error_msg}")
+        QMessageBox.critical(self, "TTS Error", error_msg)
+
+    def _play_tts_output(self):
+        """Play the last TTS output."""
+        path = getattr(self, "_tts_output_path", None)
+        if not path or not os.path.isfile(path):
+            QMessageBox.warning(self, "No Audio", "No TTS output available to play.")
+            return
+
+        try:
+            from pydub import AudioSegment
+            from pydub.playback import play as pydub_play
+
+            audio = AudioSegment.from_file(path)
+            pydub_play(audio)
+        except Exception as e:
+            QMessageBox.warning(
+                self, "Playback Error",
+                f"Could not play audio: {e}\n\nThe file is saved at: {path}"
+            )
+
+    # ---- Translation ----
+
+    def start_translation(self):
+        """Start translation."""
+        text = self.translation_widget.source_text.toPlainText().strip()
+        if not text:
+            QMessageBox.warning(self, "No Text", "Please enter text to translate.")
+            return
+
+        args = {
+            "backend": self.translation_widget.translation_backend.currentText(),
+            "text": text,
+            "source_lang": self.translation_widget.source_lang.currentText(),
+            "target_lang": self.translation_widget.target_lang.currentText(),
+            "model_id": self.translation_widget.model_id.currentText() or "auto",
+        }
+
+        self.translation_widget.result_text.clear()
+        self.translation_widget.status_label.setText("Translating...")
+        self.translation_widget.translate_btn.setEnabled(False)
+
+        self.translation_thread = TranslationThread(args)
+        self.translation_thread.progress_signal.connect(
+            lambda msg: self.translation_widget.status_label.setText(msg)
+        )
+        self.translation_thread.error_signal.connect(self._on_translation_error)
+        self.translation_thread.result_signal.connect(self._on_translation_finished)
+        self.translation_thread.start()
+
+    def _on_translation_finished(self, result):
+        self.translation_widget.translate_btn.setEnabled(True)
+        self.translation_widget.result_text.setPlainText(result)
+        self.translation_widget.status_label.setText("Translation complete.")
+
+    def _on_translation_error(self, error_msg):
+        self.translation_widget.translate_btn.setEnabled(True)
+        self.translation_widget.status_label.setText(f"Error: {error_msg}")
+        QMessageBox.critical(self, "Translation Error", error_msg)
+
+    # ---- Save ----
+
     def save_transcription(self):
         if hasattr(self, "transcription_text"):
             save_path, _ = QFileDialog.getSaveFileName(
@@ -825,7 +1000,6 @@ class MainWindow(QWidget):
             )
             if save_path:
                 try:
-                    # Ensure text is in proper encoding before saving
                     text_to_save = self.transcription_text
                     with open(save_path, "w", encoding="utf-8", errors="replace") as dst:
                         dst.write(text_to_save)
@@ -837,14 +1011,11 @@ class MainWindow(QWidget):
 
     # Menu actions
     def show_cuda_diagnostics(self):
-        """Show a dialog with detailed CUDA diagnostics"""
         dialog = CUDADiagnosticsDialog(self)
         dialog.exec()
 
     def show_dependencies_dialog(self):
-        """Show the dependencies check dialog"""
         try:
-            # Run a fresh check of dependencies to get the latest status
             dependencies = check_dependencies()
         except Exception as e:
             logging.error(f"Error checking dependencies: {str(e)}")
@@ -853,55 +1024,55 @@ class MainWindow(QWidget):
                 "Dependency Check Error",
                 f"There was an error checking dependencies: {str(e)}",
             )
-            dependencies = self.dependencies  # Use the stored dependencies as fallback
+            dependencies = self.dependencies
 
         dialog = DependenciesDialog(dependencies, self)
         dialog.exec()
 
     def install_dependencies(self):
-        """Open the dependencies installer dialog"""
         dialog = InstallerDialog(self)
         dialog.exec()
 
     def install_yt_dependencies(self):
-        """Install dependencies needed for YouTube downloading"""
         dialog = InstallerDialog(self)
-        dialog.install_yt()  # Call the YouTube installation directly
+        dialog.install_yt()
 
     def install_voxtral_dependencies(self):
-        """Install Voxtral dependencies"""
         dialog = InstallerDialog(self)
-        dialog.install_voxtral()  # Call the Voxtral installation directly
+        dialog.install_voxtral()
 
     def show_about_dialog(self):
-        """Show the about dialog"""
         QMessageBox.about(
             self,
             "About Susurrus",
-            "<h1>Susurrus</h1>"
-            "<p>Whisper Audio Transcription with Speaker Diarization</p>"
-            "<p>Version 1.1.0</p>"
-            "<p>A tool for transcribing audio files with speaker identification.</p>"
-            "<p>Supports multiple Whisper backends and language-specific diarization models.</p>"
+            f"<h1>{APP_NAME}</h1>"
+            f"<p>Audio Transcription, TTS & Translation Suite</p>"
+            f"<p>Version {APP_VERSION}</p>"
             "<p>Features:</p>"
             "<ul>"
-            "<li>Multiple transcription backends</li>"
-            "<li>Speaker diarization with pyannote.audio</li>"
-            "<li>Support for many audio formats</li>"
-            "<li>Language-specific diarization models</li>"
-            "<li>Multiple output formats</li>"
+            "<li>24+ ASR backends via CrispASR</li>"
+            "<li>7+ TTS engines (local and cloud)</li>"
+            "<li>Multi-language translation (m2m100, MadLad)</li>"
+            "<li>Speaker diarization (PyAnnote + CrispASR methods)</li>"
+            "<li>Language identification</li>"
+            "<li>Streaming transcription</li>"
+            "<li>Text extraction from PDF, EPUB, HTML, Markdown</li>"
             "</ul>",
         )
 
     def show_diarization_help(self):
-        """Show help dialog for speaker diarization"""
         QMessageBox.information(
             self,
             "Speaker Diarization Help",
             "<h2>Speaker Diarization in Susurrus</h2>"
             "<p>Speaker diarization identifies different speakers in your audio recordings "
             "and creates transcriptions with speaker labels.</p>"
-            "<h3>Requirements</h3>"
+            "<h3>Methods</h3>"
+            "<ul>"
+            "<li><b>PyAnnote</b> — Neural model (requires HF token)</li>"
+            "<li><b>CrispASR methods</b> — energy, xcorr, vad-turns, sherpa, ecapa</li>"
+            "</ul>"
+            "<h3>Requirements (PyAnnote)</h3>"
             "<ul>"
             "<li>A Hugging Face account and API token</li>"
             "<li>The pyannote.audio library installed</li>"
@@ -912,9 +1083,7 @@ class MainWindow(QWidget):
             "<li>Use clean audio with minimal background noise</li>"
             "<li>Choose language-specific models for non-English content</li>"
             "<li>Set min/max speakers if you know how many speakers to expect</li>"
-            "<li>Recordings where speakers don't talk over each other work better</li>"
-            "</ul>"
-            "<p>Language-specific models are available for English, Chinese, German, Spanish, and Japanese.</p>",
+            "</ul>",
         )
 
     # Model management
@@ -925,6 +1094,10 @@ class MainWindow(QWidget):
         for model_tuple in models:
             model_id = model_tuple[0]
             self.model_id.addItem(model_id)
+
+        # If no models found and it's a crispasr backend, add "auto"
+        if not models and backend_lower.startswith("crispasr"):
+            self.model_id.addItem("auto")
 
         # Show/hide chunking selection based on backend
         if backend_lower in ["openai whisper", "transformers", "voxtral-local"]:
@@ -941,10 +1114,24 @@ class MainWindow(QWidget):
         # Show/hide Voxtral settings box based on backend
         if backend_lower in ["voxtral-local", "voxtral-api"]:
             self.voxtral_box.setVisible(True)
-            # Expand the box if using voxtral-api
             if backend_lower == "voxtral-api":
                 self.voxtral_box.toggle_button.setChecked(True)
                 self.voxtral_box.content_area.setVisible(True)
                 self.voxtral_box.update_toggle_button_text()
         else:
             self.voxtral_box.setVisible(False)
+
+        # Show/hide CrispASR advanced settings (both binary and FFI)
+        if backend_lower.startswith("crispasr"):
+            self.crispasr_box.setVisible(True)
+        else:
+            self.crispasr_box.setVisible(False)
+
+        # Add CrispASR-FFI sub-backends
+        from config import CRISPASR_SUB_BACKENDS
+        if backend_lower == "crispasr-ffi":
+            # Also add ffi sub-backends below the main ones
+            for sub in CRISPASR_SUB_BACKENDS:
+                ffi_name = f"crispasr-ffi:{sub}"
+                if self.backend_selection.findText(ffi_name) < 0:
+                    self.backend_selection.addItem(ffi_name)
