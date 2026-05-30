@@ -79,25 +79,35 @@ cd Susurrus
 python -m venv venv
 source venv/bin/activate  # or venv\Scripts\activate on Windows
 
-pip install -e .
+pip install -e ".[gui]"
 
 # GUI
 python main.py
 
-# CLI
+# CLI (no GUI needed)
+pip install -e .
 python cli.py --list-backends
 ```
 
 ### Optional Dependencies
 
 ```bash
+# GUI (PyQt6)
+pip install -e ".[gui]"
+
+# GPU backends (torch + torchaudio)
+pip install -e ".[gpu]"
+
 # TTS backends
 pip install -e ".[tts]"
 
 # Text extraction (PDF, EPUB, HTML, Markdown)
 pip install -e ".[text-extraction]"
 
-# All dev tools
+# Everything
+pip install -e ".[all]"
+
+# Dev tools
 pip install -e ".[dev]"
 ```
 

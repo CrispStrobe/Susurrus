@@ -1,6 +1,11 @@
 """Test CrispASR PARAM_MAP command building and multi-mode support."""
 
+import os
+import shutil
 import unittest
+
+_crispasr_available = bool(os.environ.get("CRISPASR_EXECUTABLE") or shutil.which("crispasr"))
+skip_no_crispasr = unittest.skipUnless(_crispasr_available, "crispasr binary not available")
 
 
 class TestCrispASRParamMap(unittest.TestCase):
@@ -137,24 +142,20 @@ class TestBackendSubNotation(unittest.TestCase):
 class TestAutoModel(unittest.TestCase):
     """Test auto model support."""
 
+    @skip_no_crispasr
     def test_auto_model_gets_auto_download(self):
         from workers.transcription.backends.crispasr_backend import CrispasrBackend
 
         b = CrispasrBackend(model_id="auto", device="cpu")
-        try:
-            cmd, _ = b._build_base_cmd()
-        except FileNotFoundError:
-            self.skipTest("crispasr binary not available")
+        cmd, _ = b._build_base_cmd()
         self.assertIn("--auto-download", cmd)
 
+    @skip_no_crispasr
     def test_auto_quant_model(self):
         from workers.transcription.backends.crispasr_backend import CrispasrBackend
 
         b = CrispasrBackend(model_id="auto:q8_0", device="cpu")
-        try:
-            cmd, _ = b._build_base_cmd()
-        except FileNotFoundError:
-            self.skipTest("crispasr binary not available")
+        cmd, _ = b._build_base_cmd()
         self.assertIn("auto:q8_0", cmd)
 
 
