@@ -69,9 +69,7 @@ class CrispasrTTSBackend(TTSBackend):
 
         logging.info(f"Running: {' '.join(cmd)}")
 
-        process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-        )
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         stdout, stderr = process.communicate()
 
         if stderr:

@@ -403,6 +403,7 @@ class MainWindow(QWidget):
 
         # Add CrispASR sub-backends
         from config import CRISPASR_SUB_BACKENDS
+
         for sub in CRISPASR_SUB_BACKENDS:
             available_backends.append(f"crispasr:{sub}")
 
@@ -727,6 +728,7 @@ class MainWindow(QWidget):
             sub = args["backend"].split(":", 1)[1]
             try:
                 from utils.crispasr_utils import probe_backends
+
                 available = probe_backends()
                 if available and sub not in available:
                     QMessageBox.warning(
@@ -948,8 +950,7 @@ class MainWindow(QWidget):
             pydub_play(audio)
         except Exception as e:
             QMessageBox.warning(
-                self, "Playback Error",
-                f"Could not play audio: {e}\n\nThe file is saved at: {path}"
+                self, "Playback Error", f"Could not play audio: {e}\n\nThe file is saved at: {path}"
             )
 
     # ---- Translation ----
@@ -1129,6 +1130,7 @@ class MainWindow(QWidget):
 
         # Add CrispASR-FFI sub-backends
         from config import CRISPASR_SUB_BACKENDS
+
         if backend_lower == "crispasr-ffi":
             # Also add ffi sub-backends below the main ones
             for sub in CRISPASR_SUB_BACKENDS:

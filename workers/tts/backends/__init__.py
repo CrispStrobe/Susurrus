@@ -19,6 +19,7 @@ def get_tts_backend(backend_name, **kwargs):
     def _load(key, mod, cls):
         if key not in _backends:
             import importlib
+
             m = importlib.import_module(f".{mod}", package=__package__)
             _backends[key] = getattr(m, cls)
         return _backends[key]

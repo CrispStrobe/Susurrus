@@ -5,9 +5,6 @@ License: Kokoro is Apache 2.0.
 """
 
 import logging
-import os
-
-import numpy as np
 
 from .base import TTSBackend
 
@@ -40,6 +37,7 @@ class KokoroOnnxTTSBackend(TTSBackend):
 
         # Write WAV
         import soundfile as sf
+
         sf.write(output_path, samples, sample_rate)
 
         logging.info(f"Kokoro ONNX TTS output: {output_path}")
@@ -47,8 +45,15 @@ class KokoroOnnxTTSBackend(TTSBackend):
 
     def list_voices(self):
         return [
-            "af_heart", "af_sky", "af_bella", "af_nicole", "af_sarah",
-            "am_adam", "am_michael",
-            "bf_emma", "bf_isabella",
-            "bm_george", "bm_lewis",
+            "af_heart",
+            "af_sky",
+            "af_bella",
+            "af_nicole",
+            "af_sarah",
+            "am_adam",
+            "am_michael",
+            "bf_emma",
+            "bf_isabella",
+            "bm_george",
+            "bm_lewis",
         ]

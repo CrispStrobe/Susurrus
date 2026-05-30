@@ -62,8 +62,11 @@ class TTSThread(QThread):
                     kwargs["voice"] = voice
 
                 backend = get_tts_backend(
-                    backend_name, model_id=model_id, device=device,
-                    language=language, **kwargs,
+                    backend_name,
+                    model_id=model_id,
+                    device=device,
+                    language=language,
+                    **kwargs,
                 )
 
             if self._stopped:
@@ -115,7 +118,9 @@ class TranslationThread(QThread):
 
             kwargs = {"auto_download": True}
             backend = get_translation_backend(
-                backend_name, model_id=model_id, **kwargs,
+                backend_name,
+                model_id=model_id,
+                **kwargs,
             )
 
             result = backend.translate(text, source_lang, target_lang)

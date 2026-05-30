@@ -1,7 +1,6 @@
 """Test CrispASR PARAM_MAP command building and multi-mode support."""
 
 import unittest
-from unittest.mock import patch
 
 
 class TestCrispASRParamMap(unittest.TestCase):
@@ -9,10 +8,12 @@ class TestCrispASRParamMap(unittest.TestCase):
 
     def _make_backend(self, **kwargs):
         from workers.transcription.backends.crispasr_backend import CrispasrBackend
+
         return CrispasrBackend(model_id="test.gguf", device="cpu", **kwargs)
 
     def test_param_map_has_entries(self):
         from workers.transcription.backends.crispasr_backend import PARAM_MAP
+
         self.assertGreater(len(PARAM_MAP), 100)
 
     def test_bool_flag_appended(self):
@@ -77,9 +78,7 @@ class TestCrispASRParamMap(unittest.TestCase):
         self.assertIn("--auto-download", cmd)
 
     def test_tts_params(self):
-        b = self._make_backend(
-            tts_text="hello", tts_output="out.wav", tts_voice="voice.gguf"
-        )
+        b = self._make_backend(tts_text="hello", tts_output="out.wav", tts_voice="voice.gguf")
         cmd = ["crispasr"]
         b._append_params(cmd)
         self.assertIn("--tts", cmd)
@@ -87,9 +86,7 @@ class TestCrispASRParamMap(unittest.TestCase):
         self.assertIn("--voice", cmd)
 
     def test_translation_params(self):
-        b = self._make_backend(
-            text_input="hello", tr_source_lang="en", tr_target_lang="de"
-        )
+        b = self._make_backend(text_input="hello", tr_source_lang="en", tr_target_lang="de")
         cmd = ["crispasr"]
         b._append_params(cmd)
         self.assertIn("--text", cmd)
@@ -119,17 +116,20 @@ class TestBackendSubNotation(unittest.TestCase):
 
     def test_subbackend_parsed(self):
         from workers.transcription.backends import get_backend
+
         b = get_backend("crispasr:parakeet", model_id="auto", device="cpu")
         self.assertEqual(b.__class__.__name__, "CrispasrBackend")
         self.assertEqual(b.extra_kwargs.get("crispasr_backend"), "parakeet")
 
     def test_plain_crispasr_works(self):
         from workers.transcription.backends import get_backend
+
         b = get_backend("crispasr", model_id="auto", device="cpu")
         self.assertEqual(b.__class__.__name__, "CrispasrBackend")
 
     def test_unknown_backend_raises(self):
         from workers.transcription.backends import get_backend
+
         with self.assertRaises(ValueError):
             get_backend("nonexistent-backend")
 
@@ -139,14 +139,22 @@ class TestAutoModel(unittest.TestCase):
 
     def test_auto_model_gets_auto_download(self):
         from workers.transcription.backends.crispasr_backend import CrispasrBackend
+
         b = CrispasrBackend(model_id="auto", device="cpu")
-        cmd, _ = b._build_base_cmd()
+        try:
+            cmd, _ = b._build_base_cmd()
+        except FileNotFoundError:
+            self.skipTest("crispasr binary not available")
         self.assertIn("--auto-download", cmd)
 
     def test_auto_quant_model(self):
         from workers.transcription.backends.crispasr_backend import CrispasrBackend
+
         b = CrispasrBackend(model_id="auto:q8_0", device="cpu")
-        cmd, _ = b._build_base_cmd()
+        try:
+            cmd, _ = b._build_base_cmd()
+        except FileNotFoundError:
+            self.skipTest("crispasr binary not available")
         self.assertIn("auto:q8_0", cmd)
 
 

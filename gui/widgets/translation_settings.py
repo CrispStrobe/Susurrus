@@ -36,28 +36,90 @@ class TranslationSettingsWidget(QWidget):
         config_row.addWidget(QLabel("From:"))
         self.source_lang = QComboBox()
         self.source_lang.setEditable(True)
-        self.source_lang.addItems([
-            "en", "de", "fr", "es", "it", "pt", "nl", "pl", "ru", "zh",
-            "ja", "ko", "ar", "hi", "tr", "vi", "th", "sv", "da", "no",
-            "fi", "cs", "ro", "hu", "el", "bg", "hr", "sk", "sl", "uk",
-        ])
+        self.source_lang.addItems(
+            [
+                "en",
+                "de",
+                "fr",
+                "es",
+                "it",
+                "pt",
+                "nl",
+                "pl",
+                "ru",
+                "zh",
+                "ja",
+                "ko",
+                "ar",
+                "hi",
+                "tr",
+                "vi",
+                "th",
+                "sv",
+                "da",
+                "no",
+                "fi",
+                "cs",
+                "ro",
+                "hu",
+                "el",
+                "bg",
+                "hr",
+                "sk",
+                "sl",
+                "uk",
+            ]
+        )
         config_row.addWidget(self.source_lang)
 
         config_row.addWidget(QLabel("To:"))
         self.target_lang = QComboBox()
         self.target_lang.setEditable(True)
-        self.target_lang.addItems([
-            "de", "en", "fr", "es", "it", "pt", "nl", "pl", "ru", "zh",
-            "ja", "ko", "ar", "hi", "tr", "vi", "th", "sv", "da", "no",
-            "fi", "cs", "ro", "hu", "el", "bg", "hr", "sk", "sl", "uk",
-        ])
+        self.target_lang.addItems(
+            [
+                "de",
+                "en",
+                "fr",
+                "es",
+                "it",
+                "pt",
+                "nl",
+                "pl",
+                "ru",
+                "zh",
+                "ja",
+                "ko",
+                "ar",
+                "hi",
+                "tr",
+                "vi",
+                "th",
+                "sv",
+                "da",
+                "no",
+                "fi",
+                "cs",
+                "ro",
+                "hu",
+                "el",
+                "bg",
+                "hr",
+                "sk",
+                "sl",
+                "uk",
+            ]
+        )
         config_row.addWidget(self.target_lang)
 
         config_row.addWidget(QLabel("Backend:"))
         self.translation_backend = QComboBox()
-        self.translation_backend.addItems([
-            "crispasr:m2m100", "crispasr:madlad", "crispasr:gemma4-e2b",
-        ])
+        self.translation_backend.addItems(
+            [
+                "crispasr:m2m100",
+                "crispasr:madlad",
+                "crispasr:gemma4-e2b",
+            ]
+        )
         config_row.addWidget(self.translation_backend)
 
         config_row.addWidget(QLabel("Model:"))

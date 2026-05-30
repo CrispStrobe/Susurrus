@@ -8,10 +8,12 @@ class TestTTSBase(unittest.TestCase):
 
     def test_base_class_has_abstractmethod(self):
         from workers.tts.backends.base import TTSBackend
+
         self.assertIn("synthesize", TTSBackend.__abstractmethods__)
 
     def test_cannot_instantiate_base(self):
         from workers.tts.backends.base import TTSBackend
+
         with self.assertRaises(TypeError):
             TTSBackend()
 
@@ -21,18 +23,21 @@ class TestTTSRegistry(unittest.TestCase):
 
     def test_crispasr_tts_backend(self):
         from workers.tts.backends import get_tts_backend
+
         b = get_tts_backend("crispasr:kokoro", model_id="auto", device="cpu")
         self.assertEqual(b.__class__.__name__, "CrispasrTTSBackend")
         self.assertEqual(b.crispasr_backend, "kokoro")
 
     def test_unknown_backend_raises(self):
         from workers.tts.backends import get_tts_backend
+
         with self.assertRaises(ValueError):
             get_tts_backend("nonexistent-tts")
 
     def test_edge_tts_importable(self):
         """Edge TTS backend class can be imported (not necessarily run)."""
         from workers.tts.backends.edge_tts_backend import EdgeTTSBackend
+
         b = EdgeTTSBackend()
         voices = b.list_voices()
         self.assertGreater(len(voices), 0)
@@ -40,12 +45,14 @@ class TestTTSRegistry(unittest.TestCase):
 
     def test_piper_importable(self):
         from workers.tts.backends.piper_tts_backend import PiperTTSBackend
+
         b = PiperTTSBackend()
         voices = b.list_voices()
         self.assertGreater(len(voices), 0)
 
     def test_kokoro_onnx_importable(self):
         from workers.tts.backends.kokoro_onnx_tts_backend import KokoroOnnxTTSBackend
+
         b = KokoroOnnxTTSBackend()
         voices = b.list_voices()
         self.assertGreater(len(voices), 0)
@@ -56,12 +63,14 @@ class TestTranslationBase(unittest.TestCase):
 
     def test_base_class_has_abstractmethod(self):
         from workers.translation.backends.base import TranslationBackend
+
         self.assertIn("translate", TranslationBackend.__abstractmethods__)
 
     def test_crispasr_translation_importable(self):
         from workers.translation.backends.crispasr_translation_backend import (
             CrispasrTranslationBackend,
         )
+
         b = CrispasrTranslationBackend(model_id="auto")
         langs = b.list_languages()
         self.assertGreater(len(langs), 10)
@@ -71,7 +80,9 @@ class TestTextExtraction(unittest.TestCase):
     """Test text extraction utilities."""
 
     def test_extract_txt(self):
-        import tempfile, os
+        import os
+        import tempfile
+
         from utils.text_extraction import extract_text_from_txt
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
@@ -83,11 +94,14 @@ class TestTextExtraction(unittest.TestCase):
 
     def test_extract_dispatcher(self):
         from utils.text_extraction import extract_text
+
         with self.assertRaises(ValueError):
             extract_text("file.xyz")
 
     def test_extract_txt_via_dispatcher(self):
-        import tempfile, os
+        import os
+        import tempfile
+
         from utils.text_extraction import extract_text
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
@@ -103,18 +117,21 @@ class TestConfigMaps(unittest.TestCase):
 
     def test_backend_model_map_has_crispasr_subs(self):
         from config import BACKEND_MODEL_MAP
+
         self.assertIn("crispasr:parakeet", BACKEND_MODEL_MAP)
         self.assertIn("crispasr:canary", BACKEND_MODEL_MAP)
         self.assertIn("crispasr:m2m100", BACKEND_MODEL_MAP)
 
     def test_tts_backend_map_has_entries(self):
         from config import TTS_BACKEND_MAP
+
         self.assertIn("edge-tts", TTS_BACKEND_MAP)
         self.assertIn("crispasr:kokoro", TTS_BACKEND_MAP)
         self.assertIn("piper", TTS_BACKEND_MAP)
 
     def test_default_model_for_crispasr_sub(self):
         from config import get_default_model_for_backend
+
         self.assertEqual(get_default_model_for_backend("crispasr:parakeet"), "auto")
         self.assertEqual(get_default_model_for_backend("crispasr"), "auto")
 

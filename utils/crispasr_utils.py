@@ -1,7 +1,6 @@
 """Shared utilities for locating, downloading, and probing the CrispASR binary."""
 
 import hashlib
-import json
 import logging
 import os
 import platform
@@ -57,7 +56,12 @@ def download_crispasr():
     try:
         if asset.endswith(".tar.gz"):
             with tarfile.open(archive_path, "r:gz") as tf:
-                tf.extractall(_CACHE_DIR, filter="data")
+                import sys
+
+                if sys.version_info >= (3, 12):
+                    tf.extractall(_CACHE_DIR, filter="data")
+                else:
+                    tf.extractall(_CACHE_DIR)  # nosec B202
         elif asset.endswith(".zip"):
             with zipfile.ZipFile(archive_path, "r") as zf:
                 for member in zf.namelist():
@@ -148,7 +152,9 @@ def probe_backends(exe=None):
 
         result = subprocess.run(
             [exe, "--list-backends-json"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if result.returncode == 0:
             data = json.loads(result.stdout.strip())
@@ -158,8 +164,7 @@ def probe_backends(exe=None):
                     _cached_backends = [entry["name"] for entry in data if "name" in entry]
                     # Also cache the full capability info
                     _cached_backend_caps = {
-                        entry["name"]: entry.get("caps", [])
-                        for entry in data if "name" in entry
+                        entry["name"]: entry.get("caps", []) for entry in data if "name" in entry
                     }
                 else:
                     _cached_backends = data
@@ -171,11 +176,14 @@ def probe_backends(exe=None):
             # Fallback: try --list-backends (plain text)
             result = subprocess.run(
                 [exe, "--list-backends"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             if result.returncode == 0:
                 _cached_backends = [
-                    line.strip() for line in result.stdout.splitlines()
+                    line.strip()
+                    for line in result.stdout.splitlines()
                     if line.strip() and not line.startswith("Available")
                 ]
             else:
@@ -202,7 +210,9 @@ def probe_version(exe=None):
     try:
         result = subprocess.run(
             [exe, "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if result.returncode == 0:
             _cached_version = result.stdout.strip().split("\n")[0]
@@ -248,7 +258,9 @@ def verify_sha256(filepath, expected_hash):
     if actual != expected_hash:
         logger.warning(
             "SHA-256 mismatch for %s: expected %s, got %s",
-            filepath, expected_hash, actual,
+            filepath,
+            expected_hash,
+            actual,
         )
         return False
     return True

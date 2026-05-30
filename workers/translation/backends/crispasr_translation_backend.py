@@ -39,12 +39,18 @@ class CrispasrTranslationBackend(TranslationBackend):
         model = self.model_id or "auto"
         cmd = [
             exe,
-            "-m", model,
-            "--backend", self.crispasr_backend,
-            "--text", text,
-            "--tr-sl", source_lang,
-            "--tr-tl", target_lang,
-            "-t", str(min(os.cpu_count() or 4, 8)),
+            "-m",
+            model,
+            "--backend",
+            self.crispasr_backend,
+            "--text",
+            text,
+            "--tr-sl",
+            source_lang,
+            "--tr-tl",
+            target_lang,
+            "-t",
+            str(min(os.cpu_count() or 4, 8)),
         ]
 
         if self.auto_download:
@@ -54,9 +60,7 @@ class CrispasrTranslationBackend(TranslationBackend):
 
         logging.info(f"Running: {' '.join(cmd)}")
 
-        process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-        )
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         stdout, stderr = process.communicate()
 
         if stderr:
@@ -64,9 +68,7 @@ class CrispasrTranslationBackend(TranslationBackend):
                 logging.info(f"crispasr: {line}")
 
         if process.returncode != 0:
-            raise RuntimeError(
-                f"CrispASR translation failed (code {process.returncode}): {stderr}"
-            )
+            raise RuntimeError(f"CrispASR translation failed (code {process.returncode}): {stderr}")
 
         return stdout.strip()
 
@@ -74,14 +76,104 @@ class CrispasrTranslationBackend(TranslationBackend):
         if self.crispasr_backend == "madlad":
             return ["419+ languages — see MadLad documentation"]
         return [
-            "af", "am", "ar", "ast", "az", "ba", "be", "bg", "bn", "br",
-            "bs", "ca", "ceb", "cs", "cy", "da", "de", "el", "en", "es",
-            "et", "fa", "ff", "fi", "fr", "fy", "ga", "gd", "gl", "gu",
-            "ha", "he", "hi", "hr", "ht", "hu", "hy", "id", "ig", "ilo",
-            "is", "it", "ja", "jv", "ka", "kk", "km", "kn", "ko", "lb",
-            "lg", "ln", "lo", "lt", "lv", "mg", "mk", "ml", "mn", "mr",
-            "ms", "my", "ne", "nl", "no", "ns", "oc", "or", "pa", "pl",
-            "ps", "pt", "ro", "ru", "sd", "si", "sk", "sl", "so", "sq",
-            "sr", "ss", "su", "sv", "sw", "ta", "th", "tl", "tn", "tr",
-            "uk", "ur", "uz", "vi", "wo", "xh", "yi", "yo", "zh", "zu",
+            "af",
+            "am",
+            "ar",
+            "ast",
+            "az",
+            "ba",
+            "be",
+            "bg",
+            "bn",
+            "br",
+            "bs",
+            "ca",
+            "ceb",
+            "cs",
+            "cy",
+            "da",
+            "de",
+            "el",
+            "en",
+            "es",
+            "et",
+            "fa",
+            "ff",
+            "fi",
+            "fr",
+            "fy",
+            "ga",
+            "gd",
+            "gl",
+            "gu",
+            "ha",
+            "he",
+            "hi",
+            "hr",
+            "ht",
+            "hu",
+            "hy",
+            "id",
+            "ig",
+            "ilo",
+            "is",
+            "it",
+            "ja",
+            "jv",
+            "ka",
+            "kk",
+            "km",
+            "kn",
+            "ko",
+            "lb",
+            "lg",
+            "ln",
+            "lo",
+            "lt",
+            "lv",
+            "mg",
+            "mk",
+            "ml",
+            "mn",
+            "mr",
+            "ms",
+            "my",
+            "ne",
+            "nl",
+            "no",
+            "ns",
+            "oc",
+            "or",
+            "pa",
+            "pl",
+            "ps",
+            "pt",
+            "ro",
+            "ru",
+            "sd",
+            "si",
+            "sk",
+            "sl",
+            "so",
+            "sq",
+            "sr",
+            "ss",
+            "su",
+            "sv",
+            "sw",
+            "ta",
+            "th",
+            "tl",
+            "tn",
+            "tr",
+            "uk",
+            "ur",
+            "uz",
+            "vi",
+            "wo",
+            "xh",
+            "yi",
+            "yo",
+            "zh",
+            "zu",
         ]

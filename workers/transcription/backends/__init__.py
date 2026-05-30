@@ -1,52 +1,37 @@
 # workers/transcription/backends/__init__.py
 """Transcription backends"""
 
+import importlib
+
 from .base import TranscriptionBackend
-from .crispasr_backend import CrispasrBackend
-from .crispasr_ffi_backend import CrispasrFFIBackend
-from .ctranslate2_backend import CTranslate2Backend
-from .faster_whisper_backend import FasterWhisperBatchedBackend, FasterWhisperSequencedBackend
-from .insanely_fast_backend import InsanelyFastBackend
-from .mlx_backend import MLXBackend
-from .openai_whisper_backend import OpenAIWhisperBackend
-from .transformers_backend import TransformersBackend
-from .voxtral_backend import VoxtralAPIBackend, VoxtralLocalBackend
-from .whisper_cpp_backend import WhisperCppBackend
-from .whisper_jax_backend import WhisperJaxBackend
 
 __all__ = [
     "TranscriptionBackend",
-    "MLXBackend",
-    "FasterWhisperBatchedBackend",
-    "FasterWhisperSequencedBackend",
-    "TransformersBackend",
-    "WhisperCppBackend",
-    "CTranslate2Backend",
-    "WhisperJaxBackend",
-    "InsanelyFastBackend",
-    "OpenAIWhisperBackend",
-    "VoxtralLocalBackend",
-    "VoxtralAPIBackend",
-    "CrispasrBackend",
-    "CrispasrFFIBackend",
     "get_backend",
 ]
 
-_BACKEND_CLASSES = {
-    "mlx-whisper": MLXBackend,
-    "faster-batched": FasterWhisperBatchedBackend,
-    "faster-sequenced": FasterWhisperSequencedBackend,
-    "transformers": TransformersBackend,
-    "whisper.cpp": WhisperCppBackend,
-    "ctranslate2": CTranslate2Backend,
-    "whisper-jax": WhisperJaxBackend,
-    "insanely-fast-whisper": InsanelyFastBackend,
-    "openai whisper": OpenAIWhisperBackend,
-    "voxtral-local": VoxtralLocalBackend,
-    "voxtral-api": VoxtralAPIBackend,
-    "crispasr": CrispasrBackend,
-    "crispasr-ffi": CrispasrFFIBackend,
+# Lazy registry: maps backend name to (module_name, class_name)
+_BACKEND_REGISTRY = {
+    "mlx-whisper": ("mlx_backend", "MLXBackend"),
+    "faster-batched": ("faster_whisper_backend", "FasterWhisperBatchedBackend"),
+    "faster-sequenced": ("faster_whisper_backend", "FasterWhisperSequencedBackend"),
+    "transformers": ("transformers_backend", "TransformersBackend"),
+    "whisper.cpp": ("whisper_cpp_backend", "WhisperCppBackend"),
+    "ctranslate2": ("ctranslate2_backend", "CTranslate2Backend"),
+    "whisper-jax": ("whisper_jax_backend", "WhisperJaxBackend"),
+    "insanely-fast-whisper": ("insanely_fast_backend", "InsanelyFastBackend"),
+    "openai whisper": ("openai_whisper_backend", "OpenAIWhisperBackend"),
+    "voxtral-local": ("voxtral_backend", "VoxtralLocalBackend"),
+    "voxtral-api": ("voxtral_backend", "VoxtralAPIBackend"),
+    "crispasr": ("crispasr_backend", "CrispasrBackend"),
+    "crispasr-ffi": ("crispasr_ffi_backend", "CrispasrFFIBackend"),
 }
+
+
+def _load_backend_class(module_name, class_name):
+    """Import a backend class on demand."""
+    mod = importlib.import_module(f".{module_name}", __package__)
+    return getattr(mod, class_name)
 
 
 def get_backend(backend_name, **kwargs):
@@ -70,11 +55,12 @@ def get_backend(backend_name, **kwargs):
         kwargs.setdefault("crispasr_backend", sub)
         name = "crispasr"
 
-    backend_class = _BACKEND_CLASSES.get(name)
-    if not backend_class:
+    entry = _BACKEND_REGISTRY.get(name)
+    if not entry:
         raise ValueError(
             f"Unknown backend: {backend_name}. "
-            f"Available: {', '.join(sorted(_BACKEND_CLASSES))}"
+            f"Available: {', '.join(sorted(_BACKEND_REGISTRY))}"
         )
 
+    backend_class = _load_backend_class(*entry)
     return backend_class(**kwargs)

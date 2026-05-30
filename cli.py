@@ -109,9 +109,7 @@ def get_backend_class(name):
         lookup_name = "crispasr"
 
     if lookup_name not in backend_files:
-        raise ValueError(
-            f"Unknown backend: {name}. Available: {', '.join(sorted(backend_files))}"
-        )
+        raise ValueError(f"Unknown backend: {name}. Available: {', '.join(sorted(backend_files))}")
 
     fname = backend_files[lookup_name]
     cname = backend_classes[lookup_name]
@@ -132,8 +130,8 @@ def get_tts_backend_class(name):
     if not os.path.isdir(tts_dir):
         raise ValueError(f"TTS backends directory not found: {tts_dir}")
 
-    import types
     import importlib.util
+    import types
 
     for mod_name in [
         "workers.tts",
@@ -187,6 +185,7 @@ def _read_input_text(args):
     if args.input_file:
         try:
             from utils.text_extraction import extract_text
+
             return extract_text(args.input_file)
         except ImportError:
             # Fallback: plain text read
@@ -235,9 +234,7 @@ def main():
     )
     tts_group.add_argument("--codec-model", default=None, help="Codec/companion GGUF model")
     tts_group.add_argument("--tts-steps", type=int, default=None, help="TTS diffusion steps")
-    tts_group.add_argument(
-        "--play", action="store_true", help="Play audio after synthesis"
-    )
+    tts_group.add_argument("--play", action="store_true", help="Play audio after synthesis")
     tts_group.add_argument("--list-voices", action="store_true", help="List voices for TTS backend")
 
     # --- Translation-specific ---
@@ -258,9 +255,7 @@ def main():
     ca_group.add_argument("--beam-size", type=int, default=None, help="Beam search width")
     ca_group.add_argument("--seed", type=int, default=None, help="RNG seed")
     ca_group.add_argument("--max-new-tokens", type=int, default=None, help="Max new tokens")
-    ca_group.add_argument(
-        "--frequency-penalty", type=float, default=None, help="Frequency penalty"
-    )
+    ca_group.add_argument("--frequency-penalty", type=float, default=None, help="Frequency penalty")
     ca_group.add_argument("--prompt", default=None, help="Initial prompt")
     ca_group.add_argument(
         "--carry-initial-prompt", action="store_true", help="Always prepend initial prompt"
@@ -290,7 +285,8 @@ def main():
     dia_group = parser.add_argument_group("CrispASR Diarization Options")
     dia_group.add_argument("--diarize", action="store_true", help="Enable diarization")
     dia_group.add_argument(
-        "--diarize-method", default=None,
+        "--diarize-method",
+        default=None,
         help="Method: energy/xcorr/vad-turns/pyannote/sherpa/ecapa",
     )
     dia_group.add_argument("--diarize-embedder", default=None, help="Speaker embedder model")
@@ -303,7 +299,9 @@ def main():
 
     # --- CrispASR LID ---
     lid_group = parser.add_argument_group("CrispASR Language ID Options")
-    lid_group.add_argument("--detect-language", action="store_true", help="Detect language and exit")
+    lid_group.add_argument(
+        "--detect-language", action="store_true", help="Detect language and exit"
+    )
     lid_group.add_argument(
         "--lid-backend", default=None, help="LID method: whisper/silero/firered/ecapa"
     )
@@ -383,33 +381,49 @@ def _list_backends():
     """List all available backends."""
     print("Transcription backends:")
     transcription = [
-        "crispasr", "crispasr-ffi", "faster-batched", "faster-sequenced",
-        "transformers", "whisper.cpp", "ctranslate2", "whisper-jax",
-        "insanely-fast-whisper", "openai whisper", "voxtral-local",
-        "voxtral-api", "mlx-whisper",
+        "crispasr",
+        "crispasr-ffi",
+        "faster-batched",
+        "faster-sequenced",
+        "transformers",
+        "whisper.cpp",
+        "ctranslate2",
+        "whisper-jax",
+        "insanely-fast-whisper",
+        "openai whisper",
+        "voxtral-local",
+        "voxtral-api",
+        "mlx-whisper",
     ]
     for b in transcription:
         print(f"  {b}")
 
     print("\nCrispASR ASR sub-backends (use as crispasr:<name>):")
     from config import CRISPASR_SUB_BACKENDS
+
     for b in CRISPASR_SUB_BACKENDS:
         print(f"  crispasr:{b}")
 
     print("\nTTS backends:")
     tts = [
-        "edge-tts", "piper", "kokoro-onnx", "chatterbox", "speecht5",
+        "edge-tts",
+        "piper",
+        "kokoro-onnx",
+        "chatterbox",
+        "speecht5",
     ]
     for b in tts:
         print(f"  {b}")
 
     print("\nCrispASR TTS backends (use as crispasr:<name>):")
     from config import CRISPASR_TTS_BACKENDS
+
     for b in CRISPASR_TTS_BACKENDS:
         print(f"  crispasr:{b}")
 
     print("\nTranslation backends:")
     from config import CRISPASR_TRANSLATION_BACKENDS
+
     for b in CRISPASR_TRANSLATION_BACKENDS:
         print(f"  crispasr:{b}")
 
@@ -531,9 +545,7 @@ def _run_transcribe(args):
     kwargs = _build_crispasr_kwargs(args)
 
     BackendClass = get_backend_class(backend_name)
-    backend = BackendClass(
-        model_id=model, device=args.device, language=args.language, **kwargs
-    )
+    backend = BackendClass(model_id=model, device=args.device, language=args.language, **kwargs)
 
     try:
         audio_path = backend.preprocess_audio(args.file)
@@ -659,6 +671,7 @@ def _run_stream(args):
 
         logging.info(f"Starting stream: {' '.join(cmd)}")
         import subprocess
+
         proc = subprocess.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr)
         proc.wait()
     finally:

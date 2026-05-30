@@ -7,7 +7,6 @@ Text extraction patterns adapted from CrispTTS (EUPL v1.2).
 Original Copyright (c) CrispStrobe contributors.
 """
 
-import logging
 import os
 
 
@@ -31,8 +30,7 @@ def extract_text(filepath):
     extractor = extractors.get(ext)
     if not extractor:
         raise ValueError(
-            f"Unsupported file format: {ext}. "
-            f"Supported: {', '.join(sorted(extractors))}"
+            f"Unsupported file format: {ext}. " f"Supported: {', '.join(sorted(extractors))}"
         )
 
     return extractor(filepath)
@@ -95,8 +93,7 @@ def extract_text_from_pdf(filepath):
         import pypdfium2 as pdfium
     except ImportError:
         raise ImportError(
-            "pypdfium2 is required for PDF extraction. "
-            "Install with: pip install pypdfium2"
+            "pypdfium2 is required for PDF extraction. " "Install with: pip install pypdfium2"
         )
 
     pdf = pdfium.PdfDocument(filepath)
@@ -115,8 +112,8 @@ def extract_text_from_epub(filepath):
     """Extract text from an EPUB file."""
     try:
         import ebooklib
-        from ebooklib import epub
         from bs4 import BeautifulSoup
+        from ebooklib import epub
     except ImportError:
         raise ImportError(
             "ebooklib and beautifulsoup4 are required for EPUB extraction. "

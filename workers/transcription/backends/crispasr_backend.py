@@ -365,10 +365,14 @@ class CrispasrBackend(TranscriptionBackend):
             audio_len = 0
         if audio_len > 0 and elapsed > 0:
             from utils.crispasr_utils import compute_metrics
+
             metrics = compute_metrics(audio_len, elapsed, word_count)
             logging.info(
                 "Metrics: RTF=%.1fx, %.0f WPS, %.1fs audio in %.1fs",
-                metrics["rtf"], metrics["wps"], metrics["audio_s"], metrics["wall_s"],
+                metrics["rtf"],
+                metrics["wps"],
+                metrics["audio_s"],
+                metrics["wall_s"],
             )
 
         for result in results:
@@ -379,12 +383,14 @@ class CrispasrBackend(TranscriptionBackend):
         """Get audio duration in seconds (best-effort)."""
         try:
             import wave
+
             with wave.open(audio_path, "rb") as wf:
                 return wf.getnframes() / wf.getframerate()
         except Exception:
             pass
         try:
             from pydub import AudioSegment
+
             audio = AudioSegment.from_file(audio_path)
             return len(audio) / 1000.0
         except Exception:
@@ -422,9 +428,7 @@ class CrispasrBackend(TranscriptionBackend):
                 logging.info(f"crispasr: {line}")
 
         if process.returncode != 0:
-            raise RuntimeError(
-                f"CrispASR TTS failed with code {process.returncode}: {stderr}"
-            )
+            raise RuntimeError(f"CrispASR TTS failed with code {process.returncode}: {stderr}")
 
         if os.path.isfile(output_path):
             logging.info(f"TTS output saved to: {output_path}")

@@ -4,7 +4,7 @@ import os
 import platform
 
 APP_NAME = "Susurrus"
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.0.1"
 APP_ORG = "CrispStrobe"
 
 # ---------------------------------------------------------------------------
@@ -266,10 +266,17 @@ TTS_BACKEND_MAP = {
     "kokoro-onnx": {
         "models": [("kokoro-onnx", "Kokoro ONNX TTS (local)")],
         "voices": [
-            "af_heart", "af_sky", "af_bella", "af_nicole", "af_sarah",
-            "am_adam", "am_michael",
-            "bf_emma", "bf_isabella",
-            "bm_george", "bm_lewis",
+            "af_heart",
+            "af_sky",
+            "af_bella",
+            "af_nicole",
+            "af_sarah",
+            "am_adam",
+            "am_michael",
+            "bf_emma",
+            "bf_isabella",
+            "bm_george",
+            "bm_lewis",
         ],
         "default_voice": "af_heart",
     },
@@ -289,10 +296,24 @@ TTS_BACKEND_MAP = {
 
 # All CrispASR sub-backend names for listing
 CRISPASR_SUB_BACKENDS = [
-    "whisper", "parakeet", "canary", "cohere", "qwen3", "voxtral",
-    "voxtral4b", "granite", "moonshine", "kyutai-stt", "fastconformer-ctc",
-    "wav2vec2", "firered-asr", "funasr", "glm-asr", "omniasr",
-    "vibevoice-asr", "gemma4-e2b",
+    "whisper",
+    "parakeet",
+    "canary",
+    "cohere",
+    "qwen3",
+    "voxtral",
+    "voxtral4b",
+    "granite",
+    "moonshine",
+    "kyutai-stt",
+    "fastconformer-ctc",
+    "wav2vec2",
+    "firered-asr",
+    "funasr",
+    "glm-asr",
+    "omniasr",
+    "vibevoice-asr",
+    "gemma4-e2b",
 ]
 
 # Companion models required by certain TTS backends (auto-download)
@@ -305,12 +326,19 @@ CRISPASR_COMPANION_MODELS = {
 }
 
 CRISPASR_TTS_BACKENDS = [
-    "kokoro", "orpheus", "qwen3-tts", "chatterbox-tts",
-    "vibevoice-tts", "indextts", "voxcpm2-tts",
+    "kokoro",
+    "orpheus",
+    "qwen3-tts",
+    "chatterbox-tts",
+    "vibevoice-tts",
+    "indextts",
+    "voxcpm2-tts",
 ]
 
 CRISPASR_TRANSLATION_BACKENDS = [
-    "m2m100", "madlad", "gemma4-e2b",
+    "m2m100",
+    "madlad",
+    "gemma4-e2b",
 ]
 
 # Device fallbacks for backends
@@ -332,7 +360,12 @@ DIARIZATION_MODELS = ["Default", "Legacy", "English", "Chinese", "German", "Span
 
 # CrispASR diarization methods (via the binary)
 CRISPASR_DIARIZE_METHODS = [
-    "energy", "xcorr", "vad-turns", "pyannote", "sherpa", "ecapa",
+    "energy",
+    "xcorr",
+    "vad-turns",
+    "pyannote",
+    "sherpa",
+    "ecapa",
 ]
 
 # CrispASR LID methods
@@ -342,16 +375,107 @@ CRISPASR_LID_BACKENDS = ["whisper", "silero", "firered", "ecapa"]
 SUPPORTED_LANGUAGES = {
     "voxtral": ["en", "fr", "es", "de", "it", "pt", "pl", "nl"],
     "crispasr": [
-        "auto", "en", "zh", "de", "es", "ru", "ko", "fr", "ja", "pt", "tr",
-        "pl", "ca", "nl", "ar", "sv", "it", "id", "hi", "fi", "vi", "he",
-        "uk", "el", "ms", "cs", "ro", "da", "hu", "ta", "no", "th", "ur",
-        "hr", "bg", "lt", "la", "mi", "ml", "cy", "sk", "te", "fa", "lv",
-        "bn", "sr", "az", "sl", "kn", "et", "mk", "br", "eu", "is", "hy",
-        "ne", "mn", "bs", "kk", "sq", "sw", "gl", "mr", "pa", "si", "km",
-        "sn", "yo", "so", "af", "oc", "ka", "be", "tg", "sd", "gu", "am",
-        "yi", "lo", "uz", "fo", "ht", "ps", "tk", "nn", "mt", "sa", "lb",
-        "my", "bo", "tl", "mg", "as", "tt", "haw", "ln", "ha", "ba", "jw",
-        "su", "yue",
+        "auto",
+        "en",
+        "zh",
+        "de",
+        "es",
+        "ru",
+        "ko",
+        "fr",
+        "ja",
+        "pt",
+        "tr",
+        "pl",
+        "ca",
+        "nl",
+        "ar",
+        "sv",
+        "it",
+        "id",
+        "hi",
+        "fi",
+        "vi",
+        "he",
+        "uk",
+        "el",
+        "ms",
+        "cs",
+        "ro",
+        "da",
+        "hu",
+        "ta",
+        "no",
+        "th",
+        "ur",
+        "hr",
+        "bg",
+        "lt",
+        "la",
+        "mi",
+        "ml",
+        "cy",
+        "sk",
+        "te",
+        "fa",
+        "lv",
+        "bn",
+        "sr",
+        "az",
+        "sl",
+        "kn",
+        "et",
+        "mk",
+        "br",
+        "eu",
+        "is",
+        "hy",
+        "ne",
+        "mn",
+        "bs",
+        "kk",
+        "sq",
+        "sw",
+        "gl",
+        "mr",
+        "pa",
+        "si",
+        "km",
+        "sn",
+        "yo",
+        "so",
+        "af",
+        "oc",
+        "ka",
+        "be",
+        "tg",
+        "sd",
+        "gu",
+        "am",
+        "yi",
+        "lo",
+        "uz",
+        "fo",
+        "ht",
+        "ps",
+        "tk",
+        "nn",
+        "mt",
+        "sa",
+        "lb",
+        "my",
+        "bo",
+        "tl",
+        "mg",
+        "as",
+        "tt",
+        "haw",
+        "ln",
+        "ha",
+        "ba",
+        "jw",
+        "su",
+        "yue",
     ],
 }
 
@@ -359,6 +483,7 @@ SUPPORTED_LANGUAGES = {
 def get_settings():
     """Get QSettings instance (only available when PyQt6 is installed)."""
     from PyQt6.QtCore import QSettings
+
     return QSettings(APP_ORG, APP_NAME)
 
 

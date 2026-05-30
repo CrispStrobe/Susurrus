@@ -32,14 +32,29 @@ class CrispASRAdvancedSettingsBox(CollapsibleBox):
         sub_row.addWidget(QLabel("Sub-backend:"))
         self.sub_backend = QComboBox()
         self.sub_backend.setEditable(True)
-        self.sub_backend.addItems([
-            "(auto-detect)",
-            "whisper", "parakeet", "canary", "cohere", "qwen3",
-            "voxtral", "voxtral4b", "granite", "moonshine",
-            "kyutai-stt", "fastconformer-ctc", "wav2vec2",
-            "firered-asr", "funasr", "glm-asr", "omniasr",
-            "vibevoice-asr", "gemma4-e2b",
-        ])
+        self.sub_backend.addItems(
+            [
+                "(auto-detect)",
+                "whisper",
+                "parakeet",
+                "canary",
+                "cohere",
+                "qwen3",
+                "voxtral",
+                "voxtral4b",
+                "granite",
+                "moonshine",
+                "kyutai-stt",
+                "fastconformer-ctc",
+                "wav2vec2",
+                "firered-asr",
+                "funasr",
+                "glm-asr",
+                "omniasr",
+                "vibevoice-asr",
+                "gemma4-e2b",
+            ]
+        )
         sub_row.addWidget(self.sub_backend)
         layout.addLayout(sub_row)
 
@@ -95,9 +110,16 @@ class CrispASRAdvancedSettingsBox(CollapsibleBox):
 
         dia_row.addWidget(QLabel("Method:"))
         self.diarize_method = QComboBox()
-        self.diarize_method.addItems([
-            "energy", "xcorr", "vad-turns", "pyannote", "sherpa", "ecapa",
-        ])
+        self.diarize_method.addItems(
+            [
+                "energy",
+                "xcorr",
+                "vad-turns",
+                "pyannote",
+                "sherpa",
+                "ecapa",
+            ]
+        )
         dia_row.addWidget(self.diarize_method)
 
         dia_row.addWidget(QLabel("Max speakers:"))

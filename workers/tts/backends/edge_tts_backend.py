@@ -44,6 +44,7 @@ class EdgeTTSBackend(TTSBackend):
             if output_path.endswith(".wav") and mp3_path != output_path:
                 try:
                     from pydub import AudioSegment
+
                     audio = AudioSegment.from_mp3(mp3_path)
                     audio.export(output_path, format="wav")
                 finally:
@@ -59,6 +60,7 @@ class EdgeTTSBackend(TTSBackend):
 
         if loop and loop.is_running():
             import concurrent.futures
+
             with concurrent.futures.ThreadPoolExecutor() as pool:
                 result = pool.submit(asyncio.run, _synth()).result()
         else:
@@ -69,11 +71,20 @@ class EdgeTTSBackend(TTSBackend):
 
     def list_voices(self):
         return [
-            "de-DE-KatjaNeural", "de-DE-ConradNeural", "de-DE-AmalaNeural",
-            "de-DE-BerndNeural", "de-DE-ChristophNeural", "de-DE-ElkeNeural",
-            "de-DE-GiselaNeural", "de-DE-KasperNeural",
-            "en-US-JennyNeural", "en-US-GuyNeural",
-            "en-GB-SoniaNeural", "en-GB-RyanNeural",
-            "fr-FR-DeniseNeural", "fr-FR-HenriNeural",
-            "es-ES-ElviraNeural", "es-ES-AlvaroNeural",
+            "de-DE-KatjaNeural",
+            "de-DE-ConradNeural",
+            "de-DE-AmalaNeural",
+            "de-DE-BerndNeural",
+            "de-DE-ChristophNeural",
+            "de-DE-ElkeNeural",
+            "de-DE-GiselaNeural",
+            "de-DE-KasperNeural",
+            "en-US-JennyNeural",
+            "en-US-GuyNeural",
+            "en-GB-SoniaNeural",
+            "en-GB-RyanNeural",
+            "fr-FR-DeniseNeural",
+            "fr-FR-HenriNeural",
+            "es-ES-ElviraNeural",
+            "es-ES-AlvaroNeural",
         ]

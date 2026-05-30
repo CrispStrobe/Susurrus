@@ -22,9 +22,6 @@ import logging
 import os
 import time
 import wave
-import tempfile
-
-import numpy as np
 
 from .base import TranscriptionBackend
 
@@ -34,8 +31,9 @@ logger = logging.getLogger(__name__)
 def _ffi_available():
     """Check if the crispasr FFI bindings are importable."""
     try:
-        from crispasr import Session
-        return True
+        import importlib.util
+
+        return importlib.util.find_spec("crispasr") is not None
     except (ImportError, OSError):
         return False
 
@@ -102,7 +100,9 @@ class CrispasrFFIBackend(TranscriptionBackend):
 
         logger.info(
             "Opening CrispASR FFI session: model=%s, backend=%s, threads=%d",
-            self.model_id, backend, n_threads,
+            self.model_id,
+            backend,
+            n_threads,
         )
 
         self._session = Session(
@@ -205,6 +205,7 @@ class CrispasrFFIBackend(TranscriptionBackend):
         ext = os.path.splitext(audio_path)[1].lower()
         if ext not in (".wav", ".mp3", ".flac", ".ogg"):
             from utils.audio_utils import convert_audio_to_wav
+
             wav_path = convert_audio_to_wav(audio_path)
             if wav_path != audio_path:
                 self.temp_files.append(wav_path)
@@ -213,8 +214,11 @@ class CrispasrFFIBackend(TranscriptionBackend):
 
     def _load_audio(self, audio_path):
         """Load audio file as float32 PCM at 16 kHz."""
+        import numpy as np
+
         try:
             import soundfile as sf
+
             pcm, sr = sf.read(audio_path, dtype="float32")
             if len(pcm.shape) > 1:
                 pcm = pcm.mean(axis=1)
@@ -272,8 +276,12 @@ class CrispasrFFIBackend(TranscriptionBackend):
                 pcm,
                 vad_model,
                 threshold=float(self.extra_kwargs.get("vad_threshold", 0.5)),
-                min_speech_duration_ms=int(self.extra_kwargs.get("vad_min_speech_duration_ms", 250)),
-                min_silence_duration_ms=int(self.extra_kwargs.get("vad_min_silence_duration_ms", 100)),
+                min_speech_duration_ms=int(
+                    self.extra_kwargs.get("vad_min_speech_duration_ms", 250)
+                ),
+                min_silence_duration_ms=int(
+                    self.extra_kwargs.get("vad_min_silence_duration_ms", 100)
+                ),
                 speech_pad_ms=int(self.extra_kwargs.get("vad_speech_pad_ms", 30)),
                 chunk_seconds=int(self.extra_kwargs.get("chunk_seconds", 30)),
                 n_threads=int(self.extra_kwargs.get("n_threads", min(os.cpu_count() or 4, 8))),
@@ -282,12 +290,15 @@ class CrispasrFFIBackend(TranscriptionBackend):
         elif use_vad:
             # VAD enabled but no model path — use default cache path
             from crispasr import cache_ensure_file, registry_lookup
+
             try:
                 entry = registry_lookup("silero-vad")
                 if entry:
                     vad_path = cache_ensure_file(entry.filename, entry.url, quiet=True)
                     segments = self._session.transcribe_vad(
-                        pcm, vad_path, language=self.language,
+                        pcm,
+                        vad_path,
+                        language=self.language,
                     )
                 else:
                     segments = self._session.transcribe(pcm, language=self.language)
@@ -300,7 +311,9 @@ class CrispasrFFIBackend(TranscriptionBackend):
         rtf = audio_seconds / elapsed if elapsed > 0 else 0
         logger.info(
             "Transcription done: %d segments in %.1fs (RTF=%.1fx)",
-            len(segments), elapsed, rtf,
+            len(segments),
+            elapsed,
+            rtf,
         )
 
         # Punctuation post-processing
@@ -327,6 +340,7 @@ class CrispasrFFIBackend(TranscriptionBackend):
         if self._punc_model is None:
             try:
                 from crispasr._binding import PuncModel
+
                 self._punc_model = PuncModel(punc_path)
             except Exception as e:
                 logger.warning("Failed to load punctuation model: %s", e)
@@ -341,6 +355,8 @@ class CrispasrFFIBackend(TranscriptionBackend):
 
         Returns the path to the output audio file.
         """
+        import numpy as np
+
         logger.info("=== Starting CrispASR FFI TTS ===")
         self._ensure_session()
 
@@ -382,7 +398,7 @@ class CrispasrFFIBackend(TranscriptionBackend):
         self._ensure_session()
         pcm = self._load_audio(audio_path)
 
-        from crispasr import detect_language_pcm, LidMethod
+        from crispasr import LidMethod, detect_language_pcm
 
         lid_backend = self.extra_kwargs.get("lid_backend", "whisper")
         method_map = {
@@ -402,6 +418,7 @@ class CrispasrFFIBackend(TranscriptionBackend):
         """List backends the loaded libcrispasr was built with."""
         try:
             from crispasr import Session
+
             return Session.available_backends()
         except (ImportError, OSError):
             return []

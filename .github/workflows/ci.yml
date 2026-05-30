@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -58,4 +62,4 @@ jobs:
           pip install torchaudio --index-url https://download.pytorch.org/whl/cpu
 
       - name: Run tests
-        run: pytest tests/ -v --tb=short -x
+        run: python -m unittest discover -s tests -v

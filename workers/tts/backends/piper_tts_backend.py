@@ -35,6 +35,7 @@ class PiperTTSBackend(TTSBackend):
         piper_voice = PiperVoice.load(model_path)
 
         import wave
+
         with wave.open(output_path, "wb") as wav_file:
             piper_voice.synthesize(text, wav_file)
 
@@ -76,8 +77,15 @@ class PiperTTSBackend(TTSBackend):
 
     def list_voices(self):
         return [
-            "de_DE-thorsten-medium", "de_DE-thorsten-high", "de_DE-thorsten-low",
-            "de_DE-eva_k-x_low", "de_DE-karlsson-low", "de_DE-kerstin-low",
-            "de_DE-pavoque-low", "de_DE-ramona-low",
-            "en_US-lessac-medium", "en_US-amy-medium", "en_GB-alba-medium",
+            "de_DE-thorsten-medium",
+            "de_DE-thorsten-high",
+            "de_DE-thorsten-low",
+            "de_DE-eva_k-x_low",
+            "de_DE-karlsson-low",
+            "de_DE-kerstin-low",
+            "de_DE-pavoque-low",
+            "de_DE-ramona-low",
+            "en_US-lessac-medium",
+            "en_US-amy-medium",
+            "en_GB-alba-medium",
         ]

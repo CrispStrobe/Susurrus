@@ -28,9 +28,7 @@ class TTSSettingsWidget(QWidget):
         # Text input
         layout.addWidget(QLabel("Text to synthesize:"))
         self.text_input = QPlainTextEdit()
-        self.text_input.setPlaceholderText(
-            "Enter text here, or load from a file below..."
-        )
+        self.text_input.setPlaceholderText("Enter text here, or load from a file below...")
         self.text_input.setMaximumHeight(150)
         layout.addWidget(self.text_input)
 
@@ -50,12 +48,21 @@ class TTSSettingsWidget(QWidget):
         bv_row = QHBoxLayout()
         bv_row.addWidget(QLabel("TTS Backend:"))
         self.tts_backend = QComboBox()
-        self.tts_backend.addItems([
-            "edge-tts", "piper", "kokoro-onnx", "chatterbox", "speecht5",
-            "crispasr:kokoro", "crispasr:orpheus", "crispasr:qwen3-tts",
-            "crispasr:chatterbox-tts", "crispasr:vibevoice-tts",
-            "crispasr:indextts",
-        ])
+        self.tts_backend.addItems(
+            [
+                "edge-tts",
+                "piper",
+                "kokoro-onnx",
+                "chatterbox",
+                "speecht5",
+                "crispasr:kokoro",
+                "crispasr:orpheus",
+                "crispasr:qwen3-tts",
+                "crispasr:chatterbox-tts",
+                "crispasr:vibevoice-tts",
+                "crispasr:indextts",
+            ]
+        )
         self.tts_backend.currentTextChanged.connect(self._on_backend_changed)
         bv_row.addWidget(self.tts_backend)
 
@@ -137,6 +144,7 @@ class TTSSettingsWidget(QWidget):
 
         try:
             from config import TTS_BACKEND_MAP
+
             entry = TTS_BACKEND_MAP.get(backend_name, {})
             voices = entry.get("voices", [])
             if voices:
@@ -157,7 +165,9 @@ class TTSSettingsWidget(QWidget):
 
     def _browse_file(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Select Text File", "",
+            self,
+            "Select Text File",
+            "",
             "Text Files (*.txt *.md *.html *.htm *.pdf *.epub)",
         )
         if path:
@@ -165,7 +175,9 @@ class TTSSettingsWidget(QWidget):
 
     def _browse_reference(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Select Reference Audio", "",
+            self,
+            "Select Reference Audio",
+            "",
             "Audio Files (*.wav *.mp3 *.flac)",
         )
         if path:
@@ -173,7 +185,9 @@ class TTSSettingsWidget(QWidget):
 
     def _browse_output(self):
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save Audio Output", "tts_output.wav",
+            self,
+            "Save Audio Output",
+            "tts_output.wav",
             "Audio Files (*.wav *.mp3)",
         )
         if path:
@@ -189,6 +203,7 @@ class TTSSettingsWidget(QWidget):
         if file_path:
             try:
                 from utils.text_extraction import extract_text
+
                 return extract_text(file_path)
             except Exception as e:
                 self.status_output.appendPlainText(f"Error reading file: {e}")

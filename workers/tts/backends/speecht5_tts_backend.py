@@ -17,10 +17,10 @@ class SpeechT5TTSBackend(TTSBackend):
 
     def synthesize(self, text, output_path="tts_output.wav", voice=None):
         try:
-            from transformers import SpeechT5Processor, SpeechT5ForTextToSpeech, SpeechT5HifiGan
-            from datasets import load_dataset
-            import torch
             import soundfile as sf
+            import torch
+            from datasets import load_dataset
+            from transformers import SpeechT5ForTextToSpeech, SpeechT5HifiGan, SpeechT5Processor
         except ImportError:
             raise ImportError(
                 "transformers, torch, soundfile, and datasets are required for SpeechT5. "
@@ -46,17 +46,13 @@ class SpeechT5TTSBackend(TTSBackend):
 
         # Speaker embedding
         speaker_idx = int(self.kwargs.get("speaker_idx", 7306))
-        embeddings_dataset = load_dataset(
-            "Matthijs/cmu-arctic-xvectors", split="validation"
+        embeddings_dataset = load_dataset("Matthijs/cmu-arctic-xvectors", split="validation")
+        speaker_embedding = (
+            torch.tensor(embeddings_dataset[speaker_idx]["xvector"]).unsqueeze(0).to(device)
         )
-        speaker_embedding = torch.tensor(
-            embeddings_dataset[speaker_idx]["xvector"]
-        ).unsqueeze(0).to(device)
 
         inputs = processor(text=text, return_tensors="pt").to(device)
-        speech = model.generate_speech(
-            inputs["input_ids"], speaker_embedding, vocoder=vocoder
-        )
+        speech = model.generate_speech(inputs["input_ids"], speaker_embedding, vocoder=vocoder)
 
         sf.write(output_path, speech.cpu().numpy(), samplerate=16000)
 
