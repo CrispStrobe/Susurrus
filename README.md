@@ -192,17 +192,18 @@ susurrus/
 │       ├── tts_settings.py         # TTS panel
 │       ├── translation_settings.py # Translation panel
 │       ├── crispasr_advanced_settings.py  # CrispASR options
+│       ├── collapsible_box.py      # Collapsible UI section
 │       ├── diarization_settings.py
 │       ├── voxtral_settings.py
 │       └── advanced_options.py
 ├── workers/
-│   ├── transcription/backends/
+│   ├── transcription/backends/     # Lazy-loaded via get_backend()
 │   │   ├── base.py                 # TranscriptionBackend ABC
 │   │   ├── crispasr_backend.py     # Subprocess (142-param PARAM_MAP)
 │   │   ├── crispasr_ffi_backend.py # FFI (in-process via libcrispasr)
 │   │   ├── faster_whisper_backend.py
 │   │   ├── voxtral_backend.py
-│   │   └── ...                     # 12 total ASR backends
+│   │   └── ...                     # 11 total ASR backends
 │   ├── tts/backends/
 │   │   ├── base.py                 # TTSBackend ABC
 │   │   ├── crispasr_tts_backend.py # CrispASR TTS (7 engines)
@@ -220,6 +221,9 @@ susurrus/
     ├── crispasr_utils.py           # Binary discovery, probing, SHA verification, metrics
     ├── text_extraction.py          # PDF/EPUB/HTML/MD extraction
     ├── audio_utils.py
+    ├── format_utils.py             # SRT/VTT time formatting
+    ├── download_utils.py           # Model download helpers
+    ├── dependency_check.py         # Optional dependency checks
     └── device_detection.py
 ```
 
@@ -234,7 +238,10 @@ susurrus/
 ## Testing
 
 ```bash
-# Run all unit tests (45 tests)
+# Run all tests (46 tests)
+python -m unittest discover -s tests -v
+
+# Run unit tests only
 python -m unittest discover -s tests/unit -v
 
 # Run specific test suite
