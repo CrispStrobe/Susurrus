@@ -1,11 +1,10 @@
 """Test CrispASR PARAM_MAP command building and multi-mode support."""
 
-import os
-import shutil
 import unittest
 
-_crispasr_available = bool(os.environ.get("CRISPASR_EXECUTABLE") or shutil.which("crispasr"))
-skip_no_crispasr = unittest.skipUnless(_crispasr_available, "crispasr binary not available")
+from utils.crispasr_utils import find_crispasr
+
+skip_no_crispasr = unittest.skipUnless(find_crispasr(), "crispasr binary not available")
 
 
 class TestCrispASRParamMap(unittest.TestCase):

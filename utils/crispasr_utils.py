@@ -100,8 +100,11 @@ def find_crispasr():
     ]
     for base in [
         os.path.join(os.path.dirname(__file__), "..", "..", "whisper.cpp"),
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "whisper.cpp"),
         os.path.expanduser("~/whisper.cpp"),
         os.path.expanduser("~/CrispASR"),
+        "/mnt/storage/whisper.cpp",
+        "/mnt/akademie_storage/whisper.cpp",
     ]:
         candidates.append(os.path.join(base, "build", "bin", "crispasr"))
 
@@ -114,9 +117,9 @@ def find_crispasr():
         if c == "crispasr":
             found = shutil.which(c)
             if found:
-                return found
+                return os.path.normpath(found)
         elif os.path.isfile(c) and os.access(c, os.X_OK):
-            return c
+            return os.path.normpath(c)
 
     logger.info("CrispASR not found locally, attempting to download latest release...")
     return download_crispasr()

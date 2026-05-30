@@ -1,16 +1,13 @@
 """Shared test fixtures and skip markers."""
 
-import shutil
 import unittest
 
 
 def crispasr_available():
-    """Check if the crispasr binary is on PATH or set via env."""
-    import os
+    """Check if the crispasr binary is discoverable."""
+    from utils.crispasr_utils import find_crispasr
 
-    if os.environ.get("CRISPASR_EXECUTABLE"):
-        return os.path.isfile(os.environ["CRISPASR_EXECUTABLE"])
-    return shutil.which("crispasr") is not None
+    return find_crispasr() is not None
 
 
 def pyqt6_available():
@@ -23,6 +20,5 @@ def pyqt6_available():
         return False
 
 
-# For unittest-based tests: decorators
 skip_no_crispasr = unittest.skipUnless(crispasr_available(), "crispasr binary not available")
 skip_no_pyqt6 = unittest.skipUnless(pyqt6_available(), "PyQt6 not installed")
