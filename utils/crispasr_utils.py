@@ -98,13 +98,17 @@ def find_crispasr():
         os.path.expanduser("~/.local/bin/crispasr"),
         "/usr/local/bin/crispasr",
     ]
+
+    # Walk up from this file's directory to find sibling whisper.cpp / CrispASR checkouts
+    _here = os.path.dirname(os.path.abspath(__file__))
+    _parent = os.path.dirname(_here)  # susurrus repo root
+    for ancestor in [os.path.dirname(_parent), os.path.dirname(os.path.dirname(_parent))]:
+        for name in ("whisper.cpp", "CrispASR"):
+            candidates.append(os.path.join(ancestor, name, "build", "bin", "crispasr"))
+
     for base in [
-        os.path.join(os.path.dirname(__file__), "..", "..", "whisper.cpp"),
-        os.path.join(os.path.dirname(__file__), "..", "..", "..", "whisper.cpp"),
         os.path.expanduser("~/whisper.cpp"),
         os.path.expanduser("~/CrispASR"),
-        "/mnt/storage/whisper.cpp",
-        "/mnt/akademie_storage/whisper.cpp",
     ]:
         candidates.append(os.path.join(base, "build", "bin", "crispasr"))
 
