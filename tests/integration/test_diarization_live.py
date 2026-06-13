@@ -15,11 +15,11 @@ import tempfile
 import unittest
 
 
-def _diarization_importable():
+def _diarization_available():
     try:
-        import backends.diarization  # noqa: F401
+        import backends.diarization as diarization
 
-        return True
+        return diarization.DiarizationManager is not None
     except Exception:
         return False
 
@@ -29,7 +29,7 @@ def _live_enabled():
 
 
 skip_no_live = unittest.skipUnless(
-    _live_enabled() and _diarization_importable(),
+    _live_enabled() and _diarization_available(),
     "live diarization test — set RUN_LIVE_TESTS=1 and HF_TOKEN to run",
 )
 

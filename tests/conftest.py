@@ -22,16 +22,16 @@ def pyqt6_available():
 
 
 def diarization_importable():
-    """Check if the diarization backend (and pyannote.audio) can be imported.
+    """Check if the full diarization API (pyannote.audio etc.) is available.
 
-    This goes further than ``importlib.util.find_spec`` — it actually imports
-    the package so torchaudio/pyannote compatibility shims are exercised. This
-    is the import that issue #12 reported as broken.
+    The package imports even without the heavy optional deps (it degrades
+    gracefully), so we check that ``DiarizationManager`` actually resolved —
+    that is the API issue #12 reported as missing/broken.
     """
     try:
-        import backends.diarization  # noqa: F401
+        import backends.diarization as diarization
 
-        return True
+        return diarization.DiarizationManager is not None
     except Exception:
         return False
 

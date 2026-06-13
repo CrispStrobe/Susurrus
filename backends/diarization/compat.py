@@ -4,7 +4,12 @@ import os
 import warnings
 
 import torch
-from lightning_fabric.utilities import cloud_io
+
+# NOTE: lightning_fabric is imported lazily inside apply_pytorch26_fix() — it is
+# only needed for the (optional) PyTorch 2.6 serialization patch. Importing it at
+# module top level would make the torchaudio compatibility shim (and the whole
+# compat module) unimportable on installs that have torch/torchaudio but not the
+# full pyannote/lightning stack.
 
 # Global flag to track if initialization has run
 _INITIALIZED = False
@@ -192,6 +197,7 @@ def apply_pytorch26_fix():
 
     # 4. Patch lightning_fabric loader
     try:
+        from lightning_fabric.utilities import cloud_io
 
         def patched_load(path_or_url, map_location=None):
             """Patched loader that forces weights_only=False"""

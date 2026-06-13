@@ -54,7 +54,10 @@ jobs:
           python-version: "3.11"
 
       - name: Install linting tools
-        run: pip install ruff black isort bandit
+        # Pin exact versions so CI formatting/lint matches local pre-commit runs.
+        # Unpinned tools drift (e.g. black's yearly style changes) and cause
+        # "passes locally, fails in CI" churn.
+        run: pip install ruff==0.15.7 black==25.9.0 isort==6.1.0 bandit==1.9.4
 
       - name: Ruff check
         run: ruff check .

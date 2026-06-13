@@ -18,17 +18,23 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 DIARIZATION_DIR = os.path.join(REPO_ROOT, "backends", "diarization")
 
 
-def _diarization_importable():
-    try:
-        import backends.diarization  # noqa: F401
+def _diarization_available():
+    """True only when the full diarization API (pyannote.audio etc.) is usable.
 
-        return True
+    The package itself imports even without the heavy optional deps (it degrades
+    gracefully), so checking ``DiarizationManager is not None`` is what tells us
+    the real API is present.
+    """
+    try:
+        import backends.diarization as diarization
+
+        return diarization.DiarizationManager is not None
     except Exception:
         return False
 
 
 skip_no_diarization = unittest.skipUnless(
-    _diarization_importable(), "diarization backend (pyannote.audio) not importable"
+    _diarization_available(), "diarization API (pyannote.audio) not available"
 )
 
 
