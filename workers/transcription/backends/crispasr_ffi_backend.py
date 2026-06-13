@@ -162,6 +162,16 @@ class CrispasrFFIBackend(TranscriptionBackend):
         if kw.get("ask"):
             s.set_ask(kw["ask"])
 
+        # Hotwords / contextual biasing (CrispASR 0.7.x). Guarded with hasattr
+        # so older libcrispasr builds that lack the setter degrade gracefully.
+        if kw.get("hotwords") and hasattr(s, "set_hotwords"):
+            boost = float(kw.get("hotwords_boost", 2.0))
+            s.set_hotwords(kw["hotwords"], boost)
+
+        # G2P dictionary for TTS phonemization (CrispASR 0.7.x)
+        if kw.get("g2p_dict") and hasattr(s, "set_g2p_dict"):
+            s.set_g2p_dict(kw["g2p_dict"])
+
         # TTS-specific
         if kw.get("tts_voice"):
             ref_text = kw.get("tts_ref_text")

@@ -50,6 +50,13 @@ class TTSThread(QThread):
                     kwargs["voice"] = self.args["reference_audio"]
                 if self.args.get("auto_download", True):
                     kwargs["auto_download"] = True
+                # Provenance / EU AI Act + phonemization pass-through
+                if self.args.get("i_have_rights"):
+                    kwargs["i_have_rights"] = True
+                if self.args.get("no_spoken_disclaimer"):
+                    kwargs["no_spoken_disclaimer"] = True
+                if self.args.get("g2p_dict"):
+                    kwargs["g2p_dict"] = self.args["g2p_dict"]
 
                 backend = CrispasrTTSBackend(
                     model_id=model_id, device=device, language=language, **kwargs

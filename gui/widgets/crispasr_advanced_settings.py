@@ -10,6 +10,12 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from config import (
+    CRISPASR_DIARIZE_METHODS,
+    CRISPASR_LID_BACKENDS,
+    CRISPASR_SUB_BACKENDS,
+)
+
 from .collapsible_box import CollapsibleBox
 
 
@@ -32,29 +38,8 @@ class CrispASRAdvancedSettingsBox(CollapsibleBox):
         sub_row.addWidget(QLabel("Sub-backend:"))
         self.sub_backend = QComboBox()
         self.sub_backend.setEditable(True)
-        self.sub_backend.addItems(
-            [
-                "(auto-detect)",
-                "whisper",
-                "parakeet",
-                "canary",
-                "cohere",
-                "qwen3",
-                "voxtral",
-                "voxtral4b",
-                "granite",
-                "moonshine",
-                "kyutai-stt",
-                "fastconformer-ctc",
-                "wav2vec2",
-                "firered-asr",
-                "funasr",
-                "glm-asr",
-                "omniasr",
-                "vibevoice-asr",
-                "gemma4-e2b",
-            ]
-        )
+        # Sourced from config so it stays in sync with the CrispASR release
+        self.sub_backend.addItems(["(auto-detect)"] + list(CRISPASR_SUB_BACKENDS))
         sub_row.addWidget(self.sub_backend)
         layout.addLayout(sub_row)
 
@@ -110,16 +95,7 @@ class CrispASRAdvancedSettingsBox(CollapsibleBox):
 
         dia_row.addWidget(QLabel("Method:"))
         self.diarize_method = QComboBox()
-        self.diarize_method.addItems(
-            [
-                "energy",
-                "xcorr",
-                "vad-turns",
-                "pyannote",
-                "sherpa",
-                "ecapa",
-            ]
-        )
+        self.diarize_method.addItems(list(CRISPASR_DIARIZE_METHODS))
         dia_row.addWidget(self.diarize_method)
 
         dia_row.addWidget(QLabel("Max speakers:"))
@@ -136,7 +112,7 @@ class CrispASRAdvancedSettingsBox(CollapsibleBox):
 
         lid_row.addWidget(QLabel("LID backend:"))
         self.lid_backend = QComboBox()
-        self.lid_backend.addItems(["whisper", "silero", "firered", "ecapa"])
+        self.lid_backend.addItems(list(CRISPASR_LID_BACKENDS))
         lid_row.addWidget(self.lid_backend)
         layout.addLayout(lid_row)
 
@@ -169,6 +145,22 @@ class CrispASRAdvancedSettingsBox(CollapsibleBox):
         self.aligner_model.setPlaceholderText("(none)")
         pa_row.addWidget(self.aligner_model)
         layout.addLayout(pa_row)
+
+        # --- Hotwords (contextual biasing) ---
+        hot_row = QHBoxLayout()
+        hot_row.addWidget(QLabel("Hotwords:"))
+        self.hotwords = QLineEdit()
+        self.hotwords.setPlaceholderText(
+            "comma-separated, e.g. Tokyo,CrispASR (parakeet/qwen3/voxtral)"
+        )
+        hot_row.addWidget(self.hotwords)
+
+        hot_row.addWidget(QLabel("Boost:"))
+        self.hotwords_boost = QLineEdit()
+        self.hotwords_boost.setPlaceholderText("2.0")
+        self.hotwords_boost.setMaximumWidth(60)
+        hot_row.addWidget(self.hotwords_boost)
+        layout.addLayout(hot_row)
 
         # --- Prompt ---
         prompt_row = QHBoxLayout()
@@ -236,6 +228,13 @@ class CrispASRAdvancedSettingsBox(CollapsibleBox):
         aligner = self.aligner_model.text().strip()
         if aligner and aligner != "(none)":
             kwargs["aligner_model"] = aligner
+
+        hotwords = self.hotwords.text().strip()
+        if hotwords:
+            kwargs["hotwords"] = hotwords
+            boost = self.hotwords_boost.text().strip()
+            if boost:
+                kwargs["hotwords_boost"] = float(boost)
 
         prompt = self.prompt.text().strip()
         if prompt:

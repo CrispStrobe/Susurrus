@@ -115,6 +115,101 @@ class TestCrispASRParamMap(unittest.TestCase):
         self.assertIn("--port", cmd)
 
 
+class TestCrispASR071Sync(unittest.TestCase):
+    """Coverage for the CrispASR 0.7.1 interface sync."""
+
+    def _make_backend(self, **kwargs):
+        from workers.transcription.backends.crispasr_backend import CrispasrBackend
+
+        return CrispasrBackend(model_id="test.gguf", device="cpu", **kwargs)
+
+    def test_parakeet_decoder_takes_value(self):
+        # Regression: parakeet_decoder is a valued flag (ctc|tdt|maes), not bool.
+        from workers.transcription.backends.crispasr_backend import PARAM_MAP
+
+        self.assertIs(PARAM_MAP["parakeet_decoder"][1], str)
+        b = self._make_backend(parakeet_decoder="tdt")
+        cmd = ["crispasr"]
+        b._append_params(cmd)
+        idx = cmd.index("--parakeet-decoder")
+        self.assertEqual(cmd[idx + 1], "tdt")
+
+    def test_new_071_flags_present(self):
+        from workers.transcription.backends.crispasr_backend import PARAM_MAP
+
+        for key, flag in [
+            ("hotwords_file", "--hotwords-file"),
+            ("hotwords_boost", "--hotwords-boost"),
+            ("g2p_dict", "--g2p-dict"),
+            ("i_have_rights", "--i-have-rights"),
+            ("no_spoken_disclaimer", "--no-spoken-disclaimer"),
+            ("watermark_model", "--watermark-model"),
+            ("detect_watermark", "--detect-watermark"),
+            ("c2pa_cert", "--c2pa-cert"),
+            ("tts_ref_asr", "--ref-asr"),
+            ("dry_run_resolve", "--dry-run-resolve"),
+        ]:
+            self.assertIn(key, PARAM_MAP, f"missing PARAM_MAP key {key}")
+            self.assertEqual(PARAM_MAP[key][0], flag)
+
+    def test_provenance_bool_flags_emit(self):
+        b = self._make_backend(i_have_rights=True, no_spoken_disclaimer=True)
+        cmd = ["crispasr"]
+        b._append_params(cmd)
+        self.assertIn("--i-have-rights", cmd)
+        self.assertIn("--no-spoken-disclaimer", cmd)
+
+    def test_hotwords_value_flags_emit(self):
+        b = self._make_backend(hotwords="Tokyo,CrispASR", hotwords_boost=3.0, g2p_dict="olaph")
+        cmd = ["crispasr"]
+        b._append_params(cmd)
+        self.assertIn("--hotwords", cmd)
+        self.assertEqual(cmd[cmd.index("--hotwords-boost") + 1], "3.0")
+        self.assertEqual(cmd[cmd.index("--g2p-dict") + 1], "olaph")
+
+    def test_server_and_s2s_flags(self):
+        b = self._make_backend(ws_port=8081, no_warmup=True, s2s=True, stream_keep=200)
+        cmd = ["crispasr"]
+        b._append_params(cmd)
+        self.assertEqual(cmd[cmd.index("--ws-port") + 1], "8081")
+        self.assertIn("--no-warmup", cmd)
+        self.assertIn("--s2s", cmd)
+        self.assertEqual(cmd[cmd.index("--stream-keep") + 1], "200")
+
+
+class TestCrispASRRegistrySync(unittest.TestCase):
+    """The config registries must use valid CrispASR 0.7.1 backend names."""
+
+    def test_no_stale_backend_names(self):
+        import config
+
+        # These were invalid --backend values (resolved to 'unresolved').
+        self.assertNotIn("vibevoice-asr", config.CRISPASR_SUB_BACKENDS)
+        self.assertNotIn("chatterbox-tts", config.CRISPASR_TTS_BACKENDS)
+        self.assertNotIn("vibevoice-tts", config.CRISPASR_TTS_BACKENDS)
+
+    def test_new_backends_added(self):
+        import config
+
+        for name in ("mega-asr", "moss-audio", "sensevoice", "hubert"):
+            self.assertIn(name, config.CRISPASR_SUB_BACKENDS)
+        for name in ("zonos", "bark", "dia", "melotts", "piper"):
+            self.assertIn(name, config.CRISPASR_TTS_BACKENDS)
+        self.assertIn("m2m100-wmt21", config.CRISPASR_TRANSLATION_BACKENDS)
+
+    def test_model_maps_have_keys_for_lists(self):
+        import config
+
+        for b in config.CRISPASR_SUB_BACKENDS:
+            self.assertIn(
+                f"crispasr:{b}", config.BACKEND_MODEL_MAP, f"BACKEND_MODEL_MAP missing crispasr:{b}"
+            )
+        for b in config.CRISPASR_TTS_BACKENDS:
+            self.assertIn(
+                f"crispasr:{b}", config.TTS_BACKEND_MAP, f"TTS_BACKEND_MAP missing crispasr:{b}"
+            )
+
+
 class TestBackendSubNotation(unittest.TestCase):
     """Test crispasr:<subbackend> notation in registry."""
 

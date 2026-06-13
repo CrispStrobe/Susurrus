@@ -6,8 +6,11 @@ qwen3, voxtral, voxtral4b, fastconformer-ctc, wav2vec2, moonshine,
 kyutai-stt, firered-asr, omniasr, vibevoice, glm-asr, funasr, gemma4-e2b,
 and more) through a single interface.
 
-Also supports TTS (kokoro, orpheus, qwen3-tts, chatterbox, vibevoice-tts,
-indextts, voxcpm2-tts) and translation (m2m100, madlad, gemma4-e2b).
+Also supports TTS (kokoro, orpheus, qwen3-tts, chatterbox, vibevoice,
+indextts, voxcpm2-tts, melotts, piper, bark, dia, zonos, csm, and more)
+and translation (m2m100, m2m100-wmt21, madlad, gemma4-e2b).
+
+Synced with CrispASR 0.7.1.
 
 The backend auto-detects from the GGUF file metadata, or can be forced
 with the `crispasr_backend` kwarg.
@@ -149,6 +152,7 @@ PARAM_MAP = {
     "monitor": ("--monitor", bool),
     "stream_step": ("--stream-step", int),
     "stream_length": ("--stream-length", int),
+    "stream_keep": ("--stream-keep", int),
     "stream_json": ("--stream-json", bool),
     "stream_final_on_silence_ms": ("--stream-final-on-silence-ms", int),
     "stream_vad_merge_gap_ms": ("--stream-vad-merge-gap-ms", int),
@@ -160,13 +164,19 @@ PARAM_MAP = {
     "server": ("--server", bool),
     "host": ("--host", str),
     "port": ("--port", int),
+    "ws_port": ("--ws-port", int),
     "api_keys": ("--api-keys", str),
     "cors_origin": ("--cors-origin", str),
+    "no_warmup": ("--no-warmup", bool),
+    # --- Speech-to-speech ---
+    "s2s": ("--s2s", bool),
+    "s2s_output": ("--s2s-output", str),
     # --- TTS ---
     "tts_text": ("--tts", str),
     "tts_output": ("--tts-output", str),
     "tts_voice": ("--voice", str),
     "tts_ref_text": ("--ref-text", str),
+    "tts_ref_asr": ("--ref-asr", str),
     "tts_instruct": ("--instruct", str),
     "tts_codec_model": ("--codec-model", str),
     "tts_codec_quant": ("--codec-quant", str),
@@ -174,6 +184,14 @@ PARAM_MAP = {
     "tts_trim_silence": ("--tts-trim-silence", bool),
     "tts_max_input_chars": ("--tts-max-input-chars", int),
     "voice_dir": ("--voice-dir", str),
+    "g2p_dict": ("--g2p-dict", str),
+    # --- Provenance / EU AI Act (voice cloning, watermarking, C2PA) ---
+    "i_have_rights": ("--i-have-rights", bool),
+    "no_spoken_disclaimer": ("--no-spoken-disclaimer", bool),
+    "watermark_model": ("--watermark-model", str),
+    "detect_watermark": ("--detect-watermark", str),
+    "c2pa_cert": ("--c2pa-cert", str),
+    "c2pa_key": ("--c2pa-key", str),
     # --- Translation (text-to-text) ---
     "text_input": ("--text", str),
     "tr_source_lang": ("--tr-sl", str),
@@ -184,10 +202,16 @@ PARAM_MAP = {
     "hf_repo": ("--hf-repo", str),
     "hf_file": ("--hf-file", str),
     "cache_dir": ("--cache-dir", str),
+    "dry_run_resolve": ("--dry-run-resolve", bool),
+    "dry_run_ignore_cache": ("--dry-run-ignore-cache", bool),
     # --- Misc ---
     "flush_after": ("--flush-after", int),
-    "parakeet_decoder": ("--parakeet-decoder", bool),
+    # parakeet-decoder takes a value (ctc|tdt|maes), not a bare flag
+    "parakeet_decoder": ("--parakeet-decoder", str),
+    # --- Hotwords / contextual biasing ---
     "hotwords": ("--hotwords", str),
+    "hotwords_file": ("--hotwords-file", str),
+    "hotwords_boost": ("--hotwords-boost", float),
     # --- Chat (server only) ---
     "chat_model": ("--chat-model", str),
     "chat_ctx": ("--chat-ctx", int),

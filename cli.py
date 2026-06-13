@@ -29,9 +29,12 @@ Transcription backends: mlx-whisper, faster-batched, faster-sequenced,
     openai whisper, voxtral-local, voxtral-api, crispasr, crispasr:<sub-backend>
 
 TTS backends: crispasr:kokoro, crispasr:orpheus, crispasr:qwen3-tts,
-    crispasr:chatterbox-tts, edge-tts, piper, kokoro-onnx, chatterbox, speecht5
+    crispasr:chatterbox, crispasr:vibevoice, crispasr:melotts, crispasr:piper,
+    crispasr:bark, crispasr:dia, crispasr:zonos, crispasr:csm (and more),
+    edge-tts, piper, kokoro-onnx, chatterbox, speecht5
 
-Translation backends: crispasr:m2m100, crispasr:madlad, crispasr:gemma4-e2b
+Translation backends: crispasr:m2m100, crispasr:m2m100-wmt21, crispasr:madlad,
+    crispasr:gemma4-e2b
 """
 
 import argparse

@@ -912,6 +912,13 @@ class MainWindow(QWidget):
             "device": self.tts_widget.device_selection.currentText().lower(),
             "language": self.tts_widget.language.text().strip() or None,
             "reference_audio": self.tts_widget.reference_audio.text().strip() or None,
+            "i_have_rights": self.tts_widget.i_have_rights.isChecked(),
+            "no_spoken_disclaimer": self.tts_widget.no_spoken_disclaimer.isChecked(),
+            "g2p_dict": (
+                self.tts_widget.g2p_dict.currentText()
+                if self.tts_widget.g2p_dict.currentText() != "(default)"
+                else None
+            ),
         }
 
         self.tts_widget.status_output.clear()

@@ -4,7 +4,7 @@ import os
 import platform
 
 APP_NAME = "Susurrus"
-APP_VERSION = "2.0.1"
+APP_VERSION = "2.1.0"
 APP_ORG = "CrispStrobe"
 
 # ---------------------------------------------------------------------------
@@ -99,7 +99,7 @@ BACKEND_MODEL_MAP = {
     "crispasr-ffi": [
         ("auto", "Auto-detect (FFI — requires libcrispasr)"),
     ],
-    # CrispASR ASR sub-backends
+    # CrispASR ASR sub-backends (names match `crispasr --list-backends`)
     "crispasr:whisper": [
         ("auto", "Whisper (auto-download)"),
         ("auto:q5_0", "Whisper Q5_0"),
@@ -109,7 +109,7 @@ BACKEND_MODEL_MAP = {
         ("auto:q8_0", "Parakeet Q8_0"),
     ],
     "crispasr:canary": [
-        ("auto", "NVIDIA Canary 1B"),
+        ("auto", "NVIDIA Canary 1B v2"),
         ("auto:q8_0", "Canary Q8_0"),
     ],
     "crispasr:cohere": [
@@ -117,27 +117,39 @@ BACKEND_MODEL_MAP = {
         ("auto:q4_0", "Cohere Q4_0"),
     ],
     "crispasr:qwen3": [
-        ("auto", "Qwen3 Audio"),
+        ("auto", "Qwen3 ASR 0.6B"),
         ("auto:q4_0", "Qwen3 Q4_0"),
+    ],
+    "crispasr:qwen3-1.7b": [
+        ("auto", "Qwen3 ASR 1.7B"),
+    ],
+    "crispasr:mega-asr": [
+        ("auto", "Mega-ASR 1.7B (robust)"),
     ],
     "crispasr:voxtral": [
         ("auto", "Voxtral Mini 3B GGUF"),
         ("auto:q4_0", "Voxtral Q4_0"),
     ],
     "crispasr:voxtral4b": [
-        ("auto", "Voxtral 4B"),
+        ("auto", "Voxtral 4B (realtime)"),
         ("auto:q4_0", "Voxtral4B Q4_0"),
     ],
     "crispasr:granite": [
-        ("auto", "IBM Granite Speech 3.3 8B"),
+        ("auto", "IBM Granite Speech 4.0 1B"),
         ("auto:q4_0", "Granite Q4_0"),
     ],
+    "crispasr:granite-4.1": [
+        ("auto", "IBM Granite Speech 4.1 2B"),
+    ],
     "crispasr:moonshine": [
-        ("auto", "Moonshine Base"),
+        ("auto", "Moonshine Tiny"),
         ("auto:q8_0", "Moonshine Q8_0"),
     ],
+    "crispasr:moonshine-streaming": [
+        ("auto", "Moonshine Streaming Tiny"),
+    ],
     "crispasr:kyutai-stt": [
-        ("auto", "Kyutai Moshi STT"),
+        ("auto", "Kyutai STT 1B"),
         ("auto:q8_0", "Kyutai Q8_0"),
     ],
     "crispasr:fastconformer-ctc": [
@@ -145,40 +157,61 @@ BACKEND_MODEL_MAP = {
         ("auto:q8_0", "FastConformer Q8_0"),
     ],
     "crispasr:wav2vec2": [
-        ("auto", "Wav2Vec2 Base"),
+        ("auto", "Wav2Vec2 XLSR (English)"),
         ("auto:q8_0", "Wav2Vec2 Q8_0"),
     ],
+    "crispasr:hubert": [
+        ("auto", "HuBERT Large (LS960)"),
+    ],
+    "crispasr:data2vec": [
+        ("auto", "data2vec Audio (960h)"),
+    ],
+    "crispasr:vibevoice": [
+        ("auto", "VibeVoice ASR"),
+        ("auto:q4_0", "VibeVoice Q4_0"),
+    ],
     "crispasr:firered-asr": [
-        ("auto", "FireRed ASR"),
+        ("auto", "FireRed ASR2 AED"),
         ("auto:q8_0", "FireRed Q8_0"),
     ],
     "crispasr:funasr": [
-        ("auto", "FunASR"),
+        ("auto", "FunASR Nano"),
         ("auto:q8_0", "FunASR Q8_0"),
     ],
+    "crispasr:paraformer": [
+        ("auto", "Paraformer (zh)"),
+    ],
+    "crispasr:sensevoice": [
+        ("auto", "SenseVoice Small"),
+    ],
     "crispasr:glm-asr": [
-        ("auto", "GLM ASR"),
+        ("auto", "GLM ASR Nano"),
         ("auto:q4_0", "GLM Q4_0"),
     ],
     "crispasr:omniasr": [
-        ("auto", "OmniASR"),
+        ("auto", "OmniASR CTC 1B"),
         ("auto:q8_0", "OmniASR Q8_0"),
     ],
-    "crispasr:vibevoice-asr": [
-        ("auto", "VibeVoice ASR"),
-        ("auto:q4_0", "VibeVoice Q4_0"),
+    "crispasr:mimo-asr": [
+        ("auto", "MiMo ASR"),
+    ],
+    "crispasr:moss-audio": [
+        ("auto", "MOSS-Audio 4B Instruct"),
     ],
     "crispasr:gemma4-e2b": [
         ("auto", "Gemma4 E2B (ASR+MT)"),
         ("auto:q4_0", "Gemma4 Q4_0"),
     ],
-    # CrispASR Translation backends
+    # CrispASR Translation backends (text-to-text)
     "crispasr:m2m100": [
-        ("auto", "M2M100 Translation"),
+        ("auto", "M2M100 418M Translation"),
         ("auto:q4_0", "M2M100 Q4_0"),
     ],
+    "crispasr:m2m100-wmt21": [
+        ("auto", "WMT21 Dense 24-wide (en↔x)"),
+    ],
     "crispasr:madlad": [
-        ("auto", "MadLad 419-language Translation"),
+        ("auto", "MadLad 400 (419 languages)"),
         ("auto:q4_0", "MadLad Q4_0"),
     ],
 }
@@ -203,12 +236,12 @@ TTS_BACKEND_MAP = {
         "voices": [],
         "default_voice": None,
     },
-    "crispasr:chatterbox-tts": {
+    "crispasr:chatterbox": {
         "models": [("auto", "Chatterbox TTS"), ("auto:q8_0", "Chatterbox Q8_0")],
         "voices": [],
         "default_voice": None,
     },
-    "crispasr:vibevoice-tts": {
+    "crispasr:vibevoice": {
         "models": [("auto", "VibeVoice TTS")],
         "voices": [],
         "default_voice": None,
@@ -220,6 +253,81 @@ TTS_BACKEND_MAP = {
     },
     "crispasr:voxcpm2-tts": {
         "models": [("auto", "VoxCPM2 TTS 48kHz")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:melotts": {
+        "models": [("auto", "MeloTTS (VITS2)")],
+        "voices": ["EN-US", "EN-BR", "EN-AU", "EN-Default"],
+        "default_voice": "EN-US",
+    },
+    "crispasr:piper": {
+        "models": [("auto", "Piper (VITS)")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:bark": {
+        "models": [("auto", "Bark (multilingual)")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:dia": {
+        "models": [("auto", "Dia (dialogue)")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:zonos": {
+        "models": [("auto", "Zonos v0.1 (cloning)")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:csm": {
+        "models": [("auto", "Sesame CSM-1B")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:cosyvoice3-tts": {
+        "models": [("auto", "CosyVoice3 0.5B")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:f5-tts": {
+        "models": [("auto", "F5-TTS")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:fastpitch": {
+        "models": [("auto", "FastPitch (en)")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:parler-tts": {
+        "models": [("auto", "Parler-TTS Mini")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:outetts": {
+        "models": [("auto", "OuteTTS 0.3 1B")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:pocket-tts": {
+        "models": [("auto", "Pocket-TTS (Kyutai)")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:speecht5": {
+        "models": [("auto", "SpeechT5")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:kugelaudio": {
+        "models": [("auto", "KugelAudio 0 (open)")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:lfm2-audio": {
+        "models": [("auto", "LFM2-Audio 1.5B (ASR+TTS)")],
         "voices": [],
         "default_voice": None,
     },
@@ -294,25 +402,37 @@ TTS_BACKEND_MAP = {
     },
 }
 
-# All CrispASR sub-backend names for listing
+# All CrispASR ASR sub-backend names for listing (must match the binary's
+# `--list-backends` names; the runtime probe in crispasr_utils refines this to
+# what the installed binary actually supports). Synced with CrispASR 0.7.1.
 CRISPASR_SUB_BACKENDS = [
     "whisper",
     "parakeet",
     "canary",
     "cohere",
     "qwen3",
+    "qwen3-1.7b",
+    "mega-asr",
     "voxtral",
     "voxtral4b",
     "granite",
+    "granite-4.1",
     "moonshine",
+    "moonshine-streaming",
     "kyutai-stt",
     "fastconformer-ctc",
     "wav2vec2",
+    "hubert",
+    "data2vec",
+    "vibevoice",
     "firered-asr",
     "funasr",
+    "paraformer",
+    "sensevoice",
     "glm-asr",
     "omniasr",
-    "vibevoice-asr",
+    "mimo-asr",
+    "moss-audio",
     "gemma4-e2b",
 ]
 
@@ -322,21 +442,37 @@ CRISPASR_COMPANION_MODELS = {
     "qwen3-tts": [("codec", "qwen3-tts-tokenizer-12hz")],
     "orpheus": [("codec", "orpheus-snac-codec")],
     "mimo-asr": [("codec", "mimo-tokenizer")],
-    "vibevoice-tts": [("voice", "vibevoice-default-voice")],
+    "vibevoice": [("voice", "vibevoice-default-voice")],
 }
 
 CRISPASR_TTS_BACKENDS = [
     "kokoro",
     "orpheus",
     "qwen3-tts",
-    "chatterbox-tts",
-    "vibevoice-tts",
+    "chatterbox",
+    "vibevoice",
     "indextts",
     "voxcpm2-tts",
+    "melotts",
+    "piper",
+    "bark",
+    "dia",
+    "zonos",
+    "csm",
+    "cosyvoice3-tts",
+    "f5-tts",
+    "fastpitch",
+    "parler-tts",
+    "outetts",
+    "pocket-tts",
+    "speecht5",
+    "kugelaudio",
+    "lfm2-audio",
 ]
 
 CRISPASR_TRANSLATION_BACKENDS = [
     "m2m100",
+    "m2m100-wmt21",
     "madlad",
     "gemma4-e2b",
 ]

@@ -2,6 +2,7 @@
 """TTS settings widget for the Susurrus GUI."""
 
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
@@ -12,6 +13,11 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from config import CRISPASR_TTS_BACKENDS
+
+# Python-native TTS backends (non-CrispASR) always offered in the GUI.
+_NATIVE_TTS_BACKENDS = ["edge-tts", "piper", "kokoro-onnx", "chatterbox", "speecht5"]
 
 
 class TTSSettingsWidget(QWidget):
@@ -48,20 +54,9 @@ class TTSSettingsWidget(QWidget):
         bv_row = QHBoxLayout()
         bv_row.addWidget(QLabel("TTS Backend:"))
         self.tts_backend = QComboBox()
+        # Native backends + every CrispASR TTS engine (synced with the release)
         self.tts_backend.addItems(
-            [
-                "edge-tts",
-                "piper",
-                "kokoro-onnx",
-                "chatterbox",
-                "speecht5",
-                "crispasr:kokoro",
-                "crispasr:orpheus",
-                "crispasr:qwen3-tts",
-                "crispasr:chatterbox-tts",
-                "crispasr:vibevoice-tts",
-                "crispasr:indextts",
-            ]
+            _NATIVE_TTS_BACKENDS + [f"crispasr:{b}" for b in CRISPASR_TTS_BACKENDS]
         )
         self.tts_backend.currentTextChanged.connect(self._on_backend_changed)
         bv_row.addWidget(self.tts_backend)
@@ -102,6 +97,29 @@ class TTSSettingsWidget(QWidget):
         self.browse_ref_btn.clicked.connect(self._browse_reference)
         ref_row.addWidget(self.browse_ref_btn)
         layout.addLayout(ref_row)
+
+        # Provenance / EU AI Act controls (CrispASR voice cloning)
+        prov_row = QHBoxLayout()
+        self.i_have_rights = QCheckBox("I have rights to clone this voice")
+        self.i_have_rights.setToolTip(
+            "Required for .wav voice cloning — attests consent of the cloned "
+            "speaker or that it is your own voice."
+        )
+        prov_row.addWidget(self.i_have_rights)
+
+        self.no_spoken_disclaimer = QCheckBox("No spoken disclaimer")
+        self.no_spoken_disclaimer.setToolTip(
+            "Skip the audible AI-disclosure prefix (watermark + C2PA provenance "
+            "are still applied)."
+        )
+        prov_row.addWidget(self.no_spoken_disclaimer)
+
+        prov_row.addWidget(QLabel("G2P dict:"))
+        self.g2p_dict = QComboBox()
+        self.g2p_dict.setEditable(True)
+        self.g2p_dict.addItems(["(default)", "olaph", "open-dict"])
+        prov_row.addWidget(self.g2p_dict)
+        layout.addLayout(prov_row)
 
         # Output row
         out_row = QHBoxLayout()

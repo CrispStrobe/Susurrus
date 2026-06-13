@@ -11,6 +11,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from config import CRISPASR_TRANSLATION_BACKENDS
+
 
 class TranslationSettingsWidget(QWidget):
     """Widget for text translation configuration."""
@@ -113,13 +115,7 @@ class TranslationSettingsWidget(QWidget):
 
         config_row.addWidget(QLabel("Backend:"))
         self.translation_backend = QComboBox()
-        self.translation_backend.addItems(
-            [
-                "crispasr:m2m100",
-                "crispasr:madlad",
-                "crispasr:gemma4-e2b",
-            ]
-        )
+        self.translation_backend.addItems([f"crispasr:{b}" for b in CRISPASR_TRANSLATION_BACKENDS])
         config_row.addWidget(self.translation_backend)
 
         config_row.addWidget(QLabel("Model:"))
