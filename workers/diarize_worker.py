@@ -14,8 +14,9 @@ import time
 # Add parent directory to path so we can import from our modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Import from modularized backend
-from .manager import DiarizationManager, verify_authentication
+# Import from modularized backend (project root added to sys.path above so this
+# works both when run as a script and when imported as workers.diarize_worker)
+from backends.diarization import DiarizationManager, verify_authentication
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler()])

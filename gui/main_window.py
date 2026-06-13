@@ -427,7 +427,8 @@ class MainWindow(QWidget):
 
     def _apply_styling(self):
         """Apply application styling"""
-        self.setStyleSheet("""
+        self.setStyleSheet(
+            """
             QWidget {
                 background-color: #2b2b2b;
                 color: #ffffff;
@@ -477,7 +478,8 @@ class MainWindow(QWidget):
             QTabBar::tab:hover {
                 background-color: #4a4a4a;
             }
-        """)
+        """
+        )
 
     def create_menu_bar(self):
         """Create application menu bar"""

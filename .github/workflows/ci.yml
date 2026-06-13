@@ -11,6 +11,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  structure:
+    # Guards against the issue #12 class of bug: source code being excluded by
+    # an over-broad .gitignore rule (so fresh clones silently miss modules).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Fail if any tracked source file is git-ignored
+        run: |
+          set -euo pipefail
+          ignored=""
+          while IFS= read -r f; do
+            if git check-ignore -q "$f"; then
+              ignored="$ignored$f"$'\n'
+            fi
+          done < <(git ls-files '*.py')
+          if [ -n "$ignored" ]; then
+            echo "::error::These tracked Python source files match a .gitignore rule:"
+            echo "$ignored"
+            echo "Anchor the offending rule (e.g. '/diarization/' not 'diarization/')."
+            exit 1
+          fi
+          echo "OK: no tracked source files are git-ignored."
+
+      - name: Verify the diarization package is present
+        run: |
+          set -euo pipefail
+          for f in backends/diarization/__init__.py backends/diarization/manager.py \
+                   backends/diarization/compat.py backends/diarization/progress.py; do
+            test -f "$f" || { echo "::error::missing source file: $f (issue #12)"; exit 1; }
+          done
+          echo "OK: diarization package is committed."
+
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -62,4 +95,7 @@ jobs:
           pip install torchaudio --index-url https://download.pytorch.org/whl/cpu
 
       - name: Run tests
-        run: python -m unittest discover -s tests -v
+        # pytest (not `unittest discover`): its output capture surfaces bugs
+        # like modules reassigning sys.stdout/stderr at import time, which
+        # unittest would silently tolerate.
+        run: python -m pytest tests/ -v

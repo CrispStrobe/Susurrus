@@ -1,13 +1,21 @@
 # workers/transcription/utils.py
 """Transcription utilities"""
 
-import io
 import logging
 import sys
 
-# Set up UTF-8 encoding
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+# Set up UTF-8 encoding without REPLACING the stream objects. Reassigning
+# sys.stdout/sys.stderr at import time would close the previous stream's
+# underlying buffer when it is garbage-collected — which breaks pytest's
+# output capture (and any caller holding a reference to the streams). Using
+# reconfigure() mutates the existing TextIOWrapper in place instead.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        # Stream doesn't support reconfigure (e.g. pytest capture, StringIO,
+        # or already-detached buffer) — leave it as-is.
+        pass
 
 
 class TranscriptionUtils:

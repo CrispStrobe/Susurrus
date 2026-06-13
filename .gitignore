@@ -262,11 +262,15 @@ susurrus_ytdlp_*/
 susurrus_pytube_*/
 susurrus_yt_*/
 
-# Diarization outputs
-diarization/
+# Diarization outputs (root-anchored so we don't ignore the source package
+# at backends/diarization/)
+/diarization/
 diarization*.json
-segments/
+/segments/
 speaker_*.wav
+
+# Local scratch copy of the modular tree (not part of the package)
+/susurrus_modular/
 
 # ----------------------------------------------------------------------------
 # ML Models & Caches
