@@ -2,13 +2,16 @@
 
 import logging
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    datefmt="%H:%M:%S",
-    handlers=[logging.StreamHandler()],
-)
+# Configure logging only if the application/root logger has not been set up
+# yet. A library module must not unconditionally attach its own StreamHandler
+# at import time — that hijacks the host application's logging and can bind to a
+# transient stream (e.g. pytest's capture buffer).
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        datefmt="%H:%M:%S",
+    )
 
 # Import and run compatibility fixes FIRST. These imports are intentionally
 # not at the top of the file: the compatibility shims must be applied (and the

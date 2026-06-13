@@ -44,6 +44,7 @@ class CrispasrTTSBackend(TTSBackend):
         self.i_have_rights = kwargs.get("i_have_rights", False)
         self.no_spoken_disclaimer = kwargs.get("no_spoken_disclaimer", False)
         self.watermark_model = kwargs.get("watermark_model")
+        self.cache_dir = kwargs.get("cache_dir")
 
     def synthesize(self, text, output_path="tts_output.wav", voice=None):
         from utils.crispasr_utils import find_crispasr
@@ -86,6 +87,8 @@ class CrispasrTTSBackend(TTSBackend):
             cmd.append("--no-spoken-disclaimer")
         if self.auto_download:
             cmd.append("--auto-download")
+        if self.cache_dir:
+            cmd.extend(["--cache-dir", self.cache_dir])
         if self.language:
             cmd.extend(["-l", self.language])
 

@@ -18,6 +18,7 @@ class CrispasrTranslationBackend(TranslationBackend):
         crispasr_backend: str — force translation engine (default: m2m100)
         auto_download: bool — auto-download model (default: True)
         translate_max_tokens: int — max output tokens
+        cache_dir: str — override the model cache directory
     """
 
     def __init__(self, model_id=None, device="cpu", **kwargs):
@@ -25,6 +26,7 @@ class CrispasrTranslationBackend(TranslationBackend):
         self.crispasr_backend = kwargs.get("crispasr_backend", "m2m100")
         self.auto_download = kwargs.get("auto_download", True)
         self.translate_max_tokens = kwargs.get("translate_max_tokens")
+        self.cache_dir = kwargs.get("cache_dir")
 
     def translate(self, text, source_lang="en", target_lang="de"):
         from utils.crispasr_utils import find_crispasr
@@ -55,6 +57,8 @@ class CrispasrTranslationBackend(TranslationBackend):
 
         if self.auto_download:
             cmd.append("--auto-download")
+        if self.cache_dir:
+            cmd.extend(["--cache-dir", self.cache_dir])
         if self.translate_max_tokens is not None:
             cmd.extend(["--translate-max-tokens", str(self.translate_max_tokens)])
 
