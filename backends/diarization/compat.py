@@ -18,6 +18,18 @@ _INITIALIZED = False
 _TORCHAUDIO_PATCHED = False
 
 
+def _torch_version_at_least(major, minor):
+    """Return True if the installed torch is >= major.minor (e.g. 2.6)."""
+    version = getattr(torch, "__version__", "")
+    parts = version.split("+")[0].split(".")
+    try:
+        cur_major = int(parts[0])
+        cur_minor = int(parts[1]) if len(parts) > 1 else 0
+    except (ValueError, IndexError):
+        return False
+    return (cur_major, cur_minor) >= (major, minor)
+
+
 def _subtype_to_bits(subtype):
     """Best-effort mapping of a soundfile subtype string to bits-per-sample."""
     if not subtype:
@@ -138,9 +150,12 @@ def apply_pytorch26_fix():
     if _INITIALIZED:
         return  # Already initialized
 
-    # Only apply if using PyTorch 2.6+
-    if not hasattr(torch, "__version__") or not torch.__version__.startswith("2.6"):
-        print(f"PyTorch version {torch.__version__} does not need patching")
+    # Only apply if using PyTorch >= 2.6, where torch.load defaults to
+    # weights_only=True. This must match ALL such versions (2.6, 2.7, ... 2.11+),
+    # not just "2.6.x" — otherwise pyannote checkpoint loading fails with
+    # "Unsupported global: torch.torch_version.TorchVersion".
+    if not _torch_version_at_least(2, 6):
+        print(f"PyTorch version {getattr(torch, '__version__', '?')} does not need patching")
         _INITIALIZED = True
         return
 
