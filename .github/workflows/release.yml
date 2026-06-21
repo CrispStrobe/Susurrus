@@ -20,13 +20,16 @@ jobs:
         include:
           - os: ubuntu-latest
             asset_name: susurrus-linux-x86_64
-            pyinstaller_args: ""
+            binary_name: susurrus-linux-x86_64
+            archive_ext: tar.gz
           - os: macos-latest
             asset_name: susurrus-macos-arm64
-            pyinstaller_args: ""
+            binary_name: susurrus-macos-arm64
+            archive_ext: dmg
           - os: windows-latest
             asset_name: susurrus-windows-x86_64
-            pyinstaller_args: ""
+            binary_name: susurrus-windows-x86_64
+            archive_ext: zip
 
     steps:
       - uses: actions/checkout@v7
@@ -43,13 +46,65 @@ jobs:
 
       - name: Build binary
         run: |
-          pyinstaller --onefile --name ${{ matrix.asset_name }} --hidden-import=PyQt6 --collect-submodules=PyQt6 main.py ${{ matrix.pyinstaller_args }}
+          pyinstaller --onefile --name ${{ matrix.binary_name }} --hidden-import=PyQt6 --collect-submodules=PyQt6 main.py
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cd dist
+          chmod +x ${{ matrix.binary_name }}
+          tar czf ${{ matrix.asset_name }}.tar.gz ${{ matrix.binary_name }}
+          sha256sum ${{ matrix.asset_name }}.tar.gz > ${{ matrix.asset_name }}.tar.gz.sha256
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          APP_NAME="Susurrus.app"
+          mkdir -p "$APP_NAME/Contents/MacOS"
+          mkdir -p "$APP_NAME/Contents/Resources"
+          cp dist/${{ matrix.binary_name }} "$APP_NAME/Contents/MacOS/Susurrus"
+          chmod +x "$APP_NAME/Contents/MacOS/Susurrus"
+          cat > "$APP_NAME/Contents/Info.plist" << 'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key>
+            <string>Susurrus</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.crispstrobe.susurrus</string>
+            <key>CFBundleName</key>
+            <string>Susurrus</string>
+            <key>CFBundleVersion</key>
+            <string>${{ github.ref_name }}</string>
+            <key>CFBundleShortVersionString</key>
+            <string>${{ github.ref_name }}</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
+          hdiutil create -volname "Susurrus" -srcfolder "$APP_NAME" -ov -format UDZO "dist/${{ matrix.asset_name }}.dmg"
+          shasum -a 256 "dist/${{ matrix.asset_name }}.dmg" > "dist/${{ matrix.asset_name }}.dmg.sha256"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cd dist
+          Compress-Archive -Path "${{ matrix.binary_name }}.exe" -DestinationPath "${{ matrix.asset_name }}.zip"
+          $hash = (Get-FileHash "${{ matrix.asset_name }}.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  ${{ matrix.asset_name }}.zip" | Out-File -Encoding ascii "${{ matrix.asset_name }}.zip.sha256"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.asset_name }}
-          path: dist/${{ matrix.asset_name }}*
+          path: |
+            dist/${{ matrix.asset_name }}.${{ matrix.archive_ext }}
+            dist/${{ matrix.asset_name }}.${{ matrix.archive_ext }}.sha256
 
   release:
     needs: build-binaries
