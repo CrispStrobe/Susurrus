@@ -373,7 +373,9 @@ class CrispasrFFIBackend(TranscriptionBackend):
         pcm = self._session.synthesize(text)
 
         if pcm is None or len(pcm) == 0:
-            raise RuntimeError("CrispASR FFI TTS returned empty audio")
+            error_msg = self.last_synth_error()
+            detail = f": {error_msg}" if error_msg else ""
+            raise RuntimeError(f"CrispASR FFI TTS returned empty audio{detail}")
 
         # Determine sample rate (backend-dependent)
         backend = self._session.backend
@@ -392,6 +394,62 @@ class CrispasrFFIBackend(TranscriptionBackend):
 
         logger.info("TTS output: %s (%d samples, %d Hz)", output_path, len(pcm), sr)
         return output_path
+
+    def speech_to_speech(self, audio_path, output_path="s2s_output.wav"):
+        """Speech-to-speech via FFI (audio in -> audio out).
+
+        Supported by backends with CAP_S2S (e.g. lfm2-audio, mini-omni2).
+        Returns (output_path, transcript_or_none).
+        """
+        import numpy as np
+
+        logger.info("=== Starting CrispASR FFI S2S ===")
+        self._ensure_session()
+
+        pcm_in = self._load_audio(audio_path)
+
+        if not hasattr(self._session, "speech_to_speech"):
+            raise RuntimeError(
+                "speech_to_speech() not available — update the crispasr "
+                "Python package to >= 0.8.0"
+            )
+
+        result = self._session.speech_to_speech(pcm_in)
+
+        # Result is (pcm_out, transcript) or just pcm_out depending on binding version
+        if isinstance(result, tuple):
+            pcm_out, transcript = result
+        else:
+            pcm_out = result
+            transcript = None
+
+        if pcm_out is None or len(pcm_out) == 0:
+            error_msg = self.last_synth_error()
+            detail = f": {error_msg}" if error_msg else ""
+            raise RuntimeError(f"CrispASR FFI S2S returned empty audio{detail}")
+
+        # Write output WAV (S2S backends typically output 24 kHz)
+        sr = 24000
+        pcm_int16 = (pcm_out * 32767).clip(-32768, 32767).astype(np.int16)
+        with wave.open(output_path, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(sr)
+            wf.writeframes(pcm_int16.tobytes())
+
+        logger.info("S2S output: %s (%d samples, %d Hz)", output_path, len(pcm_out), sr)
+        return output_path, transcript
+
+    def last_synth_error(self):
+        """Return the last TTS/S2S synthesis error message, or None.
+
+        Requires crispasr >= 0.8.0 with last_synth_error() binding.
+        """
+        if self._session is None:
+            return None
+        if hasattr(self._session, "last_synth_error"):
+            return self._session.last_synth_error()
+        return None
 
     def translate_text(self, text, source_lang="en", target_lang="de"):
         """Translate text via FFI."""

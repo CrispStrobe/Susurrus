@@ -332,6 +332,20 @@ COMPANION_MODELS = {
             "kwarg": "tts_codec_model",
         },
     },
+    "mini-omni2": {
+        "codec": {
+            "name": "snac-24khz",
+            "flag": "--codec-model",
+            "kwarg": "tts_codec_model",
+        },
+    },
+    "chatterbox": {
+        "codec": {
+            "name": "chatterbox-s3gen",
+            "flag": "--codec-model",
+            "kwarg": "tts_codec_model",
+        },
+    },
 }
 
 

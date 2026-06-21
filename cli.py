@@ -238,6 +238,12 @@ def main():
     tts_group.add_argument("--codec-model", default=None, help="Codec/companion GGUF model")
     tts_group.add_argument("--tts-steps", type=int, default=None, help="TTS diffusion steps")
     tts_group.add_argument("--play", action="store_true", help="Play audio after synthesis")
+    tts_group.add_argument(
+        "--tts-play", action="store_true", help="Play audio on local speaker (CrispASR native)"
+    )
+    tts_group.add_argument(
+        "--tts-play-device", type=int, default=None, help="Audio device index for local playback"
+    )
     tts_group.add_argument("--list-voices", action="store_true", help="List voices for TTS backend")
 
     # --- Translation-specific ---
@@ -268,6 +274,12 @@ def main():
     ca_group.add_argument("--flash-attn", action="store_true", help="Enable flash attention")
     ca_group.add_argument("--no-gpu", action="store_true", help="Disable GPU")
     ca_group.add_argument("--gpu-backend", default=None, help="GPU backend (cuda/vulkan/metal)")
+    ca_group.add_argument(
+        "--n-gpu-layers", type=int, default=None, help="GPU layer offload count (-1 = all)"
+    )
+    ca_group.add_argument(
+        "--no-kv-offload", action="store_true", help="Keep KV cache on CPU, weights on GPU"
+    )
 
     # --- CrispASR VAD options ---
     vad_group = parser.add_argument_group("CrispASR VAD Options")
@@ -355,6 +367,9 @@ def main():
     srv_group.add_argument("--host", default=None, help="Server bind address")
     srv_group.add_argument("--port", type=int, default=None, help="Server port")
     srv_group.add_argument("--api-keys", default=None, help="Comma-separated API keys")
+    srv_group.add_argument(
+        "--wyoming-port", type=int, default=None, help="Wyoming protocol TCP port (Home Assistant)"
+    )
 
     # --- Misc ---
     parser.add_argument("--verbose", action="store_true", help="Verbose output")
@@ -453,6 +468,8 @@ def _build_crispasr_kwargs(args):
         "flash_attn": "flash_attn",
         "no_gpu": "no_gpu",
         "gpu_backend": "gpu_backend",
+        "n_gpu_layers": "n_gpu_layers",
+        "no_kv_offload": "no_kv_offload",
         # VAD
         "vad_model": "vad_model",
         "vad_threshold": "vad_threshold",
@@ -502,12 +519,15 @@ def _build_crispasr_kwargs(args):
         "host": "host",
         "port": "port",
         "api_keys": "api_keys",
+        "wyoming_port": "wyoming_port",
         # TTS
         "voice": "tts_voice",
         "ref_text": "tts_ref_text",
         "instruct": "tts_instruct",
         "codec_model": "tts_codec_model",
         "tts_steps": "tts_steps",
+        "tts_play": "tts_play",
+        "tts_play_device": "tts_play_device",
     }
 
     # Handle crispasr:<sub> notation

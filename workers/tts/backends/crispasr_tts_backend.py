@@ -12,8 +12,8 @@ class CrispasrTTSBackend(TTSBackend):
     """TTS via the CrispASR binary.
 
     Supports kokoro, orpheus, qwen3-tts, chatterbox, vibevoice, indextts,
-    voxcpm2-tts, melotts, piper, bark, dia, zonos, csm, and more engines
-    depending on the model loaded.
+    voxcpm2-tts, melotts, piper, bark, dia, zonos, csm, mini-omni2,
+    lfm2-audio, and more engines depending on the model loaded.
 
     Kwargs:
         crispasr_backend: str — force a TTS engine (e.g. "kokoro")
@@ -28,6 +28,8 @@ class CrispasrTTSBackend(TTSBackend):
         i_have_rights: bool — attest voice-cloning consent (required for .wav clone)
         no_spoken_disclaimer: bool — skip the audible AI-disclosure prefix
         watermark_model: str — AudioSeal GGUF for neural watermarking
+        tts_play: bool — play audio on local speaker after synthesis
+        tts_play_device: int — audio device index for local playback
     """
 
     def __init__(self, model_id=None, device="cpu", language=None, **kwargs):
@@ -45,6 +47,8 @@ class CrispasrTTSBackend(TTSBackend):
         self.no_spoken_disclaimer = kwargs.get("no_spoken_disclaimer", False)
         self.watermark_model = kwargs.get("watermark_model")
         self.cache_dir = kwargs.get("cache_dir")
+        self.tts_play = kwargs.get("tts_play", False)
+        self.tts_play_device = kwargs.get("tts_play_device")
 
     def synthesize(self, text, output_path="tts_output.wav", voice=None):
         from utils.crispasr_utils import find_crispasr
@@ -89,6 +93,10 @@ class CrispasrTTSBackend(TTSBackend):
             cmd.append("--auto-download")
         if self.cache_dir:
             cmd.extend(["--cache-dir", self.cache_dir])
+        if self.tts_play:
+            cmd.append("--tts-play")
+        if self.tts_play_device is not None:
+            cmd.extend(["--tts-play-device", str(self.tts_play_device)])
         if self.language:
             cmd.extend(["-l", self.language])
 

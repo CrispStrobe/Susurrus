@@ -177,8 +177,107 @@ class TestCrispASR071Sync(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("--stream-keep") + 1], "200")
 
 
+class TestCrispASR080Sync(unittest.TestCase):
+    """Coverage for the CrispASR 0.8.0 interface sync."""
+
+    def _make_backend(self, **kwargs):
+        from workers.transcription.backends.crispasr_backend import CrispasrBackend
+
+        return CrispasrBackend(model_id="test.gguf", device="cpu", **kwargs)
+
+    def test_new_080_flags_present(self):
+        from workers.transcription.backends.crispasr_backend import PARAM_MAP
+
+        for key, flag in [
+            ("tts_play", "--tts-play"),
+            ("tts_play_device", "--tts-play-device"),
+            ("n_gpu_layers", "-ngl"),
+            ("no_kv_offload", "--no-kv-offload"),
+            ("wyoming_port", "--wyoming-port"),
+        ]:
+            self.assertIn(key, PARAM_MAP, f"missing PARAM_MAP key {key}")
+            self.assertEqual(PARAM_MAP[key][0], flag)
+
+    def test_gpu_layer_offload_params(self):
+        b = self._make_backend(n_gpu_layers=20, no_kv_offload=True)
+        cmd = ["crispasr"]
+        b._append_params(cmd)
+        idx = cmd.index("-ngl")
+        self.assertEqual(cmd[idx + 1], "20")
+        self.assertIn("--no-kv-offload", cmd)
+
+    def test_tts_play_flags(self):
+        b = self._make_backend(tts_play=True, tts_play_device=2)
+        cmd = ["crispasr"]
+        b._append_params(cmd)
+        self.assertIn("--tts-play", cmd)
+        idx = cmd.index("--tts-play-device")
+        self.assertEqual(cmd[idx + 1], "2")
+
+    def test_wyoming_port_flag(self):
+        b = self._make_backend(wyoming_port=10400)
+        cmd = ["crispasr"]
+        b._append_params(cmd)
+        idx = cmd.index("--wyoming-port")
+        self.assertEqual(cmd[idx + 1], "10400")
+
+    def test_streaming_080_flags(self):
+        b = self._make_backend(
+            stream_partial_decode_ms=500,
+            stream_punc="punctuate",
+            stream_final_mode="sentence",
+            stream_utterance_max_sec=30.0,
+        )
+        cmd = ["crispasr"]
+        b._append_params(cmd)
+        self.assertEqual(cmd[cmd.index("--stream-partial-decode-ms") + 1], "500")
+        self.assertEqual(cmd[cmd.index("--stream-punc") + 1], "punctuate")
+        self.assertEqual(cmd[cmd.index("--stream-final-mode") + 1], "sentence")
+        self.assertEqual(cmd[cmd.index("--stream-utterance-max-sec") + 1], "30.0")
+
+
+class TestCrispASR080Registry(unittest.TestCase):
+    """The config registries must include CrispASR 0.8.0 backends."""
+
+    def test_new_asr_backends(self):
+        import config
+
+        for name in ("nemotron", "mini-omni2"):
+            self.assertIn(name, config.CRISPASR_SUB_BACKENDS, f"missing ASR backend: {name}")
+            self.assertIn(
+                f"crispasr:{name}",
+                config.BACKEND_MODEL_MAP,
+                f"BACKEND_MODEL_MAP missing crispasr:{name}",
+            )
+
+    def test_new_tts_backends(self):
+        import config
+
+        for name in ("mini-omni2", "vibevoice-1.5b"):
+            self.assertIn(name, config.CRISPASR_TTS_BACKENDS, f"missing TTS backend: {name}")
+            self.assertIn(
+                f"crispasr:{name}",
+                config.TTS_BACKEND_MAP,
+                f"TTS_BACKEND_MAP missing crispasr:{name}",
+            )
+
+    def test_companion_models_080(self):
+        import config
+
+        self.assertIn("mini-omni2", config.CRISPASR_COMPANION_MODELS)
+        self.assertIn("chatterbox", config.CRISPASR_COMPANION_MODELS)
+
+    def test_lfm2_audio_updated_description(self):
+        import config
+
+        entry = config.TTS_BACKEND_MAP.get("crispasr:lfm2-audio")
+        self.assertIsNotNone(entry)
+        # Should mention S2S capability
+        self.assertIn("S2S", entry["models"][0][1])
+
+
 class TestCrispASRRegistrySync(unittest.TestCase):
-    """The config registries must use valid CrispASR 0.7.1 backend names."""
+    """The config registries must use valid CrispASR backend names."""
 
     def test_no_stale_backend_names(self):
         import config

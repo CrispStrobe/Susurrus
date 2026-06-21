@@ -112,6 +112,31 @@ class TestTextExtraction(unittest.TestCase):
         self.assertEqual(result, "Test content")
 
 
+class TestCrispasrTTSBackendKwargs(unittest.TestCase):
+    """Test CrispASR TTS backend accepts new v0.8.0 kwargs."""
+
+    def test_tts_play_kwarg(self):
+        from workers.tts.backends.crispasr_tts_backend import CrispasrTTSBackend
+
+        b = CrispasrTTSBackend(model_id="auto", tts_play=True, tts_play_device=1)
+        self.assertTrue(b.tts_play)
+        self.assertEqual(b.tts_play_device, 1)
+
+    def test_tts_play_default_false(self):
+        from workers.tts.backends.crispasr_tts_backend import CrispasrTTSBackend
+
+        b = CrispasrTTSBackend(model_id="auto")
+        self.assertFalse(b.tts_play)
+        self.assertIsNone(b.tts_play_device)
+
+    def test_mini_omni2_tts_backend(self):
+        from workers.tts.backends import get_tts_backend
+
+        b = get_tts_backend("crispasr:mini-omni2", model_id="auto", device="cpu")
+        self.assertEqual(b.__class__.__name__, "CrispasrTTSBackend")
+        self.assertEqual(b.crispasr_backend, "mini-omni2")
+
+
 class TestConfigMaps(unittest.TestCase):
     """Test configuration maps."""
 
@@ -134,6 +159,14 @@ class TestConfigMaps(unittest.TestCase):
 
         self.assertEqual(get_default_model_for_backend("crispasr:parakeet"), "auto")
         self.assertEqual(get_default_model_for_backend("crispasr"), "auto")
+
+    def test_080_backends_in_maps(self):
+        from config import BACKEND_MODEL_MAP, TTS_BACKEND_MAP
+
+        self.assertIn("crispasr:nemotron", BACKEND_MODEL_MAP)
+        self.assertIn("crispasr:mini-omni2", BACKEND_MODEL_MAP)
+        self.assertIn("crispasr:mini-omni2", TTS_BACKEND_MAP)
+        self.assertIn("crispasr:vibevoice-1.5b", TTS_BACKEND_MAP)
 
 
 if __name__ == "__main__":

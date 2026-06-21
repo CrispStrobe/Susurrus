@@ -4,7 +4,7 @@ import os
 import platform
 
 APP_NAME = "Susurrus"
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.2.0"
 APP_ORG = "CrispStrobe"
 
 # ---------------------------------------------------------------------------
@@ -202,6 +202,13 @@ BACKEND_MODEL_MAP = {
         ("auto", "Gemma4 E2B (ASR+MT)"),
         ("auto:q4_0", "Gemma4 Q4_0"),
     ],
+    "crispasr:nemotron": [
+        ("auto", "NVIDIA Nemotron 3.5 ASR 0.6B"),
+        ("auto:q8_0", "Nemotron Q8_0"),
+    ],
+    "crispasr:mini-omni2": [
+        ("auto", "Mini-Omni2 (ASR+TTS+S2S)"),
+    ],
     # CrispASR Translation backends (text-to-text)
     "crispasr:m2m100": [
         ("auto", "M2M100 418M Translation"),
@@ -327,7 +334,17 @@ TTS_BACKEND_MAP = {
         "default_voice": None,
     },
     "crispasr:lfm2-audio": {
-        "models": [("auto", "LFM2-Audio 1.5B (ASR+TTS)")],
+        "models": [("auto", "LFM2-Audio 1.5B (ASR+TTS+S2S)")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:mini-omni2": {
+        "models": [("auto", "Mini-Omni2 (ASR+TTS+S2S)")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:vibevoice-1.5b": {
+        "models": [("auto", "VibeVoice 1.5B TTS (cloning)")],
         "voices": [],
         "default_voice": None,
     },
@@ -404,7 +421,7 @@ TTS_BACKEND_MAP = {
 
 # All CrispASR ASR sub-backend names for listing (must match the binary's
 # `--list-backends` names; the runtime probe in crispasr_utils refines this to
-# what the installed binary actually supports). Synced with CrispASR 0.7.1.
+# what the installed binary actually supports). Synced with CrispASR 0.8.0.
 CRISPASR_SUB_BACKENDS = [
     "whisper",
     "parakeet",
@@ -434,6 +451,8 @@ CRISPASR_SUB_BACKENDS = [
     "mimo-asr",
     "moss-audio",
     "gemma4-e2b",
+    "nemotron",
+    "mini-omni2",
 ]
 
 # Companion models required by certain TTS backends (auto-download)
@@ -443,6 +462,8 @@ CRISPASR_COMPANION_MODELS = {
     "orpheus": [("codec", "orpheus-snac-codec")],
     "mimo-asr": [("codec", "mimo-tokenizer")],
     "vibevoice": [("voice", "vibevoice-default-voice")],
+    "mini-omni2": [("codec", "snac-24khz")],
+    "chatterbox": [("codec", "chatterbox-s3gen")],
 }
 
 CRISPASR_TTS_BACKENDS = [
@@ -451,6 +472,7 @@ CRISPASR_TTS_BACKENDS = [
     "qwen3-tts",
     "chatterbox",
     "vibevoice",
+    "vibevoice-1.5b",
     "indextts",
     "voxcpm2-tts",
     "melotts",
@@ -468,6 +490,7 @@ CRISPASR_TTS_BACKENDS = [
     "speecht5",
     "kugelaudio",
     "lfm2-audio",
+    "mini-omni2",
 ]
 
 CRISPASR_TRANSLATION_BACKENDS = [

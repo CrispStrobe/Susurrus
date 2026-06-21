@@ -10,7 +10,7 @@ Also supports TTS (kokoro, orpheus, qwen3-tts, chatterbox, vibevoice,
 indextts, voxcpm2-tts, melotts, piper, bark, dia, zonos, csm, and more)
 and translation (m2m100, m2m100-wmt21, madlad, gemma4-e2b).
 
-Synced with CrispASR 0.7.1.
+Synced with CrispASR 0.8.0.
 
 The backend auto-detects from the GGUF file metadata, or can be forced
 with the `crispasr_backend` kwarg.
@@ -64,6 +64,8 @@ PARAM_MAP = {
     "no_flash_attn": ("--no-flash-attn", bool),
     "gpu_device": ("--device", int),
     "gpu_backend": ("--gpu-backend", str),
+    "n_gpu_layers": ("-ngl", int),
+    "no_kv_offload": ("--no-kv-offload", bool),
     "suppress_nst": ("--suppress-nst", bool),
     "suppress_regex": ("--suppress-regex", str),
     "translate": ("--translate", bool),
@@ -168,6 +170,7 @@ PARAM_MAP = {
     "api_keys": ("--api-keys", str),
     "cors_origin": ("--cors-origin", str),
     "no_warmup": ("--no-warmup", bool),
+    "wyoming_port": ("--wyoming-port", int),
     # --- Speech-to-speech ---
     "s2s": ("--s2s", bool),
     "s2s_output": ("--s2s-output", str),
@@ -183,6 +186,8 @@ PARAM_MAP = {
     "tts_steps": ("--tts-steps", int),
     "tts_trim_silence": ("--tts-trim-silence", bool),
     "tts_max_input_chars": ("--tts-max-input-chars", int),
+    "tts_play": ("--tts-play", bool),
+    "tts_play_device": ("--tts-play-device", int),
     "voice_dir": ("--voice-dir", str),
     "g2p_dict": ("--g2p-dict", str),
     # --- Provenance / EU AI Act (voice cloning, watermarking, C2PA) ---
