@@ -92,6 +92,34 @@ class TestFFIS2SMethod(unittest.TestCase):
         self.assertIsNone(b.last_synth_error())
 
 
+class TestFFI087SessionSetters(unittest.TestCase):
+    """Test that 0.8.7 FFI session setters are wired in _apply_session_state."""
+
+    def test_top_k_wired(self):
+        from workers.transcription.backends.crispasr_ffi_backend import CrispasrFFIBackend
+
+        b = CrispasrFFIBackend(model_id="test.gguf", device="cpu", top_k=50)
+        self.assertEqual(b.extra_kwargs["top_k"], 50)
+
+    def test_do_sample_wired(self):
+        from workers.transcription.backends.crispasr_ffi_backend import CrispasrFFIBackend
+
+        b = CrispasrFFIBackend(model_id="test.gguf", device="cpu", do_sample=True)
+        self.assertTrue(b.extra_kwargs["do_sample"])
+
+    def test_tts_num_candidates_wired(self):
+        from workers.transcription.backends.crispasr_ffi_backend import CrispasrFFIBackend
+
+        b = CrispasrFFIBackend(model_id="test.gguf", device="cpu", tts_num_candidates=8)
+        self.assertEqual(b.extra_kwargs["tts_num_candidates"], 8)
+
+    def test_tts_noise_temp_wired(self):
+        from workers.transcription.backends.crispasr_ffi_backend import CrispasrFFIBackend
+
+        b = CrispasrFFIBackend(model_id="test.gguf", device="cpu", tts_noise_temp=0.7)
+        self.assertAlmostEqual(b.extra_kwargs["tts_noise_temp"], 0.7)
+
+
 class TestFFICompanionModels(unittest.TestCase):
     """Test companion model resolution for new backends."""
 
@@ -114,6 +142,22 @@ class TestFFICompanionModels(unittest.TestCase):
 
         companions = resolve_companions("orpheus")
         self.assertIn("codec", companions)
+
+    def test_dots_tts_companion(self):
+        from utils.crispasr_utils import resolve_companions
+
+        companions = resolve_companions("dots-tts")
+        self.assertIn("speaker", companions)
+        self.assertEqual(companions["speaker"]["name"], "dots-tts-soar-spk")
+
+    def test_tada_companions(self):
+        from utils.crispasr_utils import resolve_companions
+
+        companions = resolve_companions("tada")
+        self.assertIn("encoder", companions)
+        self.assertIn("aligner", companions)
+        self.assertEqual(companions["encoder"]["name"], "tada-encoder")
+        self.assertEqual(companions["aligner"]["name"], "tada-aligner")
 
     def test_unknown_backend_no_companion(self):
         from utils.crispasr_utils import resolve_companions

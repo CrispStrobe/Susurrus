@@ -176,7 +176,14 @@ def probe_backends(exe=None):
                 else:
                     _cached_backends = data
             elif isinstance(data, dict) and "backends" in data:
-                _cached_backends = data["backends"]
+                entries = data["backends"]
+                if entries and isinstance(entries[0], dict):
+                    _cached_backends = [entry["name"] for entry in entries if "name" in entry]
+                    _cached_backend_caps = {
+                        entry["name"]: entry.get("caps", []) for entry in entries if "name" in entry
+                    }
+                else:
+                    _cached_backends = entries
             else:
                 _cached_backends = []
         else:
@@ -344,6 +351,25 @@ COMPANION_MODELS = {
             "name": "chatterbox-s3gen",
             "flag": "--codec-model",
             "kwarg": "tts_codec_model",
+        },
+    },
+    "dots-tts": {
+        "speaker": {
+            "name": "dots-tts-soar-spk",
+            "flag": "--voice",
+            "kwarg": "tts_voice",
+        },
+    },
+    "tada": {
+        "encoder": {
+            "name": "tada-encoder",
+            "flag": "--make-ref-encoder",
+            "kwarg": "make_ref_encoder",
+        },
+        "aligner": {
+            "name": "tada-aligner",
+            "flag": "--make-ref-aligner",
+            "kwarg": "make_ref_aligner",
         },
     },
 }

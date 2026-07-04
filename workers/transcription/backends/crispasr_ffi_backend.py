@@ -197,6 +197,18 @@ class CrispasrFFIBackend(TranscriptionBackend):
         if kw.get("length_scale"):
             s.set_length_scale(float(kw["length_scale"]))
 
+        # Top-K / multinomial sampling (CrispASR 0.8.x)
+        if kw.get("top_k") and hasattr(s, "set_top_k"):
+            s.set_top_k(int(kw["top_k"]))
+        if kw.get("do_sample") is not None and hasattr(s, "set_do_sample"):
+            s.set_do_sample(bool(kw["do_sample"]))
+
+        # TTS candidate count and noise temperature (CrispASR 0.8.x, TADA)
+        if kw.get("tts_num_candidates") and hasattr(s, "set_tts_num_candidates"):
+            s.set_tts_num_candidates(int(kw["tts_num_candidates"]))
+        if kw.get("tts_noise_temp") is not None and hasattr(s, "set_tts_noise_temp"):
+            s.set_tts_noise_temp(float(kw["tts_noise_temp"]))
+
         # Fallback thresholds (whisper)
         if kw.get("entropy_thold") is not None:
             s.set_fallback_thresholds(

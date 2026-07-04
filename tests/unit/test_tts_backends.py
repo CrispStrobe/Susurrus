@@ -168,6 +168,25 @@ class TestConfigMaps(unittest.TestCase):
         self.assertIn("crispasr:mini-omni2", TTS_BACKEND_MAP)
         self.assertIn("crispasr:vibevoice-1.5b", TTS_BACKEND_MAP)
 
+    def test_087_tts_backends_in_maps(self):
+        from config import TTS_BACKEND_MAP
+
+        for name in ("crispasr:tada", "crispasr:dots-tts", "crispasr:bananamind-tts"):
+            self.assertIn(name, TTS_BACKEND_MAP, f"TTS_BACKEND_MAP missing {name}")
+
+    def test_087_asr_backends_in_maps(self):
+        from config import BACKEND_MODEL_MAP
+
+        for name in (
+            "crispasr:ark-asr",
+            "crispasr:higgs-stt",
+            "crispasr:moss-transcribe",
+            "crispasr:gemma4-e4b",
+            "crispasr:parakeet-ctc-ja",
+            "crispasr:reazonspeech",
+        ):
+            self.assertIn(name, BACKEND_MODEL_MAP, f"BACKEND_MODEL_MAP missing {name}")
+
 
 if __name__ == "__main__":
     unittest.main()

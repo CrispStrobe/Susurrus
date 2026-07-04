@@ -4,7 +4,7 @@ import os
 import platform
 
 APP_NAME = "Susurrus"
-APP_VERSION = "2.2.0"
+APP_VERSION = "2.3.0"
 APP_ORG = "CrispStrobe"
 
 # ---------------------------------------------------------------------------
@@ -209,6 +209,32 @@ BACKEND_MODEL_MAP = {
     "crispasr:mini-omni2": [
         ("auto", "Mini-Omni2 (ASR+TTS+S2S)"),
     ],
+    "crispasr:ark-asr": [
+        ("auto", "ARK-ASR-3B (19 languages)"),
+        ("auto:q4_0", "ARK-ASR Q4_0"),
+    ],
+    "crispasr:higgs-stt": [
+        ("auto", "Higgs Audio v3 STT"),
+    ],
+    "crispasr:moss-transcribe": [
+        ("auto", "MOSS-Transcribe-preview-2B"),
+    ],
+    "crispasr:gemma4-e4b": [
+        ("auto", "Gemma4 E4B (ASR+MT, large)"),
+        ("auto:q4_0", "Gemma4-E4B Q4_0"),
+    ],
+    "crispasr:parakeet-ctc-ja": [
+        ("auto", "Parakeet CTC 1.1B (Japanese)"),
+    ],
+    "crispasr:reazonspeech": [
+        ("auto", "ReazonSpeech NeMo v2 (Japanese)"),
+    ],
+    "crispasr:canary-ctc": [
+        ("auto", "Canary CTC (alignment-only)"),
+    ],
+    "crispasr:qwen3-ja-anime": [
+        ("auto", "Qwen3 ASR 1.7B JA Anime"),
+    ],
     # CrispASR Translation backends (text-to-text)
     "crispasr:m2m100": [
         ("auto", "M2M100 418M Translation"),
@@ -220,6 +246,9 @@ BACKEND_MODEL_MAP = {
     "crispasr:madlad": [
         ("auto", "MadLad 400 (419 languages)"),
         ("auto:q4_0", "MadLad Q4_0"),
+    ],
+    "crispasr:m2m100-f16": [
+        ("auto", "M2M100 418M F16 (exact HF parity)"),
     ],
 }
 
@@ -348,6 +377,21 @@ TTS_BACKEND_MAP = {
         "voices": [],
         "default_voice": None,
     },
+    "crispasr:tada": {
+        "models": [("auto", "TADA 1B (flow matching)")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:dots-tts": {
+        "models": [("auto", "DOTS-TTS 2B (48 kHz)")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:bananamind-tts": {
+        "models": [("auto", "BananaMind TTS V2.1")],
+        "voices": [],
+        "default_voice": None,
+    },
     # Python-native TTS backends (from CrispTTS)
     "edge-tts": {
         "models": [("edge-tts", "Microsoft Edge TTS (cloud)")],
@@ -421,14 +465,16 @@ TTS_BACKEND_MAP = {
 
 # All CrispASR ASR sub-backend names for listing (must match the binary's
 # `--list-backends` names; the runtime probe in crispasr_utils refines this to
-# what the installed binary actually supports). Synced with CrispASR 0.8.0.
+# what the installed binary actually supports). Synced with CrispASR 0.8.7.
 CRISPASR_SUB_BACKENDS = [
     "whisper",
     "parakeet",
     "canary",
+    "canary-ctc",
     "cohere",
     "qwen3",
     "qwen3-1.7b",
+    "qwen3-ja-anime",
     "mega-asr",
     "voxtral",
     "voxtral4b",
@@ -450,9 +496,15 @@ CRISPASR_SUB_BACKENDS = [
     "omniasr",
     "mimo-asr",
     "moss-audio",
+    "moss-transcribe",
     "gemma4-e2b",
+    "gemma4-e4b",
     "nemotron",
     "mini-omni2",
+    "ark-asr",
+    "higgs-stt",
+    "parakeet-ctc-ja",
+    "reazonspeech",
 ]
 
 # Companion models required by certain TTS backends (auto-download)
@@ -464,6 +516,8 @@ CRISPASR_COMPANION_MODELS = {
     "vibevoice": [("voice", "vibevoice-default-voice")],
     "mini-omni2": [("codec", "snac-24khz")],
     "chatterbox": [("codec", "chatterbox-s3gen")],
+    "dots-tts": [("speaker", "dots-tts-soar-spk")],
+    "tada": [("encoder", "tada-encoder"), ("aligner", "tada-aligner")],
 }
 
 CRISPASR_TTS_BACKENDS = [
@@ -491,10 +545,14 @@ CRISPASR_TTS_BACKENDS = [
     "kugelaudio",
     "lfm2-audio",
     "mini-omni2",
+    "tada",
+    "dots-tts",
+    "bananamind-tts",
 ]
 
 CRISPASR_TRANSLATION_BACKENDS = [
     "m2m100",
+    "m2m100-f16",
     "m2m100-wmt21",
     "madlad",
     "gemma4-e2b",

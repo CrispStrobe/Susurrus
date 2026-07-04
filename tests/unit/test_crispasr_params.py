@@ -276,6 +276,134 @@ class TestCrispASR080Registry(unittest.TestCase):
         self.assertIn("S2S", entry["models"][0][1])
 
 
+class TestCrispASR087Sync(unittest.TestCase):
+    """Coverage for the CrispASR 0.8.7 interface sync."""
+
+    def _make_backend(self, **kwargs):
+        from workers.transcription.backends.crispasr_backend import CrispasrBackend
+
+        return CrispasrBackend(model_id="test.gguf", device="cpu", **kwargs)
+
+    def test_new_087_flags_present(self):
+        from workers.transcription.backends.crispasr_backend import PARAM_MAP
+
+        for key, flag in [
+            ("align_only", "--align-only"),
+            ("text_file", "--text-file"),
+            ("align_output", "--align-output"),
+            ("align_format", "--align-format"),
+            ("make_ref", "--make-ref"),
+            ("make_ref_output", "--make-ref-output"),
+            ("make_ref_encoder", "--make-ref-encoder"),
+            ("make_ref_aligner", "--make-ref-aligner"),
+            ("diarize_speakers", "--diarize-speakers"),
+            ("speaker_db_consent", "--speaker-db-consent"),
+            ("prefix_text", "--prefix-text"),
+            ("output_diarized_json", "-odjson"),
+        ]:
+            self.assertIn(key, PARAM_MAP, f"missing PARAM_MAP key {key}")
+            self.assertEqual(PARAM_MAP[key][0], flag)
+
+    def test_align_only_flags_emit(self):
+        b = self._make_backend(
+            align_only=True,
+            text_file="transcript.txt",
+            align_output="aligned.srt",
+            align_format="srt",
+        )
+        cmd = ["crispasr"]
+        b._append_params(cmd)
+        self.assertIn("--align-only", cmd)
+        self.assertEqual(cmd[cmd.index("--text-file") + 1], "transcript.txt")
+        self.assertEqual(cmd[cmd.index("--align-output") + 1], "aligned.srt")
+        self.assertEqual(cmd[cmd.index("--align-format") + 1], "srt")
+
+    def test_make_ref_flags_emit(self):
+        b = self._make_backend(
+            make_ref=True,
+            make_ref_output="ref.gguf",
+            make_ref_encoder="encoder.gguf",
+            make_ref_aligner="aligner.gguf",
+        )
+        cmd = ["crispasr"]
+        b._append_params(cmd)
+        self.assertIn("--make-ref", cmd)
+        self.assertEqual(cmd[cmd.index("--make-ref-output") + 1], "ref.gguf")
+        self.assertEqual(cmd[cmd.index("--make-ref-encoder") + 1], "encoder.gguf")
+        self.assertEqual(cmd[cmd.index("--make-ref-aligner") + 1], "aligner.gguf")
+
+    def test_diarize_speakers_and_consent(self):
+        b = self._make_backend(diarize_speakers=True, speaker_db_consent=True)
+        cmd = ["crispasr"]
+        b._append_params(cmd)
+        self.assertIn("--diarize-speakers", cmd)
+        self.assertIn("--speaker-db-consent", cmd)
+
+    def test_prefix_text_flag(self):
+        b = self._make_backend(prefix_text="meeting notes")
+        cmd = ["crispasr"]
+        b._append_params(cmd)
+        self.assertEqual(cmd[cmd.index("--prefix-text") + 1], "meeting notes")
+
+    def test_diarized_json_output(self):
+        b = self._make_backend(output_diarized_json=True)
+        cmd = ["crispasr"]
+        b._append_params(cmd)
+        self.assertIn("-odjson", cmd)
+
+
+class TestCrispASR087Registry(unittest.TestCase):
+    """The config registries must include CrispASR 0.8.7 backends."""
+
+    def test_new_asr_backends(self):
+        import config
+
+        for name in (
+            "ark-asr",
+            "higgs-stt",
+            "moss-transcribe",
+            "gemma4-e4b",
+            "parakeet-ctc-ja",
+            "reazonspeech",
+            "canary-ctc",
+            "qwen3-ja-anime",
+        ):
+            self.assertIn(name, config.CRISPASR_SUB_BACKENDS, f"missing ASR: {name}")
+            self.assertIn(
+                f"crispasr:{name}",
+                config.BACKEND_MODEL_MAP,
+                f"BACKEND_MODEL_MAP missing crispasr:{name}",
+            )
+
+    def test_new_tts_backends(self):
+        import config
+
+        for name in ("tada", "dots-tts", "bananamind-tts"):
+            self.assertIn(name, config.CRISPASR_TTS_BACKENDS, f"missing TTS: {name}")
+            self.assertIn(
+                f"crispasr:{name}",
+                config.TTS_BACKEND_MAP,
+                f"TTS_BACKEND_MAP missing crispasr:{name}",
+            )
+
+    def test_new_translation_backend(self):
+        import config
+
+        self.assertIn("m2m100-f16", config.CRISPASR_TRANSLATION_BACKENDS)
+        self.assertIn("crispasr:m2m100-f16", config.BACKEND_MODEL_MAP)
+
+    def test_companion_models_087(self):
+        import config
+
+        self.assertIn("dots-tts", config.CRISPASR_COMPANION_MODELS)
+        self.assertIn("tada", config.CRISPASR_COMPANION_MODELS)
+        # TADA has two companions
+        tada = config.CRISPASR_COMPANION_MODELS["tada"]
+        roles = [role for role, _ in tada]
+        self.assertIn("encoder", roles)
+        self.assertIn("aligner", roles)
+
+
 class TestCrispASRRegistrySync(unittest.TestCase):
     """The config registries must use valid CrispASR backend names."""
 

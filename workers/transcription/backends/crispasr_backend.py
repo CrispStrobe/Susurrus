@@ -10,7 +10,7 @@ Also supports TTS (kokoro, orpheus, qwen3-tts, chatterbox, vibevoice,
 indextts, voxcpm2-tts, melotts, piper, bark, dia, zonos, csm, and more)
 and translation (m2m100, m2m100-wmt21, madlad, gemma4-e2b).
 
-Synced with CrispASR 0.8.0.
+Synced with CrispASR 0.8.7.
 
 The backend auto-detects from the GGUF file metadata, or can be forced
 with the `crispasr_backend` kwarg.
@@ -77,6 +77,7 @@ PARAM_MAP = {
     "lcs_dedup": ("--lcs-dedup", str),
     "lcs_min_length": ("--lcs-min-length", int),
     "ask": ("--ask", str),
+    "prefix_text": ("--prefix-text", str),
     # --- Output formats ---
     "output_txt": ("-otxt", bool),
     "output_vtt": ("-ovtt", bool),
@@ -86,6 +87,7 @@ PARAM_MAP = {
     "output_json": ("-oj", bool),
     "output_json_full": ("-ojf", bool),
     "output_lrc": ("-olrc", bool),
+    "output_diarized_json": ("-odjson", bool),
     "output_file": ("-of", str),
     "no_prints": ("-np", bool),
     "verbose": ("--verbose", bool),
@@ -113,6 +115,7 @@ PARAM_MAP = {
     "diarize_embedder": ("--diarize-embedder", str),
     "diarize_cluster_threshold": ("--diarize-cluster-threshold", float),
     "diarize_max_speakers": ("--diarize-max-speakers", int),
+    "diarize_speakers": ("--diarize-speakers", bool),
     "sherpa_bin": ("--sherpa-bin", str),
     "sherpa_segment_model": ("--sherpa-segment-model", str),
     "sherpa_embedding_model": ("--sherpa-embedding-model", str),
@@ -129,6 +132,10 @@ PARAM_MAP = {
     "aligner_model": ("-am", str),
     "force_aligner": ("-falign", bool),
     "no_auto_aligner": ("--no-auto-aligner", bool),
+    "align_only": ("--align-only", bool),
+    "text_file": ("--text-file", str),
+    "align_output": ("--align-output", str),
+    "align_format": ("--align-format", str),
     # --- Punctuation ---
     "no_punctuation": ("--no-punctuation", bool),
     "punc_model": ("--punc-model", str),
@@ -138,6 +145,7 @@ PARAM_MAP = {
     "enroll_speaker": ("--enroll-speaker", str),
     "speaker_threshold": ("--speaker-threshold", float),
     "titanet_model": ("--titanet-model", str),
+    "speaker_db_consent": ("--speaker-db-consent", bool),
     # --- Grammar ---
     "grammar": ("--grammar", str),
     "grammar_rule": ("--grammar-rule", str),
@@ -190,6 +198,10 @@ PARAM_MAP = {
     "tts_play_device": ("--tts-play-device", int),
     "voice_dir": ("--voice-dir", str),
     "g2p_dict": ("--g2p-dict", str),
+    "make_ref": ("--make-ref", bool),
+    "make_ref_output": ("--make-ref-output", str),
+    "make_ref_encoder": ("--make-ref-encoder", str),
+    "make_ref_aligner": ("--make-ref-aligner", str),
     # --- Provenance / EU AI Act (voice cloning, watermarking, C2PA) ---
     "i_have_rights": ("--i-have-rights", bool),
     "no_spoken_disclaimer": ("--no-spoken-disclaimer", bool),

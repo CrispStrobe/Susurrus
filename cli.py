@@ -207,7 +207,7 @@ def main():
     # --- Mode ---
     parser.add_argument(
         "--mode",
-        choices=["transcribe", "tts", "translate", "stream", "server"],
+        choices=["transcribe", "tts", "translate", "stream", "server", "align"],
         default="transcribe",
         help="Operation mode (default: transcribe)",
     )
@@ -270,6 +270,9 @@ def main():
         "--carry-initial-prompt", action="store_true", help="Always prepend initial prompt"
     )
     ca_group.add_argument("--auto-download", action="store_true", help="Auto-download model")
+    ca_group.add_argument(
+        "--prefix-text", default=None, help="LLM initial prompt (granite keyword biasing)"
+    )
     ca_group.add_argument("--translate", action="store_true", help="Translate to English (whisper)")
     ca_group.add_argument("--flash-attn", action="store_true", help="Enable flash attention")
     ca_group.add_argument("--no-gpu", action="store_true", help="Disable GPU")
@@ -311,6 +314,14 @@ def main():
     dia_group.add_argument(
         "--diarize-max-speakers", type=int, default=None, help="Max speaker count"
     )
+    dia_group.add_argument(
+        "--diarize-speakers", action="store_true", help="Enable diarization with auto embedder"
+    )
+    dia_group.add_argument(
+        "--speaker-db-consent",
+        action="store_true",
+        help="GDPR consent for persistent speaker database",
+    )
 
     # --- CrispASR LID ---
     lid_group = parser.add_argument_group("CrispASR Language ID Options")
@@ -326,6 +337,16 @@ def main():
     align_group = parser.add_argument_group("CrispASR Alignment Options")
     align_group.add_argument("--aligner-model", default=None, help="CTC aligner GGUF")
     align_group.add_argument("--force-aligner", action="store_true", help="Force CTC alignment")
+    align_group.add_argument(
+        "--text-file", default=None, help="Text/SRT file for --align-only mode"
+    )
+    align_group.add_argument("--align-output", default=None, help="Alignment output path")
+    align_group.add_argument(
+        "--align-format",
+        default=None,
+        choices=["srt", "json", "plain"],
+        help="Alignment output format",
+    )
 
     # --- CrispASR punctuation ---
     punc_group = parser.add_argument_group("CrispASR Punctuation Options")
@@ -393,6 +414,8 @@ def main():
         _run_stream(args)
     elif args.mode == "server":
         _run_server(args)
+    elif args.mode == "align":
+        _run_align(args)
 
 
 def _list_backends():
@@ -464,6 +487,7 @@ def _build_crispasr_kwargs(args):
         "prompt": "prompt",
         "carry_initial_prompt": "carry_initial_prompt",
         "auto_download": "auto_download",
+        "prefix_text": "prefix_text",
         "translate": "translate",
         "flash_attn": "flash_attn",
         "no_gpu": "no_gpu",
@@ -483,6 +507,8 @@ def _build_crispasr_kwargs(args):
         "diarize_embedder": "diarize_embedder",
         "diarize_cluster_threshold": "diarize_cluster_threshold",
         "diarize_max_speakers": "diarize_max_speakers",
+        "diarize_speakers": "diarize_speakers",
+        "speaker_db_consent": "speaker_db_consent",
         # LID
         "detect_language": "detect_language",
         "lid_backend": "lid_backend",
@@ -490,6 +516,9 @@ def _build_crispasr_kwargs(args):
         # Alignment
         "aligner_model": "aligner_model",
         "force_aligner": "force_aligner",
+        "text_file": "text_file",
+        "align_output": "align_output",
+        "align_format": "align_format",
         # Punctuation
         "punc_model": "punc_model",
         # Speaker
@@ -723,6 +752,39 @@ def _run_server(args):
         proc.wait()
     except KeyboardInterrupt:
         print("\nServer stopped.")
+    finally:
+        backend.cleanup()
+
+
+def _run_align(args):
+    """Run standalone alignment mode (text + audio, no ASR)."""
+    if not args.file:
+        print("Error: --file is required for alignment", file=sys.stderr)
+        sys.exit(1)
+    if not args.text_file and not args.text:
+        print("Error: --text-file or --text is required for alignment", file=sys.stderr)
+        sys.exit(1)
+
+    backend_name = args.backend
+    model = args.model or "auto"
+
+    if not backend_name.startswith("crispasr"):
+        print("Error: alignment mode is only supported with crispasr backends", file=sys.stderr)
+        sys.exit(1)
+
+    kwargs = _build_crispasr_kwargs(args)
+    kwargs["align_only"] = True
+
+    BackendClass = get_backend_class(backend_name)
+    backend = BackendClass(model_id=model, device=args.device, language=args.language, **kwargs)
+
+    try:
+        audio_path = backend.preprocess_audio(args.file)
+        for start, end, text in backend.transcribe(audio_path):
+            if start > 0 or end > 0:
+                print(f"[{start:.2f} --> {end:.2f}]  {text}")
+            else:
+                print(text)
     finally:
         backend.cleanup()
 
