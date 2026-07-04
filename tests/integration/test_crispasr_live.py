@@ -17,8 +17,23 @@ import unittest
 
 from utils.crispasr_utils import find_crispasr
 
-_exe = find_crispasr()
-skip_no_binary = unittest.skipUnless(_exe, "crispasr binary not available")
+
+def _binary_works():
+    """Check if the crispasr binary exists AND can actually execute."""
+    exe = find_crispasr()
+    if not exe:
+        return None
+    try:
+        result = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=10)
+        if result.returncode == 0:
+            return exe
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return None
+
+
+_exe = _binary_works()
+skip_no_binary = unittest.skipUnless(_exe, "crispasr binary not available or not runnable")
 
 # Look for a short test audio file: env var, sibling CrispASR sample, or skip.
 _test_audio = os.environ.get("SUSURRUS_TEST_AUDIO")
