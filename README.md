@@ -251,7 +251,7 @@ susurrus/
 ## Testing
 
 ```bash
-# Run all tests (117 tests)
+# Run all tests (200 tests)
 python -m unittest discover -s tests -v
 
 # Run unit tests only

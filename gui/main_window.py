@@ -625,6 +625,7 @@ class MainWindow(QWidget):
         self.abort_button.setEnabled(True)
         self.transcription_output.clear()
         self.metrics_output.clear()
+        self._transcription_segments = []
 
     def _collect_transcription_args(self):
         """Collect transcription arguments from UI"""
@@ -867,6 +868,7 @@ class MainWindow(QWidget):
         self.abort_button.setEnabled(False)
         self.progress_bar.setVisible(False)
         logging.info("Transcription process finished.")
+        self._auto_save_history()
 
     def update_outputs(self, metrics, transcription):
         if metrics:
@@ -875,6 +877,30 @@ class MainWindow(QWidget):
             self.transcription_output.appendPlainText(transcription)
             self.save_button.setEnabled(True)
             self.transcription_text = self.transcription_output.toPlainText()
+            # Parse and store segment for structured export
+            self._parse_and_store_segment(transcription)
+
+    def _parse_and_store_segment(self, line):
+        """Parse a transcription output line and store as a segment tuple."""
+        import re
+
+        if not hasattr(self, "_transcription_segments"):
+            self._transcription_segments = []
+        m = re.match(r"\[(\d+:\d+:\d+\.\d+)\s*-->\s*(\d+:\d+:\d+\.\d+)\]\s*(.*)", line.strip())
+        if m:
+            start = self._parse_ts_for_segment(m.group(1))
+            end = self._parse_ts_for_segment(m.group(2))
+            text = m.group(3).strip()
+            if text:
+                self._transcription_segments.append((start, end, text))
+        elif line.strip():
+            self._transcription_segments.append((0.0, 0.0, line.strip()))
+
+    @staticmethod
+    def _parse_ts_for_segment(ts_str):
+        """Parse HH:MM:SS.mmm to seconds."""
+        parts = ts_str.split(":")
+        return float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
 
     def replace_transcription_output(self, text):
         self.transcription_output.clear()
@@ -1001,23 +1027,83 @@ class MainWindow(QWidget):
         self.translation_widget.status_label.setText(f"Error: {error_msg}")
         QMessageBox.critical(self, "Translation Error", error_msg)
 
+    # ---- History ----
+
+    def _auto_save_history(self):
+        """Auto-save transcription to history on completion."""
+        segments = getattr(self, "_transcription_segments", [])
+        text = getattr(self, "transcription_text", "")
+        if not segments and not text:
+            return
+        try:
+            from utils.history_service import HistoryEntry, HistoryService
+
+            source = ""
+            if hasattr(self, "audio_input"):
+                source = self.audio_input.text()
+
+            entry = HistoryEntry(
+                source_path=source,
+                backend=getattr(self, "_last_backend", None),
+                model=getattr(self, "_last_model", None),
+                language=getattr(self, "_last_language", None),
+                segments=segments,
+                full_text=text,
+            )
+            HistoryService().save(entry)
+            logging.info("Transcription auto-saved to history: %s", entry.id)
+        except Exception as e:
+            logging.warning("Failed to auto-save history: %s", e)
+
     # ---- Save ----
 
     def save_transcription(self):
-        if hasattr(self, "transcription_text"):
-            save_path, _ = QFileDialog.getSaveFileName(
-                self, "Save Transcription", "", "Text Files (*.txt)"
-            )
-            if save_path:
-                try:
-                    text_to_save = self.transcription_text
-                    with open(save_path, "w", encoding="utf-8", errors="replace") as dst:
-                        dst.write(text_to_save)
-                    QMessageBox.information(self, "Success", f"Transcription saved to: {save_path}")
-                except Exception as e:
-                    QMessageBox.critical(self, "Error", f"Failed to save transcription: {str(e)}")
-        else:
+        if not hasattr(self, "transcription_text") or not self.transcription_text:
             QMessageBox.warning(self, "Warning", "No transcription available to save.")
+            return
+
+        filter_str = (
+            "Text Files (*.txt);;"
+            "SRT Subtitles (*.srt);;"
+            "WebVTT Subtitles (*.vtt);;"
+            "JSON (*.json);;"
+            "CSV (*.csv)"
+        )
+        save_path, selected_filter = QFileDialog.getSaveFileName(
+            self, "Save Transcription", "", filter_str
+        )
+        if not save_path:
+            return
+
+        try:
+            from utils.export_formats import EXPORT_FORMATS
+
+            # Determine format from extension or selected filter
+            ext = os.path.splitext(save_path)[1].lower()
+            fmt_map = {v[0]: k for k, v in EXPORT_FORMATS.items()}
+            fmt_name = fmt_map.get(ext, "TXT")
+
+            segments = getattr(self, "_transcription_segments", [])
+            if segments and fmt_name != "TXT":
+                _, export_fn = EXPORT_FORMATS[fmt_name]
+                if fmt_name == "JSON":
+                    metadata = {}
+                    if hasattr(self, "_last_backend"):
+                        metadata["backend"] = self._last_backend
+                    if hasattr(self, "_last_language"):
+                        metadata["language"] = self._last_language
+                    content = export_fn(segments, metadata=metadata)
+                else:
+                    content = export_fn(segments)
+            else:
+                # Fallback: save raw text
+                content = self.transcription_text
+
+            with open(save_path, "w", encoding="utf-8", errors="replace") as dst:
+                dst.write(content)
+            QMessageBox.information(self, "Success", f"Saved to: {save_path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save: {str(e)}")
 
     # Menu actions
     def show_cuda_diagnostics(self):

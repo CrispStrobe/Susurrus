@@ -394,6 +394,12 @@ def main():
 
     # --- Misc ---
     parser.add_argument("--verbose", action="store_true", help="Verbose output")
+    parser.add_argument(
+        "--output-format",
+        choices=["txt", "srt", "vtt", "json", "csv"],
+        default=None,
+        help="Output format for transcription (default: timestamped text to stdout)",
+    )
 
     args = parser.parse_args()
 
@@ -601,11 +607,24 @@ def _run_transcribe(args):
 
     try:
         audio_path = backend.preprocess_audio(args.file)
-        for start, end, text in backend.transcribe(audio_path):
-            if start > 0 or end > 0:
-                print(f"[{start:.2f} --> {end:.2f}]  {text}")
+        segments = list(backend.transcribe(audio_path))
+
+        output_format = getattr(args, "output_format", None)
+        if output_format:
+            from utils.export_formats import EXPORT_FORMATS
+
+            fmt_name = output_format.upper()
+            if fmt_name in EXPORT_FORMATS:
+                _, export_fn = EXPORT_FORMATS[fmt_name]
+                print(export_fn(segments))
             else:
-                print(text)
+                print(f"Unknown format: {output_format}", file=sys.stderr)
+        else:
+            for start, end, text in segments:
+                if start > 0 or end > 0:
+                    print(f"[{start:.2f} --> {end:.2f}]  {text}")
+                else:
+                    print(text)
     finally:
         backend.cleanup()
 

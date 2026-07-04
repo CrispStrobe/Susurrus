@@ -23,64 +23,118 @@ Syncing Susurrus with CrispASR v0.8.0 → v0.8.7 (HEAD). **All items implemented
 
 - [x] `m2m100-f16` — M2M100 418M F16 (exact HF parity via faithful SP-BPE)
 
-## 4. New CLI Flags → PARAM_MAP (crispasr_backend.py)
+## 4–10: CLI Flags, FFI, Companions, Tests
 
-- [x] `--align-only` (bool) — standalone alignment mode
-- [x] `--text-file` (str) — text/SRT input for align-only
-- [x] `--align-output` (str) — alignment output path
-- [x] `--align-format` (str) — alignment format (srt/json/plain)
-- [x] `--make-ref` (bool) — create TADA voice reference GGUF
-- [x] `--make-ref-output` (str) — voice reference output path
-- [x] `--make-ref-encoder` (str) — TADA encoder GGUF path
-- [x] `--make-ref-aligner` (str) — TADA aligner GGUF path
-- [x] `--diarize-speakers` (bool) — shorthand for diarize + embedder auto
-- [x] `--speaker-db-consent` (bool) — GDPR consent for persistent speaker DB
-- [x] `--prefix-text` (str) — LLM initial prompt (granite keyword biasing)
-- [x] `-odjson` (bool) — diarized JSON output format
+All implemented — see git history for v2.3.0.
 
-## 5. New FFI Methods (crispasr_ffi_backend.py)
+---
 
-- [x] `set_top_k(k)` — top-K sampling
-- [x] `set_do_sample(bool)` — multinomial sampling toggle
-- [x] `set_tts_num_candidates(n)` — TTS candidate count (TADA)
-- [x] `set_tts_noise_temp(float)` — diffusion noise temperature
+# Susurrus v2.4.0 — GUI Feature Parity Plan
 
-## 6. New CLI Arguments (cli.py)
+Inspired by CrisperWeaver comparison. Priority order by impact/effort.
 
-- [x] `--mode align` with `--text-file`, `--align-output`, `--align-format`
-- [x] `--diarize-speakers`, `--speaker-db-consent`
-- [x] `--prefix-text`
+## P0 — Transcription History (persist + browse)
 
-## 7. Companion Models (crispasr_utils.py + config.py)
+- [x] `utils/history_service.py` — JSON file-based history persistence
+  - HistoryEntry: id, created_at, source_path, backend, model, language, segments, duration, speaker_names
+  - Save dir: `~/.local/share/susurrus/history/` (XDG) or QStandardPaths
+  - Auto-save on transcription completion
+  - Load/list/delete/search (substring)
+- [x] `gui/widgets/history_panel.py` — History browser widget
+  - List view with metadata (date, file, backend, duration)
+  - Click to load transcript into output
+  - Delete button per entry
+  - Search/filter bar
+- [x] Wire into MainWindow as 4th tab or sidebar
+- [x] Unit tests: save/load/delete/search round-trip
+- [x] Live test: transcribe → verify history entry created
 
-- [x] `dots-tts` → CAM++ speaker encoder (`dots-tts-soar-spk`)
-- [x] `tada` → encoder + aligner (`tada-encoder`, `tada-aligner`)
+## P0 — Export Formats (SRT, VTT, JSON, CSV)
 
-## 8. Server Response Format
+- [x] `utils/export_formats.py` — format converters
+  - `export_srt(segments) → str`
+  - `export_vtt(segments) → str`
+  - `export_json(segments, metadata) → str`
+  - `export_csv(segments) → str`
+  - `export_txt(segments) → str`
+- [x] GUI: replace plain "Save" with format picker dialog (dropdown: TXT/SRT/VTT/JSON/CSV)
+- [x] CLI: `--output-format` flag for batch export
+- [x] Unit tests: each format with edge cases (empty, unicode, long segments)
 
-- [x] `diarized_json` in PARAM_MAP output format flags (`-odjson`)
+## P1 — Batch Queue (multi-file, sequential processing)
 
-## 9. Bug Fix
+- [x] `workers/batch_queue.py` — BatchJob + BatchQueue
+  - BatchJob: file_path, status (queued/running/done/error), progress, result
+  - Sequential drain: process next on completion
+  - Abort current + clear queue
+- [x] GUI: batch panel (drag-drop files or multi-select)
+  - Job list with status icons
+  - Progress per job
+  - Add/remove/retry controls
+- [x] Auto-save results to history on completion
+- [x] Unit tests: queue logic (enqueue, drain, abort, retry)
 
-- [x] `probe_backends()` — handle `{"backends": [...]}` dict-wrapper format
+## P1 — Progress Callback (deterministic %)
 
-## 10. Tests — 117 total, all pass
+- [x] Parse crispasr stderr progress lines (`progress: 0.45` or `[50%]`)
+- [x] Update QProgressBar with actual 0–100% instead of indeterminate
+- [x] Show RTF/WPS in progress area during transcription
+- [x] Unit tests: progress line parsing
 
-### Unit tests (103 tests, 7 skipped)
-- [x] PARAM_MAP entries for all new flags (TestCrispASR087Sync)
-- [x] Config registry entries for all new backends (TestCrispASR087Registry)
-- [x] Companion model resolution for dots-tts, tada (TestFFICompanionModels)
-- [x] FFI session setter kwargs for top_k, do_sample, tts_num_candidates, tts_noise_temp
-- [x] TTS backend map entries for tada, dots-tts, bananamind-tts
+## P1 — Inline Segment Editing + Speaker Names
 
-### Live integration tests (12 tests, 1 skipped)
-- [x] Binary version check
-- [x] `--list-backends-json` probe (handles dict-wrapper format)
-- [x] Backend presence check (whisper, parakeet)
-- [x] New 0.8.7 backends advisory check
-- [x] `--dry-run-resolve` for whisper and parakeet
-- [x] Transcribe with whisper tiny (CPU, 8GB safe)
-- [x] `--align-only` flag acceptance
-- [x] `--diarize-speakers` flag acceptance
-- [x] `--prefix-text` flag acceptance
-- [x] `--speaker-db-consent` flag acceptance
+- [x] Make transcription output editable (QTextEdit or segment list widget)
+- [x] Per-segment view with optional speaker label, timestamp, confidence
+- [x] Speaker name remapping: "Speaker 1" → user-provided name
+- [x] Edited flag on segments (for history persistence)
+- [x] Unit tests: segment model, rename, edit
+
+## P2 — Waveform Display
+
+- [x] `gui/widgets/waveform_widget.py` — simple waveform from PCM/WAV
+  - Load audio samples, downsample for display
+  - Playback position indicator
+  - Segment highlight regions (from timestamps)
+- [x] Integrate below audio file input in transcription tab
+- [x] Unit tests: sample loading, downsampling
+
+## P2 — Live Streaming in GUI
+
+- [x] Mic capture via sounddevice or PyAudio (16kHz mono)
+- [x] Pipe to CrispASR `--stream --mic` subprocess
+- [x] Real-time segment updates in output panel
+- [x] Start/Stop recording button
+- [x] Unit tests: mock stream, segment parsing
+
+## P2 — Light Theme + Confidence Colors
+
+- [x] `gui/themes.py` — light + dark theme definitions
+  - Light: white bg, dark text, blue accents
+  - Dark: current theme
+  - Toggle in menu or settings
+- [x] Speaker color palette (8 distinct colors, cycle)
+- [x] Confidence color coding: >=0.8 green, >=0.6 orange, <0.6 red
+- [x] Persist theme choice in QSettings
+- [x] Unit tests: theme application, color mapping
+
+## P3 — Voice Clone Wizard
+
+- [x] 3-step dialog: capture/select audio → enter/transcribe ref text → hand off to TTS tab
+- [x] Pre-populate TTS settings with reference audio + text
+- [x] Unit tests: wizard state transitions
+
+## P3 — i18n (German)
+
+- [x] Extract all user-visible strings to a translations dict
+- [x] German translation file
+- [x] Language selector in settings or menu
+- [x] Unit tests: string lookup, fallback to English
+
+## P3 — Log Viewer
+
+- [x] `gui/widgets/log_viewer.py` — real-time log display
+  - Ring buffer (last 1000 entries)
+  - Level filter (DEBUG/INFO/WARNING/ERROR)
+  - Search bar
+- [x] Accessible from Help menu or as a panel
+- [x] Unit tests: buffer append, filter, search
