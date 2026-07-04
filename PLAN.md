@@ -141,77 +141,130 @@ Inspired by CrisperWeaver comparison. Priority order by impact/effort.
 
 ---
 
-# Susurrus v2.6.0 — GUI Wiring & Polish Plan
+# Susurrus v2.6.0 — GUI Wiring & Polish Plan (DONE)
 
 ## W1 — Wire progress parser into TranscriptionThread (HIGH)
 
-- [ ] TranscriptionThread: read stderr, call `parse_progress_line()` on each line
-- [ ] New signal `progress_percent_signal = pyqtSignal(float)` (0.0–1.0)
-- [ ] MainWindow: connect signal → `QProgressBar.setValue(int(pct * 100))`
-- [ ] Switch `QProgressBar` from indeterminate (0,0) to determinate (0,100)
-- [ ] Display RTF/WPS in metrics panel when parsed
-- [ ] Unit test: mock stderr lines → verify signal emission
-- [ ] Fallback: stay indeterminate if no progress lines received
+- [x] TranscriptionThread: read stderr, call `parse_progress_line()` on each line
+- [x] New signal `progress_percent_signal = pyqtSignal(float)` (0.0–1.0)
+- [x] MainWindow: connect signal → `QProgressBar.setValue(int(pct * 100))`
+- [x] Switch `QProgressBar` from indeterminate (0,0) to determinate (0,100)
+- [x] Display RTF/WPS in metrics panel when parsed
+- [x] Unit test: mock stderr lines → verify signal emission
+- [x] Fallback: stay indeterminate if no progress lines received
 
 ## W2 — Wire segment model into transcription output (HIGH)
 
-- [ ] Replace `_transcription_segments` list-of-tuples with `TranscriptionResult`
-- [ ] Parse speaker labels from `[Speaker 1]` prefixes in output lines
-- [ ] Use `TranscriptionResult` in save_transcription (all export formats)
-- [ ] Use `TranscriptionResult` in auto-save to history
-- [ ] Unit test: parsing output lines with speaker labels → correct Segments
+- [x] Replace `_transcription_segments` list-of-tuples with `TranscriptionResult`
+- [x] Parse speaker labels from `[Speaker 1]` prefixes in output lines
+- [x] Use `TranscriptionResult` in save_transcription (all export formats)
+- [x] Use `TranscriptionResult` in auto-save to history
+- [x] Unit test: parsing output lines with speaker labels → correct Segments
 
 ## W3 — Place batch panel + waveform widget in transcription tab (HIGH)
 
-- [ ] Add `BatchPanel` below the output area (or as collapsible section)
-- [ ] Wire `BatchQueue` → `BatchPanel.set_queue()`
-- [ ] Add `WaveformWidget` below the audio file input row
-- [ ] Load waveform on file selection (`audio_input_path.textChanged`)
-- [ ] Highlight segment regions from `_transcription_segments`
-- [ ] Unit test: batch panel add/remove (mock queue)
+- [x] Add `BatchPanel` below the output area (or as collapsible section)
+- [x] Wire `BatchQueue` → `BatchPanel.set_queue()`
+- [x] Add `WaveformWidget` below the audio file input row
+- [x] Load waveform on file selection (`audio_input_path.textChanged`)
+- [x] Highlight segment regions from `_transcription_segments`
+- [x] Unit test: batch panel add/remove (mock queue)
 
 ## W4 — Pin dev tool versions to match CI (QUICK FIX)
 
-- [ ] `pyproject.toml [dev]`: pin `black==25.9.0`, `isort==6.1.0`, `ruff==0.15.7`, `bandit==1.9.4`
-- [ ] Update local dev env to match
-- [ ] Verify `python -m black --check .` passes with pinned version
+- [x] `pyproject.toml [dev]`: pin `black==25.9.0`, `isort==6.1.0`, `ruff==0.15.7`, `bandit==1.9.4`
+- [x] Update local dev env to match
+- [x] Verify `python -m black --check .` passes with pinned version
 
 ## W5 — Persist settings across restarts (MEDIUM)
 
-- [ ] Save/restore theme choice ("dark"/"light") in QSettings
-- [ ] Save/restore last-used backend, model, language in QSettings
-- [ ] Save/restore last-used TTS backend, voice in QSettings
-- [ ] Load persisted values in `__init__` before UI setup
-- [ ] Unit test: QSettings round-trip (mock)
+- [x] Save/restore theme choice ("dark"/"light") in QSettings
+- [x] Save/restore last-used backend, model, language in QSettings
+- [x] Save/restore last-used TTS backend, voice in QSettings
+- [x] Load persisted values in `__init__` before UI setup
+- [x] Unit test: QSettings round-trip (mock)
 
 ## W6 — Drag-and-drop into batch queue (MEDIUM)
 
-- [ ] Extend `dropEvent` to detect multi-file drops
-- [ ] First file → audio_input_path (existing behavior)
-- [ ] Additional files → batch queue
-- [ ] Visual feedback: highlight batch panel on drag hover
-- [ ] Unit test: drop event with multiple URLs
+- [x] Extend `dropEvent` to detect multi-file drops
+- [x] First file → audio_input_path (existing behavior)
+- [x] Additional files → batch queue
+- [x] Visual feedback: highlight batch panel on drag hover
+- [x] Unit test: drop event with multiple URLs
 
 ## W7 — Keyboard shortcuts (MEDIUM)
 
-- [ ] F5 = Transcribe (already wired in menu)
-- [ ] Ctrl+S = Save (already wired)
-- [ ] Ctrl+Shift+S = Save As (with format picker)
-- [ ] Ctrl+H = Switch to History tab
-- [ ] Ctrl+T = Toggle Light/Dark theme
-- [ ] Arrow Up/Down in segment list = navigate segments
-- [ ] Document shortcuts in Help → Keyboard Shortcuts dialog
+- [x] F5 = Transcribe (already wired in menu)
+- [x] Ctrl+S = Save (already wired)
+- [x] Ctrl+Shift+S = Save As (with format picker)
+- [x] Ctrl+H = Switch to History tab
+- [x] Ctrl+T = Toggle Light/Dark theme
+- [x] Arrow Up/Down in segment list = navigate segments
+- [x] Document shortcuts in Help → Keyboard Shortcuts dialog
 
 ## W8 — Server mode toggle in GUI (LOWER)
 
-- [ ] Settings dialog or Tools menu: "Start Server" toggle
-- [ ] Port field (default 8080)
-- [ ] Uses `CrispasrBackend.start_server()` in background thread
-- [ ] Status indicator: "Server running on :8080"
-- [ ] Stop button
+- [x] Settings dialog or Tools menu: "Start Server" toggle
+- [x] Port field (default 8080)
+- [x] Uses `CrispasrBackend.start_server()` in background thread
+- [x] Status indicator: "Server running on :8080"
+- [x] Stop button
 
 ## W9 — About dialog + README refresh (LOWER)
 
-- [ ] Update About dialog with current version, feature counts
-- [ ] Update README feature counts, architecture diagram
-- [ ] Add "What's New" section to README or link to releases
+- [x] Update About dialog with current version, feature counts
+- [x] Update README feature counts, architecture diagram
+- [x] Add "What's New" section to README or link to releases
+
+---
+
+# Susurrus v2.7.0 — Real-World Usability & Testing Plan
+
+## R1 — Run the GUI and fix what's broken (HIGHEST)
+
+- [ ] Launch `python main.py`, check window renders without errors
+- [ ] Fix any import errors, missing widgets, layout issues
+- [ ] Test: select audio file → waveform loads
+- [ ] Test: transcribe → progress bar works, output appears, segments stored
+- [ ] Test: save → format picker dialog, each format produces valid file
+- [ ] Test: History tab → entries appear, search works, load works
+- [ ] Test: toggle theme → both themes render correctly
+- [ ] Test: drag-drop file → input populated
+- [ ] Test: View → Show Logs → log viewer dialog appears
+- [ ] Fix all issues found; document any that require display-dependent fixes
+
+## R2 — End-to-end CLI integration test (HIGH)
+
+- [ ] `tests/integration/test_cli_e2e.py` — end-to-end CLI tests
+- [ ] Test: `cli.py --backend crispasr --model auto:q5_0 --file jfk.wav` → output contains words
+- [ ] Test: `cli.py --output-format srt --file jfk.wav` → valid SRT output
+- [ ] Test: `cli.py --output-format json --file jfk.wav` → valid JSON with segments
+- [ ] Test: `cli.py --mode align --text-file ref.txt --file jfk.wav` → runs or skips gracefully
+- [ ] Test: `cli.py --list-backends` → lists backends without error
+- [ ] All tests: ≤120s timeout, CPU-only, auto-skip without binary/audio
+- [ ] Auto-skip if no crispasr binary or no test audio file
+
+## R3 — Segment list view (replaces QPlainTextEdit) (HIGH)
+
+- [ ] `gui/widgets/segment_list_widget.py` — custom widget
+  - One row per segment: [speaker chip] [timestamp] [editable text] [confidence badge]
+  - Speaker chip colored from gui/themes.speaker_color()
+  - Confidence badge colored from gui/themes.confidence_color()
+  - Double-click text to edit inline → sets segment.edited = True
+  - Right-click context menu: rename speaker, copy text, delete segment
+  - Arrow key navigation between segments
+- [ ] Replace `self.transcription_output` (QPlainTextEdit) with SegmentListWidget
+- [ ] Wire to TranscriptionResult for data, export_formats for save
+- [ ] Fallback: show plain text if no structured segments available
+- [ ] Unit test: add/edit/delete segments, speaker rename, keyboard nav
+
+## R4 — CI integration test job (MEDIUM)
+
+- [ ] `.github/workflows/ci.yml`: add `integration` job
+  - Runs on ubuntu-latest only (not full matrix)
+  - Downloads crispasr binary (latest release)
+  - Installs libopenblas-dev (for binary shared libs)
+  - Runs `python -m unittest discover -s tests/integration -v`
+  - `continue-on-error: true` (advisory, doesn't block merges)
+- [ ] Gate integration tests behind `SUSURRUS_INTEGRATION=1` env var
+- [ ] Unit test: verify the CI job YAML is valid (parse check)

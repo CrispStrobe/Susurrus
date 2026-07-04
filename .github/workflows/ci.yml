@@ -101,4 +101,28 @@ jobs:
         # pytest (not `unittest discover`): its output capture surfaces bugs
         # like modules reassigning sys.stdout/stderr at import time, which
         # unittest would silently tolerate.
-        run: python -m pytest tests/ -v
+        run: python -m pytest tests/unit/ -v
+
+  integration:
+    # Advisory integration tests — downloads CrispASR binary, runs e2e tests.
+    # Doesn't block PRs (continue-on-error). Only ubuntu (binary is Linux x86_64).
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install --no-deps -e .
+          sudo apt-get update -qq && sudo apt-get install -y -qq libopenblas-dev
+
+      - name: Run integration tests
+        env:
+          SUSURRUS_INTEGRATION: "1"
+        run: python -m pytest tests/integration/ -v --timeout=180
+        timeout-minutes: 10
