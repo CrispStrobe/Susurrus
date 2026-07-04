@@ -1,10 +1,9 @@
 # gui/widgets/batch_panel.py
 """Batch processing panel — queue multiple files for sequential transcription."""
 
-import logging
 import os
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,

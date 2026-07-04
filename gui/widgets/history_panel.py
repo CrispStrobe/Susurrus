@@ -2,7 +2,6 @@
 """History browser panel — view, search, load, delete past transcriptions."""
 
 import logging
-import os
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
