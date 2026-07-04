@@ -126,9 +126,7 @@ class BatchPanel(QWidget):
         if not self._queue:
             return
         for job in self._queue.jobs:
-            icon = {"queued": "⏳", "running": "▶", "done": "✓", "error": "✗"}.get(
-                job.status, "?"
-            )
+            icon = {"queued": "⏳", "running": "▶", "done": "✓", "error": "✗"}.get(job.status, "?")
             name = os.path.basename(job.file_path)
             display = f"{icon}  {name}"
             if job.status == "error":

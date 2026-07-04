@@ -324,7 +324,9 @@ class ImportChecker:
 
             if unused:
                 rel_path = filepath.relative_to(self.project_root)
-                self.warnings.append(f"⚠️  {rel_path}: Possibly unused imports: {', '.join(unused)}")
+                self.warnings.append(
+                    f"⚠️  {rel_path}: Possibly unused imports: {', '.join(unused)}"
+                )
 
     def _check_import_order(self):
         """Check import ordering (stdlib, third-party, local)"""

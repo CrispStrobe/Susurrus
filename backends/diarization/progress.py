@@ -1,5 +1,6 @@
 # backends/diarization/progress.py
 """Progress indicators for diarization"""
+
 import threading
 import time
 

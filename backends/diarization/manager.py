@@ -1,5 +1,6 @@
 # backends/diarization/manager.py
 """Diarization manager"""
+
 import json
 import logging
 import os

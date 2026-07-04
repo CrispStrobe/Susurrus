@@ -73,9 +73,7 @@ class WaveformWidget(QWidget):
         if duration <= 0:
             self._segments = []
         else:
-            self._segments = [
-                (s / duration, e / duration, c) for s, e, c in segments
-            ]
+            self._segments = [(s / duration, e / duration, c) for s, e, c in segments]
         self.update()
 
     def set_playback_position(self, fraction):
