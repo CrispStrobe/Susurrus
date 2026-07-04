@@ -144,6 +144,10 @@ class MainWindow(QWidget):
         translation_tab = self._create_translation_tab()
         self.tab_widget.addTab(translation_tab, "Translation")
 
+        # History tab
+        history_tab = self._create_history_tab()
+        self.tab_widget.addTab(history_tab, "History")
+
         # Apply styling
         self._apply_styling()
 
@@ -282,6 +286,35 @@ class MainWindow(QWidget):
         self.translation_widget = TranslationSettingsWidget()
         self.translation_widget.translate_btn.clicked.connect(self.start_translation)
         return self.translation_widget
+
+    # ---- History Tab ----
+
+    def _create_history_tab(self):
+        """Create the history browser tab."""
+        from gui.widgets.history_panel import HistoryPanel
+
+        self.history_panel = HistoryPanel()
+        self.history_panel.load_entry_signal.connect(self._on_load_history_entry)
+        return self.history_panel
+
+    def _on_load_history_entry(self, entry):
+        """Load a history entry into the transcription output."""
+        self.transcription_output.clear()
+        text_parts = []
+        segments = []
+        for seg in entry.segments:
+            start, end, text = seg[0], seg[1], seg[2]
+            segments.append((start, end, text))
+            if start > 0 or end > 0:
+                text_parts.append(f"[{start:.2f} --> {end:.2f}]  {text}")
+            else:
+                text_parts.append(text)
+        output = "\n".join(text_parts)
+        self.transcription_output.setPlainText(output)
+        self.transcription_text = output
+        self._transcription_segments = segments
+        self.save_button.setEnabled(True)
+        self.tab_widget.setCurrentIndex(0)  # Switch to transcription tab
 
     # ---- Configuration ----
 
@@ -426,60 +459,39 @@ class MainWindow(QWidget):
         self.model_id.setCurrentText(default_model)
 
     def _apply_styling(self):
-        """Apply application styling"""
-        self.setStyleSheet(
-            """
-            QWidget {
-                background-color: #2b2b2b;
-                color: #ffffff;
-                font-family: 'Segoe UI', Arial, sans-serif;
-            }
-            QLabel {
-                font-size: 14px;
-            }
-            QPushButton {
-                background-color: #4a4a4a;
-                border: none;
-                padding: 8px;
-                border-radius: 4px;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #5a5a5a;
-            }
-            QPushButton:pressed {
-                background-color: #3a3a3a;
-            }
-            QLineEdit, QComboBox, QPlainTextEdit {
-                background-color: #3a3a3a;
-                border: 1px solid #555555;
-                border-radius: 4px;
-                padding: 5px;
-                font-size: 14px;
-            }
-            QTabWidget::pane {
-                border: 1px solid #555555;
-                background-color: #2b2b2b;
-            }
-            QTabBar::tab {
-                background-color: #3a3a3a;
-                color: #cccccc;
-                padding: 8px 20px;
-                border: 1px solid #555555;
-                border-bottom: none;
-                border-top-left-radius: 4px;
-                border-top-right-radius: 4px;
-            }
-            QTabBar::tab:selected {
-                background-color: #2b2b2b;
-                color: #ffffff;
-                font-weight: bold;
-            }
-            QTabBar::tab:hover {
-                background-color: #4a4a4a;
-            }
-        """
-        )
+        """Apply application styling using the current theme."""
+        from gui.themes import THEMES
+
+        theme_name = getattr(self, "_current_theme", "dark")
+        css = THEMES.get(theme_name, THEMES["dark"])
+        self.setStyleSheet(css)
+
+    def _toggle_theme(self):
+        """Toggle between light and dark themes."""
+        current = getattr(self, "_current_theme", "dark")
+        self._current_theme = "light" if current == "dark" else "dark"
+        self._apply_styling()
+
+    def _show_log_viewer(self):
+        """Show the log viewer in a dialog."""
+        from gui.widgets.log_viewer import LogViewer
+
+        if not hasattr(self, "_log_viewer_dialog"):
+            from PyQt6.QtWidgets import QDialog, QVBoxLayout as QVL
+
+            dlg = QDialog(self)
+            dlg.setWindowTitle("Susurrus Logs")
+            dlg.resize(800, 500)
+            lay = QVL(dlg)
+            viewer = LogViewer(dlg)
+            # Attach handler to root logger
+            handler = viewer.get_handler()
+            handler.setLevel(logging.DEBUG)
+            logging.getLogger().addHandler(handler)
+            lay.addWidget(viewer)
+            self._log_viewer_dialog = dlg
+        self._log_viewer_dialog.show()
+        self._log_viewer_dialog.raise_()
 
     def create_menu_bar(self):
         """Create application menu bar"""
@@ -552,6 +564,17 @@ class MainWindow(QWidget):
         voxtral_deps_action = QAction("Install &Voxtral Dependencies...", self)
         voxtral_deps_action.triggered.connect(self.install_voxtral_dependencies)
         tools_menu.addAction(voxtral_deps_action)
+
+        # View menu
+        view_menu = menu_bar.addMenu("&View")
+
+        toggle_theme_action = QAction("Toggle &Light/Dark Theme", self)
+        toggle_theme_action.triggered.connect(self._toggle_theme)
+        view_menu.addAction(toggle_theme_action)
+
+        show_logs_action = QAction("Show &Logs", self)
+        show_logs_action.triggered.connect(self._show_log_viewer)
+        view_menu.addAction(show_logs_action)
 
         # Help menu
         help_menu = menu_bar.addMenu("&Help")
