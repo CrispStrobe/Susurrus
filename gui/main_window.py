@@ -40,6 +40,7 @@ from .widgets import (
     TTSSettingsWidget,
     VoxtralSettingsBox,
 )
+from .widgets.collapsible_box import CollapsibleBox
 
 
 class MainWindow(QWidget):
@@ -163,6 +164,14 @@ class MainWindow(QWidget):
         input_row = self._create_input_row()
         layout.addLayout(input_row)
 
+        # Waveform display (below input, above buttons)
+        from gui.widgets.waveform_widget import WaveformWidget
+
+        self.waveform_widget = WaveformWidget()
+        self.waveform_widget.setVisible(False)
+        layout.addWidget(self.waveform_widget)
+        self.audio_input_path.textChanged.connect(self._on_audio_file_changed)
+
         # Action buttons
         button_layout = self._create_button_row()
         layout.addLayout(button_layout)
@@ -194,6 +203,16 @@ class MainWindow(QWidget):
         self.progress_bar.setRange(0, 0)
         self.progress_bar.setVisible(False)
         layout.addWidget(self.progress_bar)
+
+        # Batch panel (collapsible)
+        from gui.widgets.batch_panel import BatchPanel
+
+        batch_box = CollapsibleBox("Batch Queue")
+        self.batch_panel = BatchPanel()
+        batch_layout = QVBoxLayout()
+        batch_layout.addWidget(self.batch_panel)
+        batch_box.setContentLayout(batch_layout)
+        layout.addWidget(batch_box)
 
         return tab
 
@@ -296,6 +315,13 @@ class MainWindow(QWidget):
         self.history_panel = HistoryPanel()
         self.history_panel.load_entry_signal.connect(self._on_load_history_entry)
         return self.history_panel
+
+    def _switch_to_history(self):
+        """Switch to the History tab and refresh."""
+        # History is the 4th tab (index 3)
+        self.tab_widget.setCurrentIndex(3)
+        if hasattr(self, "history_panel"):
+            self.history_panel.refresh()
 
     def _on_load_history_entry(self, entry):
         """Load a history entry into the transcription output."""
@@ -462,15 +488,30 @@ class MainWindow(QWidget):
         """Apply application styling using the current theme."""
         from gui.themes import THEMES
 
-        theme_name = getattr(self, "_current_theme", "dark")
-        css = THEMES.get(theme_name, THEMES["dark"])
+        if not hasattr(self, "_current_theme"):
+            # Load from QSettings on first call
+            try:
+                from config import get_settings
+
+                settings = get_settings()
+                self._current_theme = settings.value("theme", "dark")
+            except Exception:
+                self._current_theme = "dark"
+
+        css = THEMES.get(self._current_theme, THEMES["dark"])
         self.setStyleSheet(css)
 
     def _toggle_theme(self):
-        """Toggle between light and dark themes."""
+        """Toggle between light and dark themes and persist."""
         current = getattr(self, "_current_theme", "dark")
         self._current_theme = "light" if current == "dark" else "dark"
         self._apply_styling()
+        try:
+            from config import get_settings
+
+            get_settings().setValue("theme", self._current_theme)
+        except Exception:
+            pass
 
     def _show_log_viewer(self):
         """Show the log viewer in a dialog."""
@@ -570,8 +611,14 @@ class MainWindow(QWidget):
         view_menu = menu_bar.addMenu("&View")
 
         toggle_theme_action = QAction("Toggle &Light/Dark Theme", self)
+        toggle_theme_action.setShortcut("Ctrl+T")
         toggle_theme_action.triggered.connect(self._toggle_theme)
         view_menu.addAction(toggle_theme_action)
+
+        show_history_action = QAction("&History Tab", self)
+        show_history_action.setShortcut("Ctrl+H")
+        show_history_action.triggered.connect(self._switch_to_history)
+        view_menu.addAction(show_history_action)
 
         show_logs_action = QAction("Show &Logs", self)
         show_logs_action.triggered.connect(self._show_log_viewer)
@@ -597,9 +644,16 @@ class MainWindow(QWidget):
 
     def dropEvent(self, event):
         urls = event.mimeData().urls()
-        if urls and urls[0].isLocalFile():
-            file_path = urls[0].toLocalFile()
-            self.audio_input_path.setText(file_path)
+        if not urls:
+            return
+        local_files = [u.toLocalFile() for u in urls if u.isLocalFile()]
+        if not local_files:
+            return
+        # First file goes to the audio input
+        self.audio_input_path.setText(local_files[0])
+        # Additional files go to the batch queue
+        if len(local_files) > 1 and hasattr(self, "batch_panel"):
+            self.batch_panel.add_files(local_files[1:])
 
     # Action methods
     def select_audio_file(self):
@@ -612,6 +666,18 @@ class MainWindow(QWidget):
         )
         if file_name:
             self.audio_input_path.setText(file_name)
+
+    def _on_audio_file_changed(self, path):
+        """Load waveform when audio file changes."""
+        if path and os.path.isfile(path) and path.lower().endswith(".wav"):
+            try:
+                self.waveform_widget.load_wav(path)
+                self.waveform_widget.setVisible(True)
+            except Exception:
+                self.waveform_widget.setVisible(False)
+        else:
+            self.waveform_widget.clear()
+            self.waveform_widget.setVisible(False)
 
     def check_transcribe_button_state(self):
         if self.audio_input_path.text().strip() or self.audio_url.text().strip():
@@ -635,6 +701,7 @@ class MainWindow(QWidget):
 
         self.thread = TranscriptionThread(args)
         self.thread.progress_signal.connect(self.update_outputs)
+        self.thread.progress_percent_signal.connect(self._update_progress_bar)
         self.thread.error_signal.connect(self.show_error)
         self.thread.finished.connect(self.on_transcription_finished)
         self.thread.transcription_replace_signal.connect(self.replace_transcription_output)
@@ -646,10 +713,12 @@ class MainWindow(QWidget):
 
         self.transcribe_button.setEnabled(False)
         self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 0)  # start indeterminate
         self.abort_button.setEnabled(True)
         self.transcription_output.clear()
         self.metrics_output.clear()
         self._transcription_segments = []
+        self._transcription_result = None
 
     def _collect_transcription_args(self):
         """Collect transcription arguments from UI"""
@@ -894,6 +963,13 @@ class MainWindow(QWidget):
         logging.info("Transcription process finished.")
         self._auto_save_history()
 
+    def _update_progress_bar(self, fraction):
+        """Update progress bar with deterministic 0-100% progress."""
+        if self.progress_bar.maximum() == 0:
+            # Switch from indeterminate to determinate on first real progress
+            self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(int(fraction * 100))
+
     def update_outputs(self, metrics, transcription):
         if metrics:
             self.metrics_output.appendPlainText(metrics)
@@ -905,20 +981,38 @@ class MainWindow(QWidget):
             self._parse_and_store_segment(transcription)
 
     def _parse_and_store_segment(self, line):
-        """Parse a transcription output line and store as a segment tuple."""
+        """Parse a transcription output line and store as a Segment."""
         import re
 
+        from utils.segment_model import TranscriptionResult
+
+        if not hasattr(self, "_transcription_result"):
+            self._transcription_result = TranscriptionResult()
         if not hasattr(self, "_transcription_segments"):
             self._transcription_segments = []
-        m = re.match(r"\[(\d+:\d+:\d+\.\d+)\s*-->\s*(\d+:\d+:\d+\.\d+)\]\s*(.*)", line.strip())
+
+        stripped = line.strip()
+        if not stripped:
+            return
+
+        # Try [HH:MM:SS.mmm --> HH:MM:SS.mmm] text format
+        m = re.match(r"\[(\d+:\d+:\d+\.\d+)\s*-->\s*(\d+:\d+:\d+\.\d+)\]\s*(.*)", stripped)
         if m:
             start = self._parse_ts_for_segment(m.group(1))
             end = self._parse_ts_for_segment(m.group(2))
             text = m.group(3).strip()
+            # Parse optional [Speaker N] prefix
+            speaker = None
+            spk_m = re.match(r"\[([^\]]+)\]\s*(.*)", text)
+            if spk_m and spk_m.group(1).startswith("Speaker"):
+                speaker = spk_m.group(1)
+                text = spk_m.group(2)
             if text:
+                self._transcription_result.add_segment(start, end, text, speaker=speaker)
                 self._transcription_segments.append((start, end, text))
-        elif line.strip():
-            self._transcription_segments.append((0.0, 0.0, line.strip()))
+        else:
+            self._transcription_result.add_segment(0.0, 0.0, stripped)
+            self._transcription_segments.append((0.0, 0.0, stripped))
 
     @staticmethod
     def _parse_ts_for_segment(ts_str):
@@ -1055,6 +1149,7 @@ class MainWindow(QWidget):
 
     def _auto_save_history(self):
         """Auto-save transcription to history on completion."""
+        tr = getattr(self, "_transcription_result", None)
         segments = getattr(self, "_transcription_segments", [])
         text = getattr(self, "transcription_text", "")
         if not segments and not text:
@@ -1063,8 +1158,12 @@ class MainWindow(QWidget):
             from utils.history_service import HistoryEntry, HistoryService
 
             source = ""
-            if hasattr(self, "audio_input"):
-                source = self.audio_input.text()
+            if hasattr(self, "audio_input_path"):
+                source = self.audio_input_path.text()
+
+            speaker_names = {}
+            if tr and tr.speaker_names:
+                speaker_names = tr.speaker_names
 
             entry = HistoryEntry(
                 source_path=source,
@@ -1073,6 +1172,7 @@ class MainWindow(QWidget):
                 language=getattr(self, "_last_language", None),
                 segments=segments,
                 full_text=text,
+                speaker_names=speaker_names,
             )
             HistoryService().save(entry)
             logging.info("Transcription auto-saved to history: %s", entry.id)
@@ -1166,18 +1266,23 @@ class MainWindow(QWidget):
             self,
             "About Susurrus",
             f"<h1>{APP_NAME}</h1>"
-            f"<p>Audio Transcription, TTS & Translation Suite</p>"
+            f"<p>Audio Transcription, TTS, Translation & S2S Suite</p>"
             f"<p>Version {APP_VERSION}</p>"
             "<p>Features:</p>"
             "<ul>"
-            "<li>24+ ASR backends via CrispASR</li>"
-            "<li>7+ TTS engines (local and cloud)</li>"
-            "<li>Multi-language translation (m2m100, MadLad)</li>"
+            "<li>38+ ASR backends via CrispASR (v0.8.7)</li>"
+            "<li>27+ TTS engines (local and cloud)</li>"
+            "<li>Multi-language translation (m2m100, MadLad, Gemma4)</li>"
+            "<li>Speech-to-speech (lfm2-audio, mini-omni2)</li>"
             "<li>Speaker diarization (PyAnnote + CrispASR methods)</li>"
-            "<li>Language identification</li>"
-            "<li>Streaming transcription</li>"
-            "<li>Text extraction from PDF, EPUB, HTML, Markdown</li>"
-            "</ul>",
+            "<li>Export: SRT, VTT, JSON, CSV, TXT</li>"
+            "<li>Transcription history with search</li>"
+            "<li>Batch processing queue</li>"
+            "<li>Light/dark themes</li>"
+            "<li>Waveform display, real-time progress</li>"
+            "<li>Standalone alignment (--align-only)</li>"
+            "</ul>"
+            "<p>Shortcuts: F5=Transcribe, Ctrl+S=Save, Ctrl+T=Theme, Ctrl+H=History</p>",
         )
 
     def show_diarization_help(self):

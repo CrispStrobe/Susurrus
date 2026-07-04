@@ -138,3 +138,80 @@ Inspired by CrisperWeaver comparison. Priority order by impact/effort.
   - Search bar
 - [x] Accessible from Help menu or as a panel
 - [x] Unit tests: buffer append, filter, search
+
+---
+
+# Susurrus v2.6.0 — GUI Wiring & Polish Plan
+
+## W1 — Wire progress parser into TranscriptionThread (HIGH)
+
+- [ ] TranscriptionThread: read stderr, call `parse_progress_line()` on each line
+- [ ] New signal `progress_percent_signal = pyqtSignal(float)` (0.0–1.0)
+- [ ] MainWindow: connect signal → `QProgressBar.setValue(int(pct * 100))`
+- [ ] Switch `QProgressBar` from indeterminate (0,0) to determinate (0,100)
+- [ ] Display RTF/WPS in metrics panel when parsed
+- [ ] Unit test: mock stderr lines → verify signal emission
+- [ ] Fallback: stay indeterminate if no progress lines received
+
+## W2 — Wire segment model into transcription output (HIGH)
+
+- [ ] Replace `_transcription_segments` list-of-tuples with `TranscriptionResult`
+- [ ] Parse speaker labels from `[Speaker 1]` prefixes in output lines
+- [ ] Use `TranscriptionResult` in save_transcription (all export formats)
+- [ ] Use `TranscriptionResult` in auto-save to history
+- [ ] Unit test: parsing output lines with speaker labels → correct Segments
+
+## W3 — Place batch panel + waveform widget in transcription tab (HIGH)
+
+- [ ] Add `BatchPanel` below the output area (or as collapsible section)
+- [ ] Wire `BatchQueue` → `BatchPanel.set_queue()`
+- [ ] Add `WaveformWidget` below the audio file input row
+- [ ] Load waveform on file selection (`audio_input_path.textChanged`)
+- [ ] Highlight segment regions from `_transcription_segments`
+- [ ] Unit test: batch panel add/remove (mock queue)
+
+## W4 — Pin dev tool versions to match CI (QUICK FIX)
+
+- [ ] `pyproject.toml [dev]`: pin `black==25.9.0`, `isort==6.1.0`, `ruff==0.15.7`, `bandit==1.9.4`
+- [ ] Update local dev env to match
+- [ ] Verify `python -m black --check .` passes with pinned version
+
+## W5 — Persist settings across restarts (MEDIUM)
+
+- [ ] Save/restore theme choice ("dark"/"light") in QSettings
+- [ ] Save/restore last-used backend, model, language in QSettings
+- [ ] Save/restore last-used TTS backend, voice in QSettings
+- [ ] Load persisted values in `__init__` before UI setup
+- [ ] Unit test: QSettings round-trip (mock)
+
+## W6 — Drag-and-drop into batch queue (MEDIUM)
+
+- [ ] Extend `dropEvent` to detect multi-file drops
+- [ ] First file → audio_input_path (existing behavior)
+- [ ] Additional files → batch queue
+- [ ] Visual feedback: highlight batch panel on drag hover
+- [ ] Unit test: drop event with multiple URLs
+
+## W7 — Keyboard shortcuts (MEDIUM)
+
+- [ ] F5 = Transcribe (already wired in menu)
+- [ ] Ctrl+S = Save (already wired)
+- [ ] Ctrl+Shift+S = Save As (with format picker)
+- [ ] Ctrl+H = Switch to History tab
+- [ ] Ctrl+T = Toggle Light/Dark theme
+- [ ] Arrow Up/Down in segment list = navigate segments
+- [ ] Document shortcuts in Help → Keyboard Shortcuts dialog
+
+## W8 — Server mode toggle in GUI (LOWER)
+
+- [ ] Settings dialog or Tools menu: "Start Server" toggle
+- [ ] Port field (default 8080)
+- [ ] Uses `CrispasrBackend.start_server()` in background thread
+- [ ] Status indicator: "Server running on :8080"
+- [ ] Stop button
+
+## W9 — About dialog + README refresh (LOWER)
+
+- [ ] Update About dialog with current version, feature counts
+- [ ] Update README feature counts, architecture diagram
+- [ ] Add "What's New" section to README or link to releases

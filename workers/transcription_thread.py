@@ -19,6 +19,7 @@ class TranscriptionThread(QThread):
     """Thread for running transcription workers"""
 
     progress_signal = pyqtSignal(str, str)  # metrics, transcription
+    progress_percent_signal = pyqtSignal(float)  # 0.0-1.0 deterministic progress
     error_signal = pyqtSignal(str)
     transcription_replace_signal = pyqtSignal(str)
     diarization_signal = pyqtSignal(str)
@@ -304,14 +305,26 @@ class TranscriptionThread(QThread):
                 bufsize=1,
             )
 
-            # Read stderr in separate thread
+            # Read stderr in separate thread, parse progress lines
             def read_stderr():
+                from utils.progress_parser import parse_progress_line
+
                 for line in self.process.stderr:
                     if not self._is_running:
                         break
                     line = line.decode("utf-8", errors="replace").rstrip()
                     if line:
-                        self.progress_signal.emit(line, "")
+                        # Try to extract deterministic progress
+                        info = parse_progress_line(line)
+                        if "progress" in info:
+                            self.progress_percent_signal.emit(info["progress"])
+                        # Build metrics string with RTF/WPS if available
+                        extra = ""
+                        if "rtf" in info:
+                            extra += f" RTF={info['rtf']:.1f}x"
+                        if "wps" in info:
+                            extra += f" WPS={info['wps']:.0f}"
+                        self.progress_signal.emit(line + extra, "")
 
             stderr_thread = threading.Thread(target=read_stderr, daemon=True)
             stderr_thread.start()
