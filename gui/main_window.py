@@ -149,6 +149,9 @@ class MainWindow(QWidget):
         history_tab = self._create_history_tab()
         self.tab_widget.addTab(history_tab, "History")
 
+        # Auto-refresh history when switching to that tab
+        self.tab_widget.currentChanged.connect(self._on_tab_changed)
+
         # Apply styling
         self._apply_styling()
 
@@ -204,11 +207,17 @@ class MainWindow(QWidget):
         self.progress_bar.setVisible(False)
         layout.addWidget(self.progress_bar)
 
-        # Batch panel (collapsible)
+        # Batch panel (collapsible) with wired queue
         from gui.widgets.batch_panel import BatchPanel
+        from workers.batch_queue import BatchQueue
 
+        self._batch_queue = BatchQueue(
+            on_job_done=self._on_batch_job_done,
+            on_job_error=self._on_batch_job_error,
+        )
         batch_box = CollapsibleBox("Batch Queue")
         self.batch_panel = BatchPanel()
+        self.batch_panel.set_queue(self._batch_queue)
         batch_layout = QVBoxLayout()
         batch_layout.addWidget(self.batch_panel)
         batch_box.setContentLayout(batch_layout)
@@ -276,11 +285,13 @@ class MainWindow(QWidget):
         metrics_layout.addWidget(metrics_label)
         metrics_layout.addWidget(self.metrics_output)
 
-        # Transcription output
+        # Transcription output (segment list with fallback to plain text)
         transcription_layout = QVBoxLayout()
         transcription_label = QLabel("Transcription")
-        self.transcription_output = QPlainTextEdit()
-        self.transcription_output.setReadOnly(True)
+        from gui.widgets.segment_list_widget import SegmentListWidget
+
+        self.transcription_output = SegmentListWidget()
+        self.transcription_output.segment_edited.connect(self._on_segment_edited)
         transcription_layout.addWidget(transcription_label)
         transcription_layout.addWidget(self.transcription_output)
 
@@ -315,6 +326,12 @@ class MainWindow(QWidget):
         self.history_panel = HistoryPanel()
         self.history_panel.load_entry_signal.connect(self._on_load_history_entry)
         return self.history_panel
+
+    def _on_tab_changed(self, index):
+        """Auto-refresh panels when switching tabs."""
+        # History is tab index 3
+        if index == 3 and hasattr(self, "history_panel"):
+            self.history_panel.refresh()
 
     def _switch_to_history(self):
         """Switch to the History tab and refresh."""
@@ -974,11 +991,21 @@ class MainWindow(QWidget):
         if metrics:
             self.metrics_output.appendPlainText(metrics)
         if transcription:
-            self.transcription_output.appendPlainText(transcription)
+            # Parse segment first
+            self._parse_and_store_segment(transcription)
+
+            # If we have structured segments, add as a segment row
+            tr = getattr(self, "_transcription_result", None)
+            if tr and tr.segments:
+                seg = tr.segments[-1]  # last added
+                idx = len(tr.segments) - 1
+                speaker_display = tr.display_speaker(seg.speaker)
+                self.transcription_output.add_segment(idx, seg, speaker_display)
+            else:
+                self.transcription_output.appendPlainText(transcription)
+
             self.save_button.setEnabled(True)
             self.transcription_text = self.transcription_output.toPlainText()
-            # Parse and store segment for structured export
-            self._parse_and_store_segment(transcription)
 
     def _parse_and_store_segment(self, line):
         """Parse a transcription output line and store as a Segment."""
@@ -1013,6 +1040,14 @@ class MainWindow(QWidget):
         else:
             self._transcription_result.add_segment(0.0, 0.0, stripped)
             self._transcription_segments.append((0.0, 0.0, stripped))
+
+    def _on_segment_edited(self, index, new_text):
+        """Handle inline segment edit from SegmentListWidget."""
+        tr = getattr(self, "_transcription_result", None)
+        if tr:
+            tr.edit_segment(index, new_text)
+            self.transcription_text = self.transcription_output.toPlainText()
+            logging.info("Segment %d edited", index)
 
     @staticmethod
     def _parse_ts_for_segment(ts_str):
@@ -1178,6 +1213,34 @@ class MainWindow(QWidget):
             logging.info("Transcription auto-saved to history: %s", entry.id)
         except Exception as e:
             logging.warning("Failed to auto-save history: %s", e)
+
+    # ---- Batch callbacks ----
+
+    def _on_batch_job_done(self, job):
+        """Auto-save a completed batch job to history and refresh panel."""
+        try:
+            from utils.history_service import HistoryEntry, HistoryService
+
+            entry = HistoryEntry(
+                source_path=job.file_path,
+                backend=job.backend,
+                model=job.model,
+                language=job.language,
+                segments=job.result_segments,
+                full_text=job.result_text,
+            )
+            HistoryService().save(entry)
+            logging.info("Batch job saved to history: %s", job.file_path)
+        except Exception as e:
+            logging.warning("Failed to save batch job to history: %s", e)
+        if hasattr(self, "batch_panel"):
+            self.batch_panel.update_display()
+
+    def _on_batch_job_error(self, job):
+        """Refresh batch panel on error."""
+        logging.error("Batch job failed: %s — %s", job.file_path, job.error_message)
+        if hasattr(self, "batch_panel"):
+            self.batch_panel.update_display()
 
     # ---- Save ----
 

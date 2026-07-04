@@ -197,3 +197,16 @@ class SegmentListWidget(QWidget):
 
     def _on_row_edited(self, index, new_text):
         self.segment_edited.emit(index, new_text)
+
+    # Qt-compatible aliases so this is a drop-in for QPlainTextEdit
+    def setPlainText(self, text):
+        self.set_plain_text(text)
+
+    def appendPlainText(self, text):
+        self.append_plain_text(text)
+
+    def toPlainText(self):
+        return self.to_plain_text()
+
+    def setReadOnly(self, readonly):
+        self._plain_text.setReadOnly(readonly)

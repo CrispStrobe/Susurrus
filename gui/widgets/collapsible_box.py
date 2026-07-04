@@ -24,11 +24,10 @@ class CollapsibleBox(QWidget):
     def get_button_style(self):
         return """
             text-align: left;
-            background-color: #3a3a3a;
-            color: white;
             padding: 5px;
             font-size: 14px;
             border: none;
+            font-weight: bold;
         """
 
     def toggle(self):
