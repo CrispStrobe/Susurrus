@@ -477,7 +477,8 @@ class MainWindow(QWidget):
         from gui.widgets.log_viewer import LogViewer
 
         if not hasattr(self, "_log_viewer_dialog"):
-            from PyQt6.QtWidgets import QDialog, QVBoxLayout as QVL
+            from PyQt6.QtWidgets import QDialog
+            from PyQt6.QtWidgets import QVBoxLayout as QVL
 
             dlg = QDialog(self)
             dlg.setWindowTitle("Susurrus Logs")
