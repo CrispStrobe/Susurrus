@@ -10,7 +10,7 @@ pydocstyle>=6.3.0
 # Import checking
 pyflakes>=3.4.0
 vulture>=2.16  # Find unused code
-pydeps>=3.0.2  # Visualize dependencies
+pydeps>=3.0.6  # Visualize dependencies
 
 # Pre-commit hooks
 pre-commit>=4.3.0
