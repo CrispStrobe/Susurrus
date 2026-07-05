@@ -37,7 +37,7 @@ text-extraction = [
 ]
 dev = [
     # Pinned to match .github/workflows/ci.yml — avoids format drift
-    "ruff==0.15.7",
+    "ruff==0.15.20",
     "black==25.9.0",
     "isort==6.1.0",
     "bandit==1.9.4",
