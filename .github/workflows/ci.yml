@@ -54,10 +54,10 @@ jobs:
           python-version: "3.11"
 
       - name: Install linting tools
-        # Pin exact versions so CI formatting/lint matches local pre-commit runs.
-        # Unpinned tools drift (e.g. black's yearly style changes) and cause
-        # "passes locally, fails in CI" churn.
-        run: pip install ruff==0.15.7 black==25.9.0 isort==6.1.0 bandit==1.9.4
+        # Install from pyproject.toml [dev] — single source of truth for
+        # pinned versions. Dependabot bumps pyproject.toml and CI follows
+        # automatically, no drift.
+        run: pip install --no-deps -e ".[dev]"
 
       - name: Ruff check
         run: ruff check .
