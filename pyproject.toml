@@ -37,10 +37,11 @@ text-extraction = [
 ]
 dev = [
     # CI installs from here via pip install -e ".[dev]" — single source of truth.
-    # Use >= so dependabot can bump, and CI always gets the latest compatible.
+    # Formatters pinned exactly (output must be reproducible across CI + local).
+    # Linters/runners use >= (output doesn't need to be identical).
     "ruff>=0.15.20",
-    "black>=25.9.0",
-    "isort>=6.1.0",
+    "black==25.9.0",
+    "isort==6.1.0",
     "bandit>=1.9.4",
     "pylint>=3.0.0",
     "mypy>=1.7.0",
