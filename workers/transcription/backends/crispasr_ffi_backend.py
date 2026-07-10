@@ -209,6 +209,14 @@ class CrispasrFFIBackend(TranscriptionBackend):
         if kw.get("tts_noise_temp") is not None and hasattr(s, "set_tts_noise_temp"):
             s.set_tts_noise_temp(float(kw["tts_noise_temp"]))
 
+        # TTS classifier-free guidance scale (CrispASR 0.8.9, irodori-tts)
+        if kw.get("tts_cfg_scale") is not None and hasattr(s, "set_tts_cfg_scale"):
+            s.set_tts_cfg_scale(float(kw["tts_cfg_scale"]))
+
+        # CTC logits capture (CrispASR 0.8.9)
+        if kw.get("return_logits") and hasattr(s, "set_return_logits"):
+            s.set_return_logits(True)
+
         # Fallback thresholds (whisper)
         if kw.get("entropy_thold") is not None:
             s.set_fallback_thresholds(

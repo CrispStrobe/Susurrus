@@ -404,6 +404,70 @@ class TestCrispASR087Registry(unittest.TestCase):
         self.assertIn("aligner", roles)
 
 
+class TestCrispASR089Sync(unittest.TestCase):
+    """Coverage for the CrispASR 0.8.9 interface sync."""
+
+    def _make_backend(self, **kwargs):
+        from workers.transcription.backends.crispasr_backend import CrispasrBackend
+
+        return CrispasrBackend(model_id="test.gguf", device="cpu", **kwargs)
+
+    def test_new_089_flags_present(self):
+        from workers.transcription.backends.crispasr_backend import PARAM_MAP
+
+        for key, flag in [
+            ("tts_stream", "--tts-stream"),
+            ("tts_cfg_scale", "--tts-cfg-scale"),
+            ("return_logits", "--return-logits"),
+        ]:
+            self.assertIn(key, PARAM_MAP, f"missing PARAM_MAP key {key}")
+            self.assertEqual(PARAM_MAP[key][0], flag)
+
+    def test_tts_stream_flag(self):
+        b = self._make_backend(tts_stream=True)
+        cmd = ["crispasr"]
+        b._append_params(cmd)
+        self.assertIn("--tts-stream", cmd)
+
+    def test_tts_cfg_scale_flag(self):
+        b = self._make_backend(tts_cfg_scale=3.5)
+        cmd = ["crispasr"]
+        b._append_params(cmd)
+        self.assertEqual(cmd[cmd.index("--tts-cfg-scale") + 1], "3.5")
+
+    def test_return_logits_flag(self):
+        b = self._make_backend(return_logits=True)
+        cmd = ["crispasr"]
+        b._append_params(cmd)
+        self.assertIn("--return-logits", cmd)
+
+
+class TestCrispASR089Registry(unittest.TestCase):
+    """The config registries must include CrispASR 0.8.9 backends."""
+
+    def test_new_asr_backends(self):
+        import config
+
+        for name in ("canary-qwen", "cohere-ar", "kyutai-stt-2.6b"):
+            self.assertIn(name, config.CRISPASR_SUB_BACKENDS, f"missing ASR: {name}")
+            self.assertIn(
+                f"crispasr:{name}",
+                config.BACKEND_MODEL_MAP,
+                f"BACKEND_MODEL_MAP missing crispasr:{name}",
+            )
+
+    def test_new_tts_backends(self):
+        import config
+
+        for name in ("voxtral-tts", "omnivoice", "irodori-tts"):
+            self.assertIn(name, config.CRISPASR_TTS_BACKENDS, f"missing TTS: {name}")
+            self.assertIn(
+                f"crispasr:{name}",
+                config.TTS_BACKEND_MAP,
+                f"TTS_BACKEND_MAP missing crispasr:{name}",
+            )
+
+
 class TestCrispASRRegistrySync(unittest.TestCase):
     """The config registries must use valid CrispASR backend names."""
 

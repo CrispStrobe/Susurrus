@@ -4,7 +4,7 @@ import os
 import platform
 
 APP_NAME = "Susurrus"
-APP_VERSION = "2.7.1"
+APP_VERSION = "2.8.0"
 APP_ORG = "CrispStrobe"
 
 # ---------------------------------------------------------------------------
@@ -235,6 +235,15 @@ BACKEND_MODEL_MAP = {
     "crispasr:qwen3-ja-anime": [
         ("auto", "Qwen3 ASR 1.7B JA Anime"),
     ],
+    "crispasr:canary-qwen": [
+        ("auto", "Canary-Qwen 2.5B (FastConformer + Qwen3 SALM)"),
+    ],
+    "crispasr:cohere-ar": [
+        ("auto", "Cohere Transcribe Arabic"),
+    ],
+    "crispasr:kyutai-stt-2.6b": [
+        ("auto", "Kyutai STT 2.6B (English)"),
+    ],
     # CrispASR Translation backends (text-to-text)
     "crispasr:m2m100": [
         ("auto", "M2M100 418M Translation"),
@@ -392,6 +401,21 @@ TTS_BACKEND_MAP = {
         "voices": [],
         "default_voice": None,
     },
+    "crispasr:voxtral-tts": {
+        "models": [("auto", "Voxtral TTS 4B")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:omnivoice": {
+        "models": [("auto", "OmniVoice (k2-fsa)")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:irodori-tts": {
+        "models": [("auto", "Irodori TTS (zero-shot cloning)")],
+        "voices": [],
+        "default_voice": None,
+    },
     # Python-native TTS backends (from CrispTTS)
     "edge-tts": {
         "models": [("edge-tts", "Microsoft Edge TTS (cloud)")],
@@ -465,7 +489,7 @@ TTS_BACKEND_MAP = {
 
 # All CrispASR ASR sub-backend names for listing (must match the binary's
 # `--list-backends` names; the runtime probe in crispasr_utils refines this to
-# what the installed binary actually supports). Synced with CrispASR 0.8.7.
+# what the installed binary actually supports). Synced with CrispASR 0.8.9.
 CRISPASR_SUB_BACKENDS = [
     "whisper",
     "parakeet",
@@ -505,6 +529,9 @@ CRISPASR_SUB_BACKENDS = [
     "higgs-stt",
     "parakeet-ctc-ja",
     "reazonspeech",
+    "canary-qwen",
+    "cohere-ar",
+    "kyutai-stt-2.6b",
 ]
 
 # Companion models required by certain TTS backends (auto-download)
@@ -548,6 +575,9 @@ CRISPASR_TTS_BACKENDS = [
     "tada",
     "dots-tts",
     "bananamind-tts",
+    "voxtral-tts",
+    "omnivoice",
+    "irodori-tts",
 ]
 
 CRISPASR_TRANSLATION_BACKENDS = [

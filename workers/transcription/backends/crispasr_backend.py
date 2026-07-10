@@ -10,7 +10,7 @@ Also supports TTS (kokoro, orpheus, qwen3-tts, chatterbox, vibevoice,
 indextts, voxcpm2-tts, melotts, piper, bark, dia, zonos, csm, and more)
 and translation (m2m100, m2m100-wmt21, madlad, gemma4-e2b).
 
-Synced with CrispASR 0.8.7.
+Synced with CrispASR 0.8.9.
 
 The backend auto-detects from the GGUF file metadata, or can be forced
 with the `crispasr_backend` kwarg.
@@ -98,6 +98,7 @@ PARAM_MAP = {
     "no_timestamps": ("-nt", bool),
     "font_path": ("-fp", str),
     "log_score": ("--log-score", bool),
+    "return_logits": ("--return-logits", bool),
     # --- VAD ---
     "vad": ("--vad", bool),
     "vad_model": ("-vm", str),
@@ -193,6 +194,8 @@ PARAM_MAP = {
     "tts_codec_quant": ("--codec-quant", str),
     "tts_steps": ("--tts-steps", int),
     "tts_trim_silence": ("--tts-trim-silence", bool),
+    "tts_stream": ("--tts-stream", bool),
+    "tts_cfg_scale": ("--tts-cfg-scale", float),
     "tts_max_input_chars": ("--tts-max-input-chars", int),
     "tts_play": ("--tts-play", bool),
     "tts_play_device": ("--tts-play-device", int),

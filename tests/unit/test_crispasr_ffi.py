@@ -120,6 +120,22 @@ class TestFFI087SessionSetters(unittest.TestCase):
         self.assertAlmostEqual(b.extra_kwargs["tts_noise_temp"], 0.7)
 
 
+class TestFFI089SessionSetters(unittest.TestCase):
+    """Test that 0.8.9 FFI session setters are wired."""
+
+    def test_tts_cfg_scale_wired(self):
+        from workers.transcription.backends.crispasr_ffi_backend import CrispasrFFIBackend
+
+        b = CrispasrFFIBackend(model_id="test.gguf", device="cpu", tts_cfg_scale=3.5)
+        self.assertAlmostEqual(b.extra_kwargs["tts_cfg_scale"], 3.5)
+
+    def test_return_logits_wired(self):
+        from workers.transcription.backends.crispasr_ffi_backend import CrispasrFFIBackend
+
+        b = CrispasrFFIBackend(model_id="test.gguf", device="cpu", return_logits=True)
+        self.assertTrue(b.extra_kwargs["return_logits"])
+
+
 class TestFFICompanionModels(unittest.TestCase):
     """Test companion model resolution for new backends."""
 
