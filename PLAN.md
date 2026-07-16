@@ -295,12 +295,12 @@ See https://github.com/CrispStrobe/c2pa-audio (160 KB, Python ctypes)
 - [ ] Show confidence + verdict (AI-GENERATED / UNCERTAIN / none)
 - [ ] Color-coded badge in the audio info panel
 
-## F1 — GUI: CrispASR advanced settings for provenance (FUTURE)
+## F1 — GUI: CrispASR advanced settings for provenance (DONE)
 
-- [ ] Add C2PA cert/key file pickers to TTS advanced settings
-- [ ] Add watermark model file picker
-- [ ] "Voice Cloning Consent" checkbox (maps to --i-have-rights)
-- [ ] "Skip AI Disclaimer" checkbox (maps to --no-spoken-disclaimer)
+- [x] C2PA cert/key file pickers in TTS settings
+- [x] "Disable watermark" checkbox with Art. 50 tooltip
+- [x] "Voice Cloning Consent" checkbox (was already present)
+- [x] "Skip AI Disclaimer" checkbox (was already present)
 
 ## F2 — Live streaming in GUI (FUTURE)
 
