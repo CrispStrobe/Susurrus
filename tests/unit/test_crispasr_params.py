@@ -468,6 +468,70 @@ class TestCrispASR089Registry(unittest.TestCase):
             )
 
 
+class TestCrispASR0812Sync(unittest.TestCase):
+    """Coverage for the CrispASR 0.8.12 interface sync."""
+
+    def _make_backend(self, **kwargs):
+        from workers.transcription.backends.crispasr_backend import CrispasrBackend
+
+        return CrispasrBackend(model_id="test.gguf", device="cpu", **kwargs)
+
+    def test_new_0812_flags_present(self):
+        from workers.transcription.backends.crispasr_backend import PARAM_MAP
+
+        for key, flag in [
+            ("tts_speed", "--tts-speed"),
+            ("no_watermark", "--no-watermark"),
+            ("att_context", "--att-context"),
+        ]:
+            self.assertIn(key, PARAM_MAP, f"missing PARAM_MAP key {key}")
+            self.assertEqual(PARAM_MAP[key][0], flag)
+
+    def test_tts_speed_flag(self):
+        b = self._make_backend(tts_speed=1.5)
+        cmd = ["crispasr"]
+        b._append_params(cmd)
+        self.assertEqual(cmd[cmd.index("--tts-speed") + 1], "1.5")
+
+    def test_no_watermark_flag(self):
+        b = self._make_backend(no_watermark=True)
+        cmd = ["crispasr"]
+        b._append_params(cmd)
+        self.assertIn("--no-watermark", cmd)
+
+    def test_att_context_flag(self):
+        b = self._make_backend(att_context=512)
+        cmd = ["crispasr"]
+        b._append_params(cmd)
+        self.assertEqual(cmd[cmd.index("--att-context") + 1], "512")
+
+
+class TestCrispASR0812Registry(unittest.TestCase):
+    """The config registries must include CrispASR 0.8.12 backends."""
+
+    def test_new_asr_backend(self):
+        import config
+
+        self.assertIn("moss-diarize", config.CRISPASR_SUB_BACKENDS)
+        self.assertIn("crispasr:moss-diarize", config.BACKEND_MODEL_MAP)
+
+    def test_new_tts_backends(self):
+        import config
+
+        for name in (
+            "irodori-tts-voicedesign",
+            "moss-tts",
+            "moss-tts-local",
+            "bananamind-tts-de",
+        ):
+            self.assertIn(name, config.CRISPASR_TTS_BACKENDS, f"missing TTS: {name}")
+            self.assertIn(
+                f"crispasr:{name}",
+                config.TTS_BACKEND_MAP,
+                f"TTS_BACKEND_MAP missing crispasr:{name}",
+            )
+
+
 class TestCrispASRRegistrySync(unittest.TestCase):
     """The config registries must use valid CrispASR backend names."""
 

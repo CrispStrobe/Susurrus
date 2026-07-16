@@ -4,7 +4,7 @@ import os
 import platform
 
 APP_NAME = "Susurrus"
-APP_VERSION = "2.8.0"
+APP_VERSION = "2.9.0"
 APP_ORG = "CrispStrobe"
 
 # ---------------------------------------------------------------------------
@@ -244,6 +244,9 @@ BACKEND_MODEL_MAP = {
     "crispasr:kyutai-stt-2.6b": [
         ("auto", "Kyutai STT 2.6B (English)"),
     ],
+    "crispasr:moss-diarize": [
+        ("auto", "MOSS-Transcribe-Diarize 0.9B"),
+    ],
     # CrispASR Translation backends (text-to-text)
     "crispasr:m2m100": [
         ("auto", "M2M100 418M Translation"),
@@ -416,6 +419,26 @@ TTS_BACKEND_MAP = {
         "voices": [],
         "default_voice": None,
     },
+    "crispasr:irodori-tts-voicedesign": {
+        "models": [("auto", "Irodori TTS VoiceDesign")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:moss-tts": {
+        "models": [("auto", "MOSS TTS v1.5")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:moss-tts-local": {
+        "models": [("auto", "MOSS TTS Local 4B (F16)")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:bananamind-tts-de": {
+        "models": [("auto", "BananaMind TTS German")],
+        "voices": [],
+        "default_voice": None,
+    },
     # Python-native TTS backends (from CrispTTS)
     "edge-tts": {
         "models": [("edge-tts", "Microsoft Edge TTS (cloud)")],
@@ -489,7 +512,7 @@ TTS_BACKEND_MAP = {
 
 # All CrispASR ASR sub-backend names for listing (must match the binary's
 # `--list-backends` names; the runtime probe in crispasr_utils refines this to
-# what the installed binary actually supports). Synced with CrispASR 0.8.9.
+# what the installed binary actually supports). Synced with CrispASR 0.8.12.
 CRISPASR_SUB_BACKENDS = [
     "whisper",
     "parakeet",
@@ -532,6 +555,7 @@ CRISPASR_SUB_BACKENDS = [
     "canary-qwen",
     "cohere-ar",
     "kyutai-stt-2.6b",
+    "moss-diarize",
 ]
 
 # Companion models required by certain TTS backends (auto-download)
@@ -578,6 +602,10 @@ CRISPASR_TTS_BACKENDS = [
     "voxtral-tts",
     "omnivoice",
     "irodori-tts",
+    "irodori-tts-voicedesign",
+    "moss-tts",
+    "moss-tts-local",
+    "bananamind-tts-de",
 ]
 
 CRISPASR_TRANSLATION_BACKENDS = [

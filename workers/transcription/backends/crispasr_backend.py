@@ -10,7 +10,7 @@ Also supports TTS (kokoro, orpheus, qwen3-tts, chatterbox, vibevoice,
 indextts, voxcpm2-tts, melotts, piper, bark, dia, zonos, csm, and more)
 and translation (m2m100, m2m100-wmt21, madlad, gemma4-e2b).
 
-Synced with CrispASR 0.8.9.
+Synced with CrispASR 0.8.12.
 
 The backend auto-detects from the GGUF file metadata, or can be forced
 with the `crispasr_backend` kwarg.
@@ -66,6 +66,7 @@ PARAM_MAP = {
     "gpu_backend": ("--gpu-backend", str),
     "n_gpu_layers": ("-ngl", int),
     "no_kv_offload": ("--no-kv-offload", bool),
+    "att_context": ("--att-context", int),
     "suppress_nst": ("--suppress-nst", bool),
     "suppress_regex": ("--suppress-regex", str),
     "translate": ("--translate", bool),
@@ -196,6 +197,7 @@ PARAM_MAP = {
     "tts_trim_silence": ("--tts-trim-silence", bool),
     "tts_stream": ("--tts-stream", bool),
     "tts_cfg_scale": ("--tts-cfg-scale", float),
+    "tts_speed": ("--tts-speed", float),
     "tts_max_input_chars": ("--tts-max-input-chars", int),
     "tts_play": ("--tts-play", bool),
     "tts_play_device": ("--tts-play-device", int),
@@ -208,6 +210,7 @@ PARAM_MAP = {
     # --- Provenance / EU AI Act (voice cloning, watermarking, C2PA) ---
     "i_have_rights": ("--i-have-rights", bool),
     "no_spoken_disclaimer": ("--no-spoken-disclaimer", bool),
+    "no_watermark": ("--no-watermark", bool),
     "watermark_model": ("--watermark-model", str),
     "detect_watermark": ("--detect-watermark", str),
     "c2pa_cert": ("--c2pa-cert", str),
