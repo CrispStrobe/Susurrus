@@ -121,6 +121,36 @@ class TTSSettingsWidget(QWidget):
         prov_row.addWidget(self.g2p_dict)
         layout.addLayout(prov_row)
 
+        # Provenance row 2: watermark + C2PA
+        prov_row2 = QHBoxLayout()
+        self.no_watermark = QCheckBox("Disable watermark")
+        self.no_watermark.setToolTip(
+            "Disable AudioSeal AI-content watermark — shifts marking "
+            "responsibility to the operator (EU AI Act Art. 50)."
+        )
+        prov_row2.addWidget(self.no_watermark)
+
+        prov_row2.addWidget(QLabel("C2PA cert:"))
+        self.c2pa_cert = QLineEdit()
+        self.c2pa_cert.setPlaceholderText("(bundled default)")
+        self.c2pa_cert.setMaximumWidth(200)
+        prov_row2.addWidget(self.c2pa_cert)
+        self.browse_c2pa_cert_btn = QPushButton("...")
+        self.browse_c2pa_cert_btn.setFixedWidth(30)
+        self.browse_c2pa_cert_btn.clicked.connect(self._browse_c2pa_cert)
+        prov_row2.addWidget(self.browse_c2pa_cert_btn)
+
+        prov_row2.addWidget(QLabel("Key:"))
+        self.c2pa_key = QLineEdit()
+        self.c2pa_key.setPlaceholderText("(bundled default)")
+        self.c2pa_key.setMaximumWidth(200)
+        prov_row2.addWidget(self.c2pa_key)
+        self.browse_c2pa_key_btn = QPushButton("...")
+        self.browse_c2pa_key_btn.setFixedWidth(30)
+        self.browse_c2pa_key_btn.clicked.connect(self._browse_c2pa_key)
+        prov_row2.addWidget(self.browse_c2pa_key_btn)
+        layout.addLayout(prov_row2)
+
         # Output row
         out_row = QHBoxLayout()
         out_row.addWidget(QLabel("Output file:"))
@@ -210,6 +240,20 @@ class TTSSettingsWidget(QWidget):
         )
         if path:
             self.output_path.setText(path)
+
+    def _browse_c2pa_cert(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select C2PA Certificate", "", "PEM Files (*.pem);;All Files (*)"
+        )
+        if path:
+            self.c2pa_cert.setText(path)
+
+    def _browse_c2pa_key(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select C2PA Private Key", "", "PEM Files (*.pem);;All Files (*)"
+        )
+        if path:
+            self.c2pa_key.setText(path)
 
     def get_text(self):
         """Get the text to synthesize, either from the text area or loaded file."""

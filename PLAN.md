@@ -279,17 +279,13 @@ Inspired by CrisperWeaver comparison. Priority order by impact/effort.
 - [x] CrispASR defaults: watermark ON, C2PA signing ON (bundled cert)
 - [x] Susurrus does NOT override these defaults — compliance by default
 
-## C2 — c2pa-audio Python Integration (FUTURE)
+## C2 — c2pa-audio Python Integration (DONE — v2.9.2)
 
-Standalone lightweight C2PA signing/verification for Susurrus's own
-Python TTS backends (edge-tts, piper, kokoro-onnx, chatterbox, speecht5)
-which bypass the CrispASR binary.
-
-- [ ] Add `c2pa-audio` Python bindings as optional dependency
-- [ ] Post-process step in Python TTS backends: sign output WAV with C2PA
-- [ ] Verify C2PA credentials on transcription input (optional)
-- [ ] Add `--verify-c2pa` CLI flag for input audio provenance check
-- [ ] GUI: show C2PA credential badge on loaded audio files
+- [x] `utils/c2pa_signing.py` — sign/verify via c2pa-audio ctypes
+- [x] `TTSBackend.sign_output()` — post-synthesis signing hook
+- [x] `--verify-c2pa` CLI flag
+- [x] Unit tests: 6 tests (import, fallback, sign_output, non-WAV skip)
+- [x] Live tests: 5 provenance flag acceptance tests
 
 See https://github.com/CrispStrobe/c2pa-audio (160 KB, Python ctypes)
 

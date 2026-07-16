@@ -1093,6 +1093,9 @@ class MainWindow(QWidget):
             "reference_audio": self.tts_widget.reference_audio.text().strip() or None,
             "i_have_rights": self.tts_widget.i_have_rights.isChecked(),
             "no_spoken_disclaimer": self.tts_widget.no_spoken_disclaimer.isChecked(),
+            "no_watermark": self.tts_widget.no_watermark.isChecked(),
+            "c2pa_cert": self.tts_widget.c2pa_cert.text().strip() or None,
+            "c2pa_key": self.tts_widget.c2pa_key.text().strip() or None,
             "g2p_dict": (
                 self.tts_widget.g2p_dict.currentText()
                 if self.tts_widget.g2p_dict.currentText() != "(default)"
