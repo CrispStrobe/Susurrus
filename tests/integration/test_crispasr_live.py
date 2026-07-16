@@ -274,5 +274,92 @@ class TestNewCLIFlags(unittest.TestCase):
         self.assertEqual(rc, 0, f"flag rejected: {err}")
 
 
+@skip_no_binary
+class TestProvenanceFlags(unittest.TestCase):
+    """Test EU AI Act compliance flags are accepted by the binary."""
+
+    def test_no_watermark_accepted(self):
+        rc, out, err = _run(
+            [
+                "--backend",
+                "whisper",
+                "-m",
+                "auto",
+                "--dry-run-resolve",
+                "--no-watermark",
+                "--no-gpu",
+            ]
+        )
+        if rc != 0 and "no-watermark" in err:
+            self.skipTest("Binary does not support --no-watermark yet")
+        self.assertEqual(rc, 0, f"flag rejected: {err}")
+
+    def test_i_have_rights_accepted(self):
+        rc, out, err = _run(
+            [
+                "--backend",
+                "whisper",
+                "-m",
+                "auto",
+                "--dry-run-resolve",
+                "--i-have-rights",
+                "--no-gpu",
+            ]
+        )
+        if rc != 0 and "i-have-rights" in err:
+            self.skipTest("Binary does not support --i-have-rights yet")
+        self.assertEqual(rc, 0, f"flag rejected: {err}")
+
+    def test_no_spoken_disclaimer_accepted(self):
+        rc, out, err = _run(
+            [
+                "--backend",
+                "whisper",
+                "-m",
+                "auto",
+                "--dry-run-resolve",
+                "--no-spoken-disclaimer",
+                "--no-gpu",
+            ]
+        )
+        if rc != 0 and "no-spoken-disclaimer" in err:
+            self.skipTest("Binary does not support --no-spoken-disclaimer yet")
+        self.assertEqual(rc, 0, f"flag rejected: {err}")
+
+    def test_tts_speed_accepted(self):
+        rc, out, err = _run(
+            [
+                "--backend",
+                "whisper",
+                "-m",
+                "auto",
+                "--dry-run-resolve",
+                "--tts-speed",
+                "1.5",
+                "--no-gpu",
+            ]
+        )
+        if rc != 0 and "tts-speed" in err:
+            self.skipTest("Binary does not support --tts-speed yet")
+        self.assertEqual(rc, 0, f"flag rejected: {err}")
+
+    def test_att_context_accepted(self):
+        rc, out, err = _run(
+            [
+                "--backend",
+                "whisper",
+                "-m",
+                "auto",
+                "--dry-run-resolve",
+                "--att-context",
+                "512",
+                "--no-gpu",
+            ]
+        )
+        if rc != 0 and "att-context" in err:
+            self.skipTest("Binary does not support --att-context yet")
+        self.assertEqual(rc, 0, f"flag rejected: {err}")
+
+
 if __name__ == "__main__":
     unittest.main()

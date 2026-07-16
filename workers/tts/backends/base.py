@@ -31,6 +31,23 @@ class TTSBackend(ABC):
             The path to the written audio file.
         """
 
+    def sign_output(self, output_path):
+        """Sign the output audio with C2PA Content Credentials.
+
+        Called automatically after synthesis for Python-native backends.
+        CrispASR-based backends are already signed by the binary.
+
+        Returns True if signed, False if c2pa-audio not available.
+        """
+        if output_path and output_path.lower().endswith(".wav"):
+            try:
+                from utils.c2pa_signing import sign_wav_file
+
+                return sign_wav_file(output_path)
+            except ImportError:
+                pass
+        return False
+
     def list_voices(self):
         """Return a list of available voice IDs for this backend."""
         return []

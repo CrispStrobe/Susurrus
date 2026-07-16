@@ -275,6 +275,11 @@ def main():
     )
     prov_group.add_argument("--c2pa-cert", default=None, help="X.509 cert for C2PA signing")
     prov_group.add_argument("--c2pa-key", default=None, help="Private key for C2PA signing")
+    prov_group.add_argument(
+        "--verify-c2pa",
+        default=None,
+        help="Verify C2PA credentials in an audio file and exit",
+    )
 
     # --- Translation-specific ---
     tr_group = parser.add_argument_group("Translation Options")
@@ -446,6 +451,23 @@ def main():
             "Watermarking disabled (--no-watermark). AI-content marking "
             "responsibility rests with the operator per EU AI Act Art. 50."
         )
+
+    # --verify-c2pa is a standalone verb (Python-side, no binary needed)
+    if getattr(args, "verify_c2pa", None):
+        try:
+            from utils.c2pa_signing import verify_wav_file
+
+            result = verify_wav_file(args.verify_c2pa)
+            if result is None:
+                print("c2pa-audio library not available", file=sys.stderr)
+                sys.exit(1)
+            import json
+
+            print(json.dumps(result, indent=2))
+            sys.exit(0 if result["valid"] else 1)
+        except Exception as e:
+            print(f"C2PA verification error: {e}", file=sys.stderr)
+            sys.exit(1)
 
     # --detect-watermark is a standalone verb
     if getattr(args, "detect_watermark", None):
