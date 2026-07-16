@@ -266,9 +266,22 @@ class MainWindow(QWidget):
         self.save_button.setToolTip("Save Transcription")
         self.save_button.clicked.connect(self.save_transcription)
 
+        self.stream_mic_button = QPushButton("Stream Mic")
+        self.stream_mic_button.setToolTip("Live transcription from microphone")
+        self.stream_mic_button.clicked.connect(self._toggle_mic_stream)
+
+        self.detect_watermark_button = QPushButton("Detect Watermark")
+        self.detect_watermark_button.setToolTip(
+            "Check if the loaded audio contains an AI-generated watermark"
+        )
+        self.detect_watermark_button.setEnabled(False)
+        self.detect_watermark_button.clicked.connect(self._detect_watermark)
+
         layout.addWidget(self.transcribe_button)
+        layout.addWidget(self.stream_mic_button)
         layout.addWidget(self.abort_button)
         layout.addWidget(self.save_button)
+        layout.addWidget(self.detect_watermark_button)
 
         return layout
 
@@ -624,6 +637,16 @@ class MainWindow(QWidget):
         voxtral_deps_action.triggered.connect(self.install_voxtral_dependencies)
         tools_menu.addAction(voxtral_deps_action)
 
+        tools_menu.addSeparator()
+
+        voice_clone_action = QAction("Voice &Clone Wizard...", self)
+        voice_clone_action.triggered.connect(self._open_voice_clone_wizard)
+        tools_menu.addAction(voice_clone_action)
+
+        server_action = QAction("Start/Stop &Server", self)
+        server_action.triggered.connect(self._toggle_server)
+        tools_menu.addAction(server_action)
+
         # View menu
         view_menu = menu_bar.addMenu("&View")
 
@@ -697,10 +720,9 @@ class MainWindow(QWidget):
             self.waveform_widget.setVisible(False)
 
     def check_transcribe_button_state(self):
-        if self.audio_input_path.text().strip() or self.audio_url.text().strip():
-            self.transcribe_button.setEnabled(True)
-        else:
-            self.transcribe_button.setEnabled(False)
+        has_input = bool(self.audio_input_path.text().strip() or self.audio_url.text().strip())
+        self.transcribe_button.setEnabled(has_input)
+        self.detect_watermark_button.setEnabled(bool(self.audio_input_path.text().strip()))
 
     def toggle_proxy_settings(self):
         if self.audio_url.text().strip():
@@ -1216,6 +1238,179 @@ class MainWindow(QWidget):
             logging.info("Transcription auto-saved to history: %s", entry.id)
         except Exception as e:
             logging.warning("Failed to auto-save history: %s", e)
+
+    # ---- Server toggle ----
+
+    def _toggle_server(self):
+        """Start or stop the CrispASR server."""
+        if hasattr(self, "_server_process") and self._server_process is not None:
+            self._server_process.terminate()
+            self._server_process.wait(timeout=5)
+            self._server_process = None
+            self.metrics_output.appendPlainText("Server stopped.")
+            logging.info("CrispASR server stopped")
+            return
+
+        from utils.crispasr_utils import find_crispasr
+
+        exe = find_crispasr()
+        if not exe:
+            QMessageBox.warning(self, "Warning", "CrispASR binary not found.")
+            return
+
+        import subprocess
+
+        port = 8080
+        cmd = [
+            exe,
+            "-m",
+            "auto",
+            "--server",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--no-gpu",
+            "--auto-download",
+        ]
+
+        self._server_process = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+        self.metrics_output.appendPlainText(f"Server started on 127.0.0.1:{port}")
+        logging.info("CrispASR server started on port %d", port)
+
+    # ---- Voice clone wizard ----
+
+    def _open_voice_clone_wizard(self):
+        """Open the 3-step voice clone wizard."""
+        from gui.dialogs.voice_clone_wizard import VoiceCloneWizard
+
+        wizard = VoiceCloneWizard(self)
+        if wizard.exec() == wizard.DialogCode.Accepted:
+            # Pre-populate TTS tab with the wizard's output
+            if hasattr(self, "tts_widget"):
+                self.tts_widget.reference_audio.setText(wizard.voice_path)
+                self.tts_widget.i_have_rights.setChecked(True)
+                if wizard.ref_text:
+                    # Find a ref_text field if it exists, otherwise log
+                    logging.info(
+                        "Voice clone: ref audio=%s, ref text=%s",
+                        wizard.voice_path,
+                        wizard.ref_text[:50],
+                    )
+                self.tab_widget.setCurrentIndex(1)  # Switch to TTS tab
+
+    # ---- Mic streaming ----
+
+    def _toggle_mic_stream(self):
+        """Start or stop live mic streaming transcription."""
+        if hasattr(self, "_stream_process") and self._stream_process is not None:
+            self._stop_mic_stream()
+            return
+
+        from utils.crispasr_utils import find_crispasr
+
+        exe = find_crispasr()
+        if not exe:
+            QMessageBox.warning(self, "Warning", "CrispASR binary not found.")
+            return
+
+        import subprocess
+        import threading
+
+        backend = "whisper"
+        if hasattr(self, "advanced_options_box"):
+            sel = self.advanced_options_box.backend_selection.currentText()
+            if sel.startswith("crispasr:"):
+                backend = sel.split(":", 1)[1]
+
+        cmd = [
+            exe,
+            "--backend",
+            backend,
+            "-m",
+            "auto:q5_0",
+            "--stream",
+            "--mic",
+            "--no-gpu",
+            "--auto-download",
+            "--stream-json",
+        ]
+
+        self._stream_process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        self.stream_mic_button.setText("Stop Mic")
+        self.stream_mic_button.setStyleSheet("background-color: #D32F2F; color: white;")
+        self.transcription_output.clear()
+        self._transcription_segments = []
+        self._transcription_result = None
+
+        def read_stream():
+            for line in self._stream_process.stdout:
+                line = line.strip()
+                if line:
+                    self.transcription_output.appendPlainText(line)
+
+        self._stream_thread = threading.Thread(target=read_stream, daemon=True)
+        self._stream_thread.start()
+        logging.info("Mic streaming started: %s", " ".join(cmd))
+
+    def _stop_mic_stream(self):
+        """Stop the mic streaming process."""
+        if hasattr(self, "_stream_process") and self._stream_process:
+            self._stream_process.terminate()
+            self._stream_process.wait(timeout=5)
+            self._stream_process = None
+        self.stream_mic_button.setText("Stream Mic")
+        self.stream_mic_button.setStyleSheet("")
+        self.transcription_text = self.transcription_output.toPlainText()
+        self.save_button.setEnabled(True)
+        logging.info("Mic streaming stopped")
+
+    # ---- Watermark detection ----
+
+    def _detect_watermark(self):
+        """Run watermark detection on the loaded audio file."""
+        audio_path = self.audio_input_path.text().strip()
+        if not audio_path or not os.path.isfile(audio_path):
+            QMessageBox.warning(self, "Warning", "No audio file selected.")
+            return
+
+        try:
+            from utils.crispasr_utils import find_crispasr
+
+            exe = find_crispasr()
+            if not exe:
+                QMessageBox.warning(
+                    self, "Warning", "CrispASR binary not found for watermark detection."
+                )
+                return
+
+            import subprocess
+
+            result = subprocess.run(
+                [exe, "--detect-watermark", audio_path, "--no-gpu"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            output = (result.stdout + result.stderr).strip()
+            if result.returncode == 0:
+                QMessageBox.information(
+                    self, "Watermark Detection", output or "Detection complete."
+                )
+            else:
+                QMessageBox.warning(self, "Watermark Detection", output or "Detection failed.")
+        except subprocess.TimeoutExpired:
+            QMessageBox.warning(self, "Timeout", "Watermark detection timed out.")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Watermark detection failed: {e}")
 
     # ---- Batch callbacks ----
 

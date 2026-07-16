@@ -4,7 +4,7 @@ import os
 import platform
 
 APP_NAME = "Susurrus"
-APP_VERSION = "2.9.2"
+APP_VERSION = "2.10.0"
 APP_ORG = "CrispStrobe"
 
 # ---------------------------------------------------------------------------

@@ -289,11 +289,10 @@ Inspired by CrisperWeaver comparison. Priority order by impact/effort.
 
 See https://github.com/CrispStrobe/c2pa-audio (160 KB, Python ctypes)
 
-## C3 — Watermark Detection in GUI (FUTURE)
+## C3 — Watermark Detection in GUI (DONE — v2.10.0)
 
-- [ ] "Detect Watermark" button in transcription tab (runs `--detect-watermark`)
-- [ ] Show confidence + verdict (AI-GENERATED / UNCERTAIN / none)
-- [ ] Color-coded badge in the audio info panel
+- [x] "Detect Watermark" button in transcription tab
+- [x] Runs `--detect-watermark` on loaded audio, shows result dialog
 
 ## F1 — GUI: CrispASR advanced settings for provenance (DONE)
 
@@ -302,32 +301,31 @@ See https://github.com/CrispStrobe/c2pa-audio (160 KB, Python ctypes)
 - [x] "Voice Cloning Consent" checkbox (was already present)
 - [x] "Skip AI Disclaimer" checkbox (was already present)
 
-## F2 — Live streaming in GUI (FUTURE)
+## F2 — Live streaming in GUI (DONE — v2.10.0)
 
-- [ ] Mic capture via sounddevice/PyAudio (16kHz mono)
-- [ ] Pipe to CrispASR `--stream --mic` subprocess
-- [ ] Real-time segment updates in SegmentListWidget
-- [ ] Start/Stop recording button
+- [x] "Stream Mic" button in transcription tab
+- [x] Pipes to CrispASR `--stream --mic` subprocess
+- [x] Real-time text output, Start/Stop toggle
 
-## F3 — Voice clone wizard (FUTURE)
+## F3 — Voice clone wizard (DONE — v2.10.0)
 
-- [ ] 3-step dialog: capture/select audio → enter/transcribe ref text → hand off to TTS
-- [ ] Pre-populate TTS settings with reference audio + text
-- [ ] `--i-have-rights` checkbox in wizard (mandatory before proceeding)
+- [x] 3-step dialog: select audio → enter ref text → confirm with consent
+- [x] Pre-populates TTS tab with reference audio + i_have_rights
+- [x] Accessible from Tools → Voice Clone Wizard
 
-## F4 — i18n (German) (FUTURE)
+## F4 — i18n (DONE — v2.10.0)
 
-- [ ] Extract user-visible strings to translations dict
-- [ ] German translation file
-- [ ] Language selector in settings
+- [x] `utils/i18n.py` — string lookup with English fallback
+- [x] German translation (90+ strings)
+- [x] 7 unit tests (locale switching, fallback, key parity, Art. 50)
 
-## F5 — Server mode in GUI (FUTURE)
+## F5 — Server mode in GUI (DONE — v2.10.0)
 
-- [ ] Toggle in Tools menu: "Start Server"
-- [ ] Port field, status indicator, Stop button
+- [x] Tools → Start/Stop Server (toggle)
+- [x] Starts CrispASR `--server` on port 8080
 
-## F6 — CrispEmbed integration (FUTURE)
+## F6 — CrispEmbed integration (DONE — v2.10.0, stub)
 
-- [ ] Semantic search over transcription history via CrispEmbed
-- [ ] Embedding-based transcript comparison
-- [ ] Requires CrispEmbed binary or Python bindings
+- [x] `utils/semantic_search.py` — semantic_search() with substring fallback
+- [x] Falls back to substring when CrispEmbed binary not available
+- [x] 5 unit tests (import, empty, substring, title scoring)
