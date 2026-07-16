@@ -7,9 +7,9 @@ class TestProvenanceCLIArgs(unittest.TestCase):
     """Test that CLI argparse accepts all provenance flags."""
 
     def test_i_have_rights_flag(self):
-        from cli import _build_crispasr_kwargs
-
         import argparse
+
+        from cli import _build_crispasr_kwargs
 
         ns = argparse.Namespace(
             backend="crispasr",
@@ -26,9 +26,9 @@ class TestProvenanceCLIArgs(unittest.TestCase):
         self.assertTrue(kwargs.get("i_have_rights"))
 
     def test_no_watermark_flag(self):
-        from cli import _build_crispasr_kwargs
-
         import argparse
+
+        from cli import _build_crispasr_kwargs
 
         ns = argparse.Namespace(
             backend="crispasr",
@@ -45,9 +45,9 @@ class TestProvenanceCLIArgs(unittest.TestCase):
         self.assertTrue(kwargs.get("no_watermark"))
 
     def test_c2pa_cert_key_flags(self):
-        from cli import _build_crispasr_kwargs
-
         import argparse
+
+        from cli import _build_crispasr_kwargs
 
         ns = argparse.Namespace(
             backend="crispasr",
@@ -65,9 +65,9 @@ class TestProvenanceCLIArgs(unittest.TestCase):
         self.assertEqual(kwargs.get("c2pa_key"), "key.pem")
 
     def test_watermark_model_flag(self):
-        from cli import _build_crispasr_kwargs
-
         import argparse
+
+        from cli import _build_crispasr_kwargs
 
         ns = argparse.Namespace(
             backend="crispasr",
@@ -84,9 +84,9 @@ class TestProvenanceCLIArgs(unittest.TestCase):
         self.assertEqual(kwargs.get("watermark_model"), "audioseal.gguf")
 
     def test_all_provenance_flags_together(self):
-        from cli import _build_crispasr_kwargs
-
         import argparse
+
+        from cli import _build_crispasr_kwargs
 
         ns = argparse.Namespace(
             backend="crispasr",
