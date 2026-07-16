@@ -49,6 +49,9 @@ class CrispasrTTSBackend(TTSBackend):
         self.cache_dir = kwargs.get("cache_dir")
         self.tts_play = kwargs.get("tts_play", False)
         self.tts_play_device = kwargs.get("tts_play_device")
+        self.no_watermark = kwargs.get("no_watermark", False)
+        self.c2pa_cert = kwargs.get("c2pa_cert")
+        self.c2pa_key = kwargs.get("c2pa_key")
 
     def synthesize(self, text, output_path="tts_output.wav", voice=None):
         from utils.crispasr_utils import find_crispasr
@@ -85,10 +88,22 @@ class CrispasrTTSBackend(TTSBackend):
         if self.watermark_model:
             cmd.extend(["--watermark-model", self.watermark_model])
         # Provenance / EU AI Act controls for voice cloning
+        # Watermark + C2PA signing are ON by default in CrispASR.
+        # Only --no-watermark opts out (with operator responsibility shift).
         if self.i_have_rights:
             cmd.append("--i-have-rights")
         if self.no_spoken_disclaimer:
             cmd.append("--no-spoken-disclaimer")
+        if self.no_watermark:
+            cmd.append("--no-watermark")
+            logging.warning(
+                "Watermarking disabled. AI-content marking responsibility "
+                "rests with the operator per EU AI Act Art. 50."
+            )
+        if self.c2pa_cert:
+            cmd.extend(["--c2pa-cert", self.c2pa_cert])
+        if self.c2pa_key:
+            cmd.extend(["--c2pa-key", self.c2pa_key])
         if self.auto_download:
             cmd.append("--auto-download")
         if self.cache_dir:

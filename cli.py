@@ -246,6 +246,36 @@ def main():
     )
     tts_group.add_argument("--list-voices", action="store_true", help="List voices for TTS backend")
 
+    # --- EU AI Act / Provenance ---
+    prov_group = parser.add_argument_group("Provenance & EU AI Act Compliance")
+    prov_group.add_argument(
+        "--i-have-rights",
+        action="store_true",
+        help="Attest voice-cloning consent (REQUIRED for .wav reference cloning)",
+    )
+    prov_group.add_argument(
+        "--no-spoken-disclaimer",
+        action="store_true",
+        help="Skip audible AI-disclosure prefix (watermark + C2PA still applied)",
+    )
+    prov_group.add_argument(
+        "--watermark-model",
+        default=None,
+        help="AudioSeal GGUF for neural watermarking (upgrades built-in)",
+    )
+    prov_group.add_argument(
+        "--no-watermark",
+        action="store_true",
+        help="Disable AI-content watermark — shifts marking responsibility to operator",
+    )
+    prov_group.add_argument(
+        "--detect-watermark",
+        default=None,
+        help="Detect AI watermark in a WAV file and exit",
+    )
+    prov_group.add_argument("--c2pa-cert", default=None, help="X.509 cert for C2PA signing")
+    prov_group.add_argument("--c2pa-key", default=None, help="Private key for C2PA signing")
+
     # --- Translation-specific ---
     tr_group = parser.add_argument_group("Translation Options")
     tr_group.add_argument("--source-lang", default=None, help="Source language code")
@@ -410,6 +440,33 @@ def main():
         _list_backends()
         return
 
+    # EU AI Act compliance warnings
+    if getattr(args, "no_watermark", False):
+        logging.warning(
+            "Watermarking disabled (--no-watermark). AI-content marking "
+            "responsibility rests with the operator per EU AI Act Art. 50."
+        )
+
+    # --detect-watermark is a standalone verb
+    if getattr(args, "detect_watermark", None):
+        kwargs = _build_crispasr_kwargs(args)
+        from workers.transcription.backends.crispasr_backend import CrispasrBackend
+
+        backend = CrispasrBackend(model_id="auto", device="cpu", **kwargs)
+        try:
+            cmd, _ = backend._build_base_cmd()
+            cmd.extend(["--detect-watermark", args.detect_watermark])
+            backend._append_params(cmd)
+            import subprocess
+
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            print(proc.stdout)
+            if proc.stderr:
+                print(proc.stderr, file=sys.stderr)
+            sys.exit(proc.returncode)
+        finally:
+            backend.cleanup()
+
     if args.mode == "transcribe":
         _run_transcribe(args)
     elif args.mode == "tts":
@@ -563,6 +620,14 @@ def _build_crispasr_kwargs(args):
         "tts_steps": "tts_steps",
         "tts_play": "tts_play",
         "tts_play_device": "tts_play_device",
+        # Provenance / EU AI Act
+        "i_have_rights": "i_have_rights",
+        "no_spoken_disclaimer": "no_spoken_disclaimer",
+        "watermark_model": "watermark_model",
+        "no_watermark": "no_watermark",
+        "detect_watermark": "detect_watermark",
+        "c2pa_cert": "c2pa_cert",
+        "c2pa_key": "c2pa_key",
     }
 
     # Handle crispasr:<sub> notation

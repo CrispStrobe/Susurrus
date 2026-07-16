@@ -159,6 +159,26 @@ class TestCrispASR071Sync(unittest.TestCase):
         self.assertIn("--i-have-rights", cmd)
         self.assertIn("--no-spoken-disclaimer", cmd)
 
+    def test_full_provenance_flags(self):
+        b = self._make_backend(
+            i_have_rights=True,
+            no_spoken_disclaimer=True,
+            no_watermark=True,
+            watermark_model="audioseal.gguf",
+            detect_watermark="test.wav",
+            c2pa_cert="cert.pem",
+            c2pa_key="key.pem",
+        )
+        cmd = ["crispasr"]
+        b._append_params(cmd)
+        self.assertIn("--i-have-rights", cmd)
+        self.assertIn("--no-spoken-disclaimer", cmd)
+        self.assertIn("--no-watermark", cmd)
+        self.assertEqual(cmd[cmd.index("--watermark-model") + 1], "audioseal.gguf")
+        self.assertEqual(cmd[cmd.index("--detect-watermark") + 1], "test.wav")
+        self.assertEqual(cmd[cmd.index("--c2pa-cert") + 1], "cert.pem")
+        self.assertEqual(cmd[cmd.index("--c2pa-key") + 1], "key.pem")
+
     def test_hotwords_value_flags_emit(self):
         b = self._make_backend(hotwords="Tokyo,CrispASR", hotwords_boost=3.0, g2p_dict="olaph")
         cmd = ["crispasr"]

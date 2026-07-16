@@ -258,13 +258,80 @@ Inspired by CrisperWeaver comparison. Priority order by impact/effort.
 - [ ] Fallback: show plain text if no structured segments available
 - [ ] Unit test: add/edit/delete segments, speaker rename, keyboard nav
 
-## R4 — CI integration test job (MEDIUM)
+## R4 — CI integration test job (DONE)
 
-- [ ] `.github/workflows/ci.yml`: add `integration` job
-  - Runs on ubuntu-latest only (not full matrix)
-  - Downloads crispasr binary (latest release)
-  - Installs libopenblas-dev (for binary shared libs)
-  - Runs `python -m unittest discover -s tests/integration -v`
-  - `continue-on-error: true` (advisory, doesn't block merges)
-- [ ] Gate integration tests behind `SUSURRUS_INTEGRATION=1` env var
-- [ ] Unit test: verify the CI job YAML is valid (parse check)
+- [x] `.github/workflows/ci.yml`: integration job added
+- [x] continue-on-error: true (advisory)
+
+---
+
+# Susurrus v2.9.1+ — EU AI Act Compliance & Future Plan
+
+## C1 — EU AI Act Provenance Flags (DONE — v2.9.1)
+
+- [x] CLI: `--i-have-rights`, `--no-spoken-disclaimer`, `--watermark-model`,
+      `--no-watermark`, `--detect-watermark`, `--c2pa-cert`, `--c2pa-key`
+- [x] CLI `_build_crispasr_kwargs`: all 7 flags wired through
+- [x] `--detect-watermark` as standalone verb (run and exit)
+- [x] `--no-watermark` warning: logs EU AI Act Art. 50 responsibility shift
+- [x] TTS backend: `no_watermark`, `c2pa_cert`, `c2pa_key` kwargs + warning
+- [x] Unit test: full provenance flag set in PARAM_MAP
+- [x] CrispASR defaults: watermark ON, C2PA signing ON (bundled cert)
+- [x] Susurrus does NOT override these defaults — compliance by default
+
+## C2 — c2pa-audio Python Integration (FUTURE)
+
+Standalone lightweight C2PA signing/verification for Susurrus's own
+Python TTS backends (edge-tts, piper, kokoro-onnx, chatterbox, speecht5)
+which bypass the CrispASR binary.
+
+- [ ] Add `c2pa-audio` Python bindings as optional dependency
+- [ ] Post-process step in Python TTS backends: sign output WAV with C2PA
+- [ ] Verify C2PA credentials on transcription input (optional)
+- [ ] Add `--verify-c2pa` CLI flag for input audio provenance check
+- [ ] GUI: show C2PA credential badge on loaded audio files
+
+See https://github.com/CrispStrobe/c2pa-audio (160 KB, Python ctypes)
+
+## C3 — Watermark Detection in GUI (FUTURE)
+
+- [ ] "Detect Watermark" button in transcription tab (runs `--detect-watermark`)
+- [ ] Show confidence + verdict (AI-GENERATED / UNCERTAIN / none)
+- [ ] Color-coded badge in the audio info panel
+
+## F1 — GUI: CrispASR advanced settings for provenance (FUTURE)
+
+- [ ] Add C2PA cert/key file pickers to TTS advanced settings
+- [ ] Add watermark model file picker
+- [ ] "Voice Cloning Consent" checkbox (maps to --i-have-rights)
+- [ ] "Skip AI Disclaimer" checkbox (maps to --no-spoken-disclaimer)
+
+## F2 — Live streaming in GUI (FUTURE)
+
+- [ ] Mic capture via sounddevice/PyAudio (16kHz mono)
+- [ ] Pipe to CrispASR `--stream --mic` subprocess
+- [ ] Real-time segment updates in SegmentListWidget
+- [ ] Start/Stop recording button
+
+## F3 — Voice clone wizard (FUTURE)
+
+- [ ] 3-step dialog: capture/select audio → enter/transcribe ref text → hand off to TTS
+- [ ] Pre-populate TTS settings with reference audio + text
+- [ ] `--i-have-rights` checkbox in wizard (mandatory before proceeding)
+
+## F4 — i18n (German) (FUTURE)
+
+- [ ] Extract user-visible strings to translations dict
+- [ ] German translation file
+- [ ] Language selector in settings
+
+## F5 — Server mode in GUI (FUTURE)
+
+- [ ] Toggle in Tools menu: "Start Server"
+- [ ] Port field, status indicator, Stop button
+
+## F6 — CrispEmbed integration (FUTURE)
+
+- [ ] Semantic search over transcription history via CrispEmbed
+- [ ] Embedding-based transcript comparison
+- [ ] Requires CrispEmbed binary or Python bindings
