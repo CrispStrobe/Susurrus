@@ -85,12 +85,17 @@ Susurrus is a professional, modular audio suite providing transcription, text-to
 - **4-tab layout**: Transcription / Text-to-Speech / Translation / History
 - **Segment list view**: Per-segment display with speaker color chips, confidence badges, inline editing
 - **Waveform display**: PCM visualization with segment highlights, auto-loads on file selection
+- **Live mic streaming**: "Stream Mic" button — real-time transcription from microphone
+- **Watermark detection**: "Detect Watermark" button — check if audio is AI-generated
 - **Batch queue**: Multi-file sequential processing with status tracking
 - **History browser**: Search, load, delete past transcriptions (auto-saved)
+- **Voice clone wizard**: 3-step guided dialog with EU AI Act consent (Tools menu)
+- **Server toggle**: Start/stop OpenAI-compatible HTTP server from Tools menu
 - **Light/dark themes**: Toggle via Ctrl+T, persisted in QSettings
 - **Log viewer**: Real-time log display with level filtering (View → Show Logs)
+- **i18n**: English + German translations (90+ strings)
 - **CrispASR advanced settings**: Collapsible panel for VAD, diarization, LID, alignment, grammar, streaming
-- **TTS panel**: Text input, file loading, backend/voice selection, reference audio, playback
+- **TTS panel**: Text input, file loading, backend/voice selection, reference audio, C2PA/watermark controls
 - **Translation panel**: Source/target language, backend selection
 - **Export formats**: SRT, VTT, JSON, CSV, TXT (format picker in Save dialog)
 - **Drag-and-drop**: First file → input, additional files → batch queue
@@ -260,6 +265,8 @@ susurrus/
     ├── progress_parser.py          # CrispASR stderr progress parsing
     ├── segment_model.py            # Segment class with speaker names, editing
     ├── c2pa_signing.py             # C2PA Content Credentials (via c2pa-audio)
+    ├── i18n.py                     # English + German translations
+    ├── semantic_search.py          # CrispEmbed semantic search (with fallback)
     ├── text_extraction.py          # PDF/EPUB/HTML/MD extraction
     ├── audio_utils.py
     ├── format_utils.py             # SRT/VTT time formatting
@@ -281,7 +288,7 @@ susurrus/
 ## Testing
 
 ```bash
-# Run all tests (245+ tests)
+# Run all tests (257 tests)
 python -m unittest discover -s tests -v
 
 # Run unit tests only
