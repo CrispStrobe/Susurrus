@@ -4,7 +4,7 @@ import os
 import platform
 
 APP_NAME = "Susurrus"
-APP_VERSION = "2.10.0"
+APP_VERSION = "2.11.0"
 APP_ORG = "CrispStrobe"
 
 # ---------------------------------------------------------------------------
@@ -141,6 +141,12 @@ BACKEND_MODEL_MAP = {
     "crispasr:granite-4.1": [
         ("auto", "IBM Granite Speech 4.1 2B"),
     ],
+    "crispasr:granite-4.1-plus": [
+        ("auto", "IBM Granite Speech 4.1 Plus"),
+    ],
+    "crispasr:granite-4.1-nar": [
+        ("auto", "IBM Granite Speech 4.1 NAR"),
+    ],
     "crispasr:moonshine": [
         ("auto", "Moonshine Tiny"),
         ("auto:q8_0", "Moonshine Q8_0"),
@@ -178,6 +184,9 @@ BACKEND_MODEL_MAP = {
         ("auto", "FunASR Nano"),
         ("auto:q8_0", "FunASR Q8_0"),
     ],
+    "crispasr:fun-asr-mlt-nano": [
+        ("auto", "Fun-ASR MLT Nano"),
+    ],
     "crispasr:paraformer": [
         ("auto", "Paraformer (zh)"),
     ],
@@ -191,6 +200,15 @@ BACKEND_MODEL_MAP = {
     "crispasr:omniasr": [
         ("auto", "OmniASR CTC 1B"),
         ("auto:q8_0", "OmniASR Q8_0"),
+    ],
+    "crispasr:omniasr-300m": [
+        ("auto", "OmniASR CTC 300M"),
+    ],
+    "crispasr:omniasr-llm": [
+        ("auto", "OmniASR LLM"),
+    ],
+    "crispasr:omniasr-llm-1b": [
+        ("auto", "OmniASR LLM 1B"),
     ],
     "crispasr:mimo-asr": [
         ("auto", "MiMo ASR"),
@@ -284,8 +302,48 @@ TTS_BACKEND_MAP = {
         "voices": [],
         "default_voice": None,
     },
+    "crispasr:qwen3-tts-customvoice": {
+        "models": [("auto", "Qwen3 TTS CustomVoice")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:qwen3-tts-1.7b-base": {
+        "models": [("auto", "Qwen3 TTS 1.7B Base")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:qwen3-tts-1.7b-customvoice": {
+        "models": [("auto", "Qwen3 TTS 1.7B CustomVoice")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:qwen3-tts-1.7b-voicedesign": {
+        "models": [("auto", "Qwen3 TTS 1.7B VoiceDesign")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:miotts": {
+        "models": [("auto", "MioTTS")],
+        "voices": [],
+        "default_voice": None,
+    },
     "crispasr:chatterbox": {
         "models": [("auto", "Chatterbox TTS"), ("auto:q8_0", "Chatterbox Q8_0")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:chatterbox-turbo": {
+        "models": [("auto", "Chatterbox Turbo TTS")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:kartoffelbox-turbo": {
+        "models": [("auto", "Kartoffelbox Turbo TTS")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:lahgtna-chatterbox": {
+        "models": [("auto", "Lahgtna Chatterbox TTS")],
         "voices": [],
         "default_voice": None,
     },
@@ -319,8 +377,18 @@ TTS_BACKEND_MAP = {
         "voices": [],
         "default_voice": None,
     },
+    "crispasr:bark-tts": {
+        "models": [("auto", "Bark TTS (multilingual)")],
+        "voices": [],
+        "default_voice": None,
+    },
     "crispasr:dia": {
         "models": [("auto", "Dia (dialogue)")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:dia-tts": {
+        "models": [("auto", "Dia TTS (dialogue)")],
         "voices": [],
         "default_voice": None,
     },
@@ -329,8 +397,23 @@ TTS_BACKEND_MAP = {
         "voices": [],
         "default_voice": None,
     },
+    "crispasr:zonos-tts": {
+        "models": [("auto", "Zonos TTS (cloning)")],
+        "voices": [],
+        "default_voice": None,
+    },
     "crispasr:csm": {
         "models": [("auto", "Sesame CSM-1B")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:csm-tts": {
+        "models": [("auto", "CSM TTS")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:sesame": {
+        "models": [("auto", "Sesame CSM")],
         "voices": [],
         "default_voice": None,
     },
@@ -374,6 +457,21 @@ TTS_BACKEND_MAP = {
         "voices": [],
         "default_voice": None,
     },
+    "crispasr:lex-au-orpheus-de": {
+        "models": [("auto", "Lex AU Orpheus German")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:kartoffel-orpheus-de-natural": {
+        "models": [("auto", "Kartoffel Orpheus German Natural")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:kartoffel-orpheus-de-synthetic": {
+        "models": [("auto", "Kartoffel Orpheus German Synthetic")],
+        "voices": [],
+        "default_voice": None,
+    },
     "crispasr:lfm2-audio": {
         "models": [("auto", "LFM2-Audio 1.5B (ASR+TTS+S2S)")],
         "voices": [],
@@ -394,6 +492,21 @@ TTS_BACKEND_MAP = {
         "voices": [],
         "default_voice": None,
     },
+    "crispasr:tada-1b": {
+        "models": [("auto", "TADA 1B (flow matching)")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:tada-tts-1b": {
+        "models": [("auto", "TADA TTS 1B")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:tada-3b-ml": {
+        "models": [("auto", "TADA 3B Multilingual")],
+        "voices": [],
+        "default_voice": None,
+    },
     "crispasr:dots-tts": {
         "models": [("auto", "DOTS-TTS 2B (48 kHz)")],
         "voices": [],
@@ -411,6 +524,11 @@ TTS_BACKEND_MAP = {
     },
     "crispasr:omnivoice": {
         "models": [("auto", "OmniVoice (k2-fsa)")],
+        "voices": [],
+        "default_voice": None,
+    },
+    "crispasr:omnivoice-singing": {
+        "models": [("auto", "OmniVoice Singing")],
         "voices": [],
         "default_voice": None,
     },
@@ -512,7 +630,7 @@ TTS_BACKEND_MAP = {
 
 # All CrispASR ASR sub-backend names for listing (must match the binary's
 # `--list-backends` names; the runtime probe in crispasr_utils refines this to
-# what the installed binary actually supports). Synced with CrispASR 0.8.12.
+# what the installed binary actually supports). Synced with CrispASR 0.8.22.
 CRISPASR_SUB_BACKENDS = [
     "whisper",
     "parakeet",
@@ -527,6 +645,8 @@ CRISPASR_SUB_BACKENDS = [
     "voxtral4b",
     "granite",
     "granite-4.1",
+    "granite-4.1-plus",
+    "granite-4.1-nar",
     "moonshine",
     "moonshine-streaming",
     "kyutai-stt",
@@ -537,10 +657,14 @@ CRISPASR_SUB_BACKENDS = [
     "vibevoice",
     "firered-asr",
     "funasr",
+    "fun-asr-mlt-nano",
     "paraformer",
     "sensevoice",
     "glm-asr",
     "omniasr",
+    "omniasr-300m",
+    "omniasr-llm",
+    "omniasr-llm-1b",
     "mimo-asr",
     "moss-audio",
     "moss-transcribe",
@@ -575,7 +699,15 @@ CRISPASR_TTS_BACKENDS = [
     "kokoro",
     "orpheus",
     "qwen3-tts",
+    "qwen3-tts-customvoice",
+    "qwen3-tts-1.7b-base",
+    "qwen3-tts-1.7b-customvoice",
+    "qwen3-tts-1.7b-voicedesign",
+    "miotts",
     "chatterbox",
+    "chatterbox-turbo",
+    "kartoffelbox-turbo",
+    "lahgtna-chatterbox",
     "vibevoice",
     "vibevoice-1.5b",
     "indextts",
@@ -583,9 +715,14 @@ CRISPASR_TTS_BACKENDS = [
     "melotts",
     "piper",
     "bark",
+    "bark-tts",
     "dia",
+    "dia-tts",
     "zonos",
+    "zonos-tts",
     "csm",
+    "csm-tts",
+    "sesame",
     "cosyvoice3-tts",
     "f5-tts",
     "fastpitch",
@@ -594,13 +731,20 @@ CRISPASR_TTS_BACKENDS = [
     "pocket-tts",
     "speecht5",
     "kugelaudio",
+    "lex-au-orpheus-de",
+    "kartoffel-orpheus-de-natural",
+    "kartoffel-orpheus-de-synthetic",
     "lfm2-audio",
     "mini-omni2",
     "tada",
+    "tada-1b",
+    "tada-tts-1b",
+    "tada-3b-ml",
     "dots-tts",
     "bananamind-tts",
     "voxtral-tts",
     "omnivoice",
+    "omnivoice-singing",
     "irodori-tts",
     "irodori-tts-voicedesign",
     "moss-tts",
@@ -644,7 +788,7 @@ CRISPASR_DIARIZE_METHODS = [
 ]
 
 # CrispASR LID methods
-CRISPASR_LID_BACKENDS = ["whisper", "silero", "firered", "ecapa"]
+CRISPASR_LID_BACKENDS = ["whisper", "silero", "firered", "ecapa", "off"]
 
 # Supported languages for various features
 SUPPORTED_LANGUAGES = {

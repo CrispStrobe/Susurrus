@@ -236,7 +236,19 @@ def main():
         "--instruct", default=None, help="Natural-language voice description (qwen3-tts)"
     )
     tts_group.add_argument("--codec-model", default=None, help="Codec/companion GGUF model")
+    tts_group.add_argument("--codec-quant", default=None, help="Preferred companion quant")
     tts_group.add_argument("--tts-steps", type=int, default=None, help="TTS diffusion steps")
+    tts_group.add_argument("--tts-cfg-scale", type=float, default=None, help="TTS CFG scale")
+    tts_group.add_argument(
+        "--tts-speed", type=float, default=None, help="TTS speaking-rate multiplier"
+    )
+    tts_group.add_argument(
+        "--tts-trim-silence", action="store_true", help="Trim leading silence from TTS output"
+    )
+    tts_group.add_argument(
+        "--tts-max-input-chars", type=int, default=None, help="Server TTS input length cap"
+    )
+    tts_group.add_argument("--voice-dir", default=None, help="Directory of named voice profiles")
     tts_group.add_argument("--play", action="store_true", help="Play audio after synthesis")
     tts_group.add_argument(
         "--tts-play", action="store_true", help="Play audio on local speaker (CrispASR native)"
@@ -268,6 +280,15 @@ def main():
         action="store_true",
         help="Disable AI-content watermark — shifts marking responsibility to operator",
     )
+    prov_group.add_argument("--no-c2pa", action="store_true", help="Disable C2PA signing")
+    prov_group.add_argument(
+        "--accept-marking-responsibility",
+        action="store_true",
+        help="Accept responsibility for AI-content marking when opting out",
+    )
+    prov_group.add_argument(
+        "--accept-license", default=None, help="Accept a restricted model license tag"
+    )
     prov_group.add_argument(
         "--detect-watermark",
         default=None,
@@ -292,6 +313,7 @@ def main():
     # --- CrispASR pass-through ---
     ca_group = parser.add_argument_group("CrispASR Options")
     ca_group.add_argument("--crispasr-backend", default=None, help="Force CrispASR sub-backend")
+    ca_group.add_argument("--diagnostics", action="store_true", help="Run CrispASR diagnostics")
     ca_group.add_argument("--vad", action="store_true", help="Enable VAD")
     ca_group.add_argument("--split-on-punct", action="store_true", help="Split at punctuation")
     ca_group.add_argument("--temperature", type=float, default=None, help="Sampling temperature")
@@ -308,6 +330,7 @@ def main():
     ca_group.add_argument(
         "--prefix-text", default=None, help="LLM initial prompt (granite keyword biasing)"
     )
+    ca_group.add_argument("--context", default=None, help="Context text for supported backends")
     ca_group.add_argument("--translate", action="store_true", help="Translate to English (whisper)")
     ca_group.add_argument("--flash-attn", action="store_true", help="Enable flash attention")
     ca_group.add_argument("--no-gpu", action="store_true", help="Disable GPU")
@@ -333,6 +356,12 @@ def main():
         "--vad-max-speech-s", type=float, default=None, help="Max speech duration (s)"
     )
     vad_group.add_argument("--vad-pad-ms", type=int, default=None, help="Speech pad (ms)")
+    vad_group.add_argument("--vad-export", default=None, help="Write VAD/chunk boundaries to JSON")
+    vad_group.add_argument("--vad-import", default=None, help="Read VAD/chunk boundaries from JSON")
+    vad_group.add_argument(
+        "--vad-import-strict", action="store_true", help="Require imported VAD metadata to match"
+    )
+    vad_group.add_argument("--vad-export-raw", default=None, help="Write raw VAD speech segments")
 
     # --- CrispASR diarization ---
     dia_group = parser.add_argument_group("CrispASR Diarization Options")
@@ -390,9 +419,31 @@ def main():
     # --- CrispASR speaker ---
     spk_group = parser.add_argument_group("CrispASR Speaker Options")
     spk_group.add_argument("--speaker-db", default=None, help="Speaker profile database path")
+    spk_group.add_argument(
+        "--expect-speakers", default=None, help="Comma-separated enrolled speakers"
+    )
     spk_group.add_argument("--enroll-speaker", default=None, help="Enroll speaker name")
     spk_group.add_argument("--speaker-threshold", type=float, default=None, help="Match threshold")
     spk_group.add_argument("--titanet-model", default=None, help="Speaker embedding model")
+
+    # --- CrispASR audio analysis ---
+    analysis_group = parser.add_argument_group("CrispASR Audio Analysis Options")
+    analysis_group.add_argument("--separate", action="store_true", help="Run source separation")
+    analysis_group.add_argument("--stems", default=None, help="Comma-separated stems to write")
+    analysis_group.add_argument(
+        "--sep-output-dir", default=None, help="Source separation output dir"
+    )
+    analysis_group.add_argument("--pitch", action="store_true", help="Run pitch tracking")
+    analysis_group.add_argument("--pitch-format", default=None, choices=["text", "json"])
+    analysis_group.add_argument("--pitch-hop-ms", type=float, default=None)
+    analysis_group.add_argument("--piano", action="store_true", help="Run piano transcription")
+    analysis_group.add_argument("--piano-format", default=None, choices=["text", "json"])
+    analysis_group.add_argument("--chords", action="store_true", help="Run chord recognition")
+    analysis_group.add_argument("--chords-format", default=None, choices=["text", "json"])
+    analysis_group.add_argument("--tab", action="store_true", help="Run guitar tablature")
+    analysis_group.add_argument("--tab-format", default=None, choices=["text", "json"])
+    analysis_group.add_argument("--beats", action="store_true", help="Run beat tracking")
+    analysis_group.add_argument("--beats-format", default=None, choices=["text", "json"])
 
     # --- CrispASR grammar ---
     gram_group = parser.add_argument_group("CrispASR Grammar Options")
@@ -444,6 +495,18 @@ def main():
     if args.list_backends:
         _list_backends()
         return
+
+    if getattr(args, "diagnostics", False):
+        from utils.crispasr_utils import find_crispasr
+
+        exe = find_crispasr()
+        if not exe:
+            print("crispasr binary not found", file=sys.stderr)
+            sys.exit(1)
+        import subprocess
+
+        proc = subprocess.run([exe, "--diagnostics"], text=True)
+        sys.exit(proc.returncode)
 
     # EU AI Act compliance warnings
     if getattr(args, "no_watermark", False):
@@ -561,6 +624,7 @@ def _build_crispasr_kwargs(args):
     # Map CLI arg names to CrispASR kwarg names
     mappings = {
         "crispasr_backend": "crispasr_backend",
+        "diagnostics": "diagnostics",
         "vad": "vad",
         "split_on_punct": "split_on_punct",
         "temperature": "temperature",
@@ -573,6 +637,7 @@ def _build_crispasr_kwargs(args):
         "carry_initial_prompt": "carry_initial_prompt",
         "auto_download": "auto_download",
         "prefix_text": "prefix_text",
+        "context": "context",
         "translate": "translate",
         "flash_attn": "flash_attn",
         "no_gpu": "no_gpu",
@@ -586,6 +651,10 @@ def _build_crispasr_kwargs(args):
         "vad_min_silence_ms": "vad_min_silence_duration_ms",
         "vad_max_speech_s": "vad_max_speech_duration_s",
         "vad_pad_ms": "vad_speech_pad_ms",
+        "vad_export": "vad_export",
+        "vad_import": "vad_import",
+        "vad_import_strict": "vad_import_strict",
+        "vad_export_raw": "vad_export_raw",
         # Diarization
         "diarize": "diarize",
         "diarize_method": "diarize_method",
@@ -608,6 +677,7 @@ def _build_crispasr_kwargs(args):
         "punc_model": "punc_model",
         # Speaker
         "speaker_db": "speaker_db",
+        "expect_speakers": "expect_speakers",
         "enroll_speaker": "enroll_speaker",
         "speaker_threshold": "speaker_threshold",
         "titanet_model": "titanet_model",
@@ -639,17 +709,41 @@ def _build_crispasr_kwargs(args):
         "ref_text": "tts_ref_text",
         "instruct": "tts_instruct",
         "codec_model": "tts_codec_model",
+        "codec_quant": "tts_codec_quant",
         "tts_steps": "tts_steps",
+        "tts_cfg_scale": "tts_cfg_scale",
+        "tts_speed": "tts_speed",
+        "tts_trim_silence": "tts_trim_silence",
+        "tts_max_input_chars": "tts_max_input_chars",
+        "voice_dir": "voice_dir",
         "tts_play": "tts_play",
         "tts_play_device": "tts_play_device",
         # Provenance / EU AI Act
         "i_have_rights": "i_have_rights",
+        "accept_license": "accept_license",
         "no_spoken_disclaimer": "no_spoken_disclaimer",
         "watermark_model": "watermark_model",
         "no_watermark": "no_watermark",
+        "no_c2pa": "no_c2pa",
+        "accept_marking_responsibility": "accept_marking_responsibility",
         "detect_watermark": "detect_watermark",
         "c2pa_cert": "c2pa_cert",
         "c2pa_key": "c2pa_key",
+        # Audio analysis / source separation
+        "separate": "separate",
+        "stems": "stems",
+        "sep_output_dir": "sep_output_dir",
+        "pitch": "pitch",
+        "pitch_format": "pitch_format",
+        "pitch_hop_ms": "pitch_hop_ms",
+        "piano": "piano",
+        "piano_format": "piano_format",
+        "chords": "chords",
+        "chords_format": "chords_format",
+        "tab": "tab",
+        "tab_format": "tab_format",
+        "beats": "beats",
+        "beats_format": "beats_format",
     }
 
     # Handle crispasr:<sub> notation

@@ -91,7 +91,7 @@ class TestBinaryBasics(unittest.TestCase):
 
 @skip_no_binary
 class TestBackendProbe(unittest.TestCase):
-    """Test that new 0.8.7 backends appear in --list-backends-json."""
+    """Test that new CrispASR backends appear in --list-backends-json."""
 
     def setUp(self):
         rc, out, _ = _run(["--list-backends-json"])
@@ -129,6 +129,24 @@ class TestBackendProbe(unittest.TestCase):
         # At least log what we found
         if not found:
             self.skipTest(f"None of the new 0.8.7 backends compiled in: {new_backends}")
+
+    def test_new_0822_backends_if_compiled(self):
+        """Check CrispASR 0.8.22 backends — advisory only."""
+        new_backends = [
+            "granite-4.1-plus",
+            "granite-4.1-nar",
+            "omniasr-300m",
+            "omniasr-llm",
+            "fun-asr-mlt-nano",
+            "miotts",
+            "qwen3-tts-customvoice",
+            "chatterbox-turbo",
+            "kartoffelbox-turbo",
+            "lahgtna-chatterbox",
+        ]
+        found = [b for b in new_backends if b in self.backends]
+        if not found:
+            self.skipTest(f"None of the new 0.8.22 backends compiled in: {new_backends}")
 
 
 @skip_no_binary
@@ -326,6 +344,23 @@ class TestProvenanceFlags(unittest.TestCase):
             self.skipTest("Binary does not support --no-spoken-disclaimer yet")
         self.assertEqual(rc, 0, f"flag rejected: {err}")
 
+    def test_no_c2pa_requires_responsibility_ack(self):
+        rc, out, err = _run(
+            [
+                "--backend",
+                "whisper",
+                "-m",
+                "auto",
+                "--dry-run-resolve",
+                "--no-c2pa",
+                "--accept-marking-responsibility",
+                "--no-gpu",
+            ]
+        )
+        if rc != 0 and "no-c2pa" in err:
+            self.skipTest("Binary does not support --no-c2pa yet")
+        self.assertEqual(rc, 0, f"flag rejected: {err}")
+
     def test_tts_speed_accepted(self):
         rc, out, err = _run(
             [
@@ -359,6 +394,34 @@ class TestProvenanceFlags(unittest.TestCase):
         if rc != 0 and "att-context" in err:
             self.skipTest("Binary does not support --att-context yet")
         self.assertEqual(rc, 0, f"flag rejected: {err}")
+
+    def test_vad_export_import_flags_accepted(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"segments":[]}')
+            f.flush()
+            vad_path = f.name
+
+        try:
+            rc, out, err = _run(
+                [
+                    "--backend",
+                    "whisper",
+                    "-m",
+                    "auto",
+                    "--dry-run-resolve",
+                    "--vad-import",
+                    vad_path,
+                    "--vad-import-strict",
+                    "--vad-export",
+                    vad_path,
+                    "--no-gpu",
+                ]
+            )
+            if rc != 0 and "vad-import" in err:
+                self.skipTest("Binary does not support VAD import/export yet")
+            self.assertEqual(rc, 0, f"flag rejected: {err}")
+        finally:
+            os.unlink(vad_path)
 
 
 if __name__ == "__main__":

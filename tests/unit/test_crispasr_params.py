@@ -552,6 +552,124 @@ class TestCrispASR0812Registry(unittest.TestCase):
             )
 
 
+class TestCrispASR0822Sync(unittest.TestCase):
+    """Coverage for the CrispASR 0.8.22 interface sync."""
+
+    def _make_backend(self, **kwargs):
+        from workers.transcription.backends.crispasr_backend import CrispasrBackend
+
+        return CrispasrBackend(model_id="test.gguf", device="cpu", **kwargs)
+
+    def test_new_0822_flags_present(self):
+        from workers.transcription.backends.crispasr_backend import PARAM_MAP
+
+        for key, flag in [
+            ("diagnostics", "--diagnostics"),
+            ("input_file", "--file"),
+            ("context", "--context"),
+            ("vad_export", "--vad-export"),
+            ("vad_import", "--vad-import"),
+            ("vad_import_strict", "--vad-import-strict"),
+            ("vad_export_raw", "--vad-export-raw"),
+            ("expect_speakers", "--expect-speakers"),
+            ("accept_license", "--accept-license"),
+            ("no_c2pa", "--no-c2pa"),
+            ("accept_marking_responsibility", "--accept-marking-responsibility"),
+            ("separate", "--separate"),
+            ("pitch_hop_ms", "--pitch-hop-ms"),
+            ("beats_format", "--beats-format"),
+        ]:
+            self.assertIn(key, PARAM_MAP, f"missing PARAM_MAP key {key}")
+            self.assertEqual(PARAM_MAP[key][0], flag)
+
+    def test_vad_segment_roundtrip_flags_emit(self):
+        b = self._make_backend(
+            vad_export="segments.json",
+            vad_import="segments.json",
+            vad_import_strict=True,
+            vad_export_raw="raw-segments.json",
+        )
+        cmd = ["crispasr"]
+        b._append_params(cmd)
+        self.assertEqual(cmd[cmd.index("--vad-export") + 1], "segments.json")
+        self.assertEqual(cmd[cmd.index("--vad-import") + 1], "segments.json")
+        self.assertIn("--vad-import-strict", cmd)
+        self.assertEqual(cmd[cmd.index("--vad-export-raw") + 1], "raw-segments.json")
+
+    def test_audio_analysis_flags_emit(self):
+        b = self._make_backend(
+            separate=True,
+            stems="vocals,drums",
+            pitch=True,
+            pitch_hop_ms=20.0,
+            beats=True,
+            beats_format="json",
+        )
+        cmd = ["crispasr"]
+        b._append_params(cmd)
+        self.assertIn("--separate", cmd)
+        self.assertEqual(cmd[cmd.index("--stems") + 1], "vocals,drums")
+        self.assertIn("--pitch", cmd)
+        self.assertEqual(cmd[cmd.index("--pitch-hop-ms") + 1], "20.0")
+        self.assertIn("--beats", cmd)
+        self.assertEqual(cmd[cmd.index("--beats-format") + 1], "json")
+
+    def test_marking_responsibility_flags_emit(self):
+        b = self._make_backend(
+            accept_license="cc-by-nc-4.0",
+            no_c2pa=True,
+            accept_marking_responsibility=True,
+        )
+        cmd = ["crispasr"]
+        b._append_params(cmd)
+        self.assertEqual(cmd[cmd.index("--accept-license") + 1], "cc-by-nc-4.0")
+        self.assertIn("--no-c2pa", cmd)
+        self.assertIn("--accept-marking-responsibility", cmd)
+
+
+class TestCrispASR0822Registry(unittest.TestCase):
+    """The config registries must include CrispASR 0.8.22 backends."""
+
+    def test_new_asr_backends(self):
+        import config
+
+        for name in (
+            "granite-4.1-plus",
+            "granite-4.1-nar",
+            "fun-asr-mlt-nano",
+            "omniasr-300m",
+            "omniasr-llm",
+            "omniasr-llm-1b",
+        ):
+            self.assertIn(name, config.CRISPASR_SUB_BACKENDS, f"missing ASR: {name}")
+            self.assertIn(
+                f"crispasr:{name}",
+                config.BACKEND_MODEL_MAP,
+                f"BACKEND_MODEL_MAP missing crispasr:{name}",
+            )
+
+    def test_new_tts_backends(self):
+        import config
+
+        for name in (
+            "miotts",
+            "qwen3-tts-customvoice",
+            "qwen3-tts-1.7b-base",
+            "chatterbox-turbo",
+            "kartoffelbox-turbo",
+            "lahgtna-chatterbox",
+            "tada-tts-1b",
+            "zonos-tts",
+            "omnivoice-singing",
+        ):
+            self.assertIn(name, config.CRISPASR_TTS_BACKENDS, f"missing TTS: {name}")
+            self.assertIn(
+                f"crispasr:{name}",
+                config.TTS_BACKEND_MAP,
+                f"TTS_BACKEND_MAP missing crispasr:{name}",
+            )
+
+
 class TestCrispASRRegistrySync(unittest.TestCase):
     """The config registries must use valid CrispASR backend names."""
 

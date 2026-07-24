@@ -1,22 +1,22 @@
 # Susurrus: Audio Transcription, TTS & Translation Suite
 
-Susurrus is a professional, modular audio suite providing transcription, text-to-speech, translation, and speech-to-speech through a unified GUI and CLI. Built with a clean architecture, it supports 42+ ASR backends (via CrispASR), 34+ TTS engines, multi-language translation, speaker diarization, EU AI Act compliance, and extensive customization options.
+Susurrus is a professional, modular audio suite providing transcription, text-to-speech, translation, and speech-to-speech through a unified GUI and CLI. Built with a clean architecture, it supports 48+ CrispASR ASR sub-backends, 50+ CrispASR TTS engines, multi-language translation, speaker diarization, EU AI Act compliance, and extensive customization options.
 
 ### Part of the Crisp ecosystem
 
 | Project | Role |
 |---|---|
-| **Susurrus** | This repo — Python GUI + CLI with 42+ ASR, 34+ TTS, translation, S2S |
-| **[CrispASR](https://github.com/CrispStrobe/CrispASR)** | C++ ASR/TTS engine (v0.8.12) — 42+ ASR + 34+ TTS backends, ggml inference. Two integration paths: subprocess (binary) or FFI (libcrispasr Python bindings) |
+| **Susurrus** | This repo — Python GUI + CLI with 48+ CrispASR ASR sub-backends, 50+ CrispASR TTS engines, translation, S2S |
+| **[CrispASR](https://github.com/CrispStrobe/CrispASR)** | C++ ASR/TTS engine (v0.8.22) — 48+ ASR + 50+ TTS backends, ggml inference. Two integration paths: subprocess (binary) or FFI (libcrispasr Python bindings) |
 | **[CrisperWeaver](https://github.com/CrispStrobe/CrisperWeaver)** | Flutter transcription app powered by CrispASR — desktop + mobile, fully offline |
 | **[CrispTTS](https://github.com/CrispStrobe/CrispTTS)** | Python TTS suite — 20+ handlers, German focus |
 | **[CrispEmbed](https://github.com/CrispStrobe/CrispEmbed)** | Text embedding engine (ggml) — XLM-R, Qwen3-Embed, Gemma3, dense + sparse + ColBERT |
 
 ## Features
 
-### Transcription (42+ backends)
+### Transcription (48+ CrispASR ASR sub-backends)
 
-- **CrispASR engine** (42+ ASR sub-backends): whisper, parakeet, canary, canary-ctc, canary-qwen, cohere, cohere-ar, qwen3, qwen3-1.7b, qwen3-ja-anime, mega-asr, voxtral, voxtral4b, granite, granite-4.1, moonshine, moonshine-streaming, kyutai-stt, kyutai-stt-2.6b, fastconformer-ctc, wav2vec2, hubert, data2vec, vibevoice, firered-asr, funasr, paraformer, sensevoice, glm-asr, omniasr, mimo-asr, moss-audio, moss-transcribe, moss-diarize, gemma4-e2b, gemma4-e4b, nemotron, mini-omni2, ark-asr, higgs-stt, parakeet-ctc-ja, reazonspeech, and more
+- **CrispASR engine** (48+ ASR sub-backends): whisper, parakeet, canary, canary-ctc, canary-qwen, cohere, cohere-ar, qwen3, qwen3-1.7b, qwen3-ja-anime, mega-asr, voxtral, voxtral4b, granite, granite-4.1, granite-4.1-plus, granite-4.1-nar, moonshine, moonshine-streaming, kyutai-stt, kyutai-stt-2.6b, fastconformer-ctc, wav2vec2, hubert, data2vec, vibevoice, firered-asr, funasr, fun-asr-mlt-nano, paraformer, sensevoice, glm-asr, omniasr, omniasr-300m, omniasr-llm, omniasr-llm-1b, mimo-asr, moss-audio, moss-transcribe, moss-diarize, gemma4-e2b, gemma4-e4b, nemotron, mini-omni2, ark-asr, higgs-stt, parakeet-ctc-ja, reazonspeech, and more
 - **CrispASR FFI** (`crispasr-ffi`): In-process inference via Python ctypes to libcrispasr — zero IPC overhead, persistent model sessions, native word-level timestamps and confidence scores
 - **CrispASR subprocess** (`crispasr`): Binary execution with full parameter passthrough — works with just the binary, no shared library needed
 - **Python backends**: mlx-whisper, faster-whisper (batched + sequenced), transformers, whisper.cpp, ctranslate2, whisper-jax, insanely-fast-whisper, OpenAI Whisper, Voxtral (local + API)
@@ -27,9 +27,9 @@ Susurrus is a professional, modular audio suite providing transcription, text-to
 - **Performance Metrics**: Real-time factor (RTF) and words-per-second (WPS)
 - **Backend Availability Probing**: Auto-detects which CrispASR backends are compiled in
 
-### Text-to-Speech (34+ engines)
+### Text-to-Speech (50+ CrispASR engines)
 
-- **CrispASR TTS** (34+ C++ backends): kokoro, orpheus, qwen3-tts, chatterbox, vibevoice, vibevoice-1.5b, indextts, voxcpm2-tts, melotts, piper, bark, dia, zonos, csm, cosyvoice3-tts, f5-tts, fastpitch, parler-tts, outetts, pocket-tts, speecht5, kugelaudio, lfm2-audio, mini-omni2, tada, dots-tts, bananamind-tts, bananamind-tts-de, voxtral-tts, omnivoice, irodori-tts, irodori-tts-voicedesign, moss-tts, moss-tts-local
+- **CrispASR TTS** (50+ C++ backends): kokoro, orpheus, qwen3-tts, qwen3-tts-customvoice, qwen3-tts-1.7b-base, qwen3-tts-1.7b-customvoice, qwen3-tts-1.7b-voicedesign, chatterbox, chatterbox-turbo, kartoffelbox-turbo, lahgtna-chatterbox, vibevoice, vibevoice-1.5b, miotts, indextts, voxcpm2-tts, melotts, piper, bark, bark-tts, dia, dia-tts, zonos, zonos-tts, csm, csm-tts, sesame, cosyvoice3-tts, f5-tts, fastpitch, parler-tts, outetts, pocket-tts, speecht5, kugelaudio, lex-au-orpheus-de, kartoffel-orpheus-de-natural, kartoffel-orpheus-de-synthetic, lfm2-audio, mini-omni2, tada, tada-1b, tada-tts-1b, tada-3b-ml, dots-tts, bananamind-tts, bananamind-tts-de, voxtral-tts, omnivoice, omnivoice-singing, irodori-tts, irodori-tts-voicedesign, moss-tts, moss-tts-local
 - **Python-native TTS** (5 backends): Edge TTS (cloud), Piper (MIT, ONNX), Kokoro ONNX (Apache 2.0), Chatterbox (MIT), SpeechT5 (MIT)
 - **Voice cloning**: Reference audio support for applicable backends
 - **Text extraction**: Load text from TXT, Markdown, HTML, PDF, EPUB files for synthesis
@@ -55,7 +55,7 @@ Susurrus is a professional, modular audio suite providing transcription, text-to
 
 ### Advanced CrispASR Features
 
-- **VAD**: Silero, FireRed, with configurable thresholds
+- **VAD**: Silero, FireRed, configurable thresholds, plus VAD segment export/import for reproducible chunking
 - **Streaming**: Live microphone, stdin, rolling-window transcription
 - **Server mode**: OpenAI-compatible HTTP API
 - **Grammar constraints**: GBNF constrained decoding
@@ -246,7 +246,7 @@ susurrus/
 │   │   └── ...                     # 11 total ASR backends
 │   ├── tts/backends/
 │   │   ├── base.py                 # TTSBackend ABC
-│   │   ├── crispasr_tts_backend.py # CrispASR TTS (34+ engines)
+│   │   ├── crispasr_tts_backend.py # CrispASR TTS (50+ engines)
 │   │   ├── edge_tts_backend.py
 │   │   ├── piper_tts_backend.py
 │   │   ├── kokoro_onnx_tts_backend.py

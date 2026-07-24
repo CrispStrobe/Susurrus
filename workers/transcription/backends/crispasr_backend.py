@@ -10,7 +10,7 @@ Also supports TTS (kokoro, orpheus, qwen3-tts, chatterbox, vibevoice,
 indextts, voxcpm2-tts, melotts, piper, bark, dia, zonos, csm, and more)
 and translation (m2m100, m2m100-wmt21, madlad, gemma4-e2b).
 
-Synced with CrispASR 0.8.12.
+Synced with CrispASR 0.8.22.
 
 The backend auto-detects from the GGUF file metadata, or can be forced
 with the `crispasr_backend` kwarg.
@@ -35,6 +35,8 @@ from .base import TranscriptionBackend
 PARAM_MAP = {
     # --- Sub-backend ---
     "crispasr_backend": ("--backend", str),
+    "diagnostics": ("--diagnostics", bool),
+    "input_file": ("--file", str),
     # --- Basic inference ---
     "threads": ("-t", int),
     "processors": ("-p", int),
@@ -78,6 +80,7 @@ PARAM_MAP = {
     "lcs_dedup": ("--lcs-dedup", str),
     "lcs_min_length": ("--lcs-min-length", int),
     "ask": ("--ask", str),
+    "context": ("--context", str),
     "prefix_text": ("--prefix-text", str),
     # --- Output formats ---
     "output_txt": ("-otxt", bool),
@@ -110,6 +113,10 @@ PARAM_MAP = {
     "vad_speech_pad_ms": ("-vp", int),
     "vad_samples_overlap": ("-vo", float),
     "vad_stitch": ("--vad-stitch", bool),
+    "vad_export": ("--vad-export", str),
+    "vad_import": ("--vad-import", str),
+    "vad_import_strict": ("--vad-import-strict", bool),
+    "vad_export_raw": ("--vad-export-raw", str),
     # --- Diarization ---
     "diarize": ("--diarize", bool),
     "tinydiarize": ("--tinydiarize", bool),
@@ -138,12 +145,15 @@ PARAM_MAP = {
     "text_file": ("--text-file", str),
     "align_output": ("--align-output", str),
     "align_format": ("--align-format", str),
+    "align": ("--align", bool),
+    "align_granularity": ("--align-granularity", str),
     # --- Punctuation ---
     "no_punctuation": ("--no-punctuation", bool),
     "punc_model": ("--punc-model", str),
     "truecase_model": ("--truecase-model", str),
     # --- Speaker ---
     "speaker_db": ("--speaker-db", str),
+    "expect_speakers": ("--expect-speakers", str),
     "enroll_speaker": ("--enroll-speaker", str),
     "speaker_threshold": ("--speaker-threshold", float),
     "titanet_model": ("--titanet-model", str),
@@ -209,8 +219,11 @@ PARAM_MAP = {
     "make_ref_aligner": ("--make-ref-aligner", str),
     # --- Provenance / EU AI Act (voice cloning, watermarking, C2PA) ---
     "i_have_rights": ("--i-have-rights", bool),
+    "accept_license": ("--accept-license", str),
     "no_spoken_disclaimer": ("--no-spoken-disclaimer", bool),
     "no_watermark": ("--no-watermark", bool),
+    "no_c2pa": ("--no-c2pa", bool),
+    "accept_marking_responsibility": ("--accept-marking-responsibility", bool),
     "watermark_model": ("--watermark-model", str),
     "detect_watermark": ("--detect-watermark", str),
     "c2pa_cert": ("--c2pa-cert", str),
@@ -229,6 +242,8 @@ PARAM_MAP = {
     "dry_run_ignore_cache": ("--dry-run-ignore-cache", bool),
     # --- Misc ---
     "flush_after": ("--flush-after", int),
+    "ov_e_device": ("--ov-e-device", str),
+    "firered_vad_debug": ("--firered-vad-debug", bool),
     # parakeet-decoder takes a value (ctc|tdt|maes), not a bare flag
     "parakeet_decoder": ("--parakeet-decoder", str),
     # --- Hotwords / contextual biasing ---
@@ -239,6 +254,21 @@ PARAM_MAP = {
     "chat_model": ("--chat-model", str),
     "chat_ctx": ("--chat-ctx", int),
     "chat_gpu_layers": ("--chat-gpu-layers", int),
+    # --- Audio analysis / source separation ---
+    "separate": ("--separate", bool),
+    "stems": ("--stems", str),
+    "sep_output_dir": ("--sep-output-dir", str),
+    "pitch": ("--pitch", bool),
+    "pitch_format": ("--pitch-format", str),
+    "pitch_hop_ms": ("--pitch-hop-ms", float),
+    "piano": ("--piano", bool),
+    "piano_format": ("--piano-format", str),
+    "chords": ("--chords", bool),
+    "chords_format": ("--chords-format", str),
+    "tab": ("--tab", bool),
+    "tab_format": ("--tab-format", str),
+    "beats": ("--beats", bool),
+    "beats_format": ("--beats-format", str),
 }
 
 # Timestamp regex for output parsing

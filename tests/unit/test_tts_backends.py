@@ -136,6 +136,35 @@ class TestCrispasrTTSBackendKwargs(unittest.TestCase):
         self.assertEqual(b.__class__.__name__, "CrispasrTTSBackend")
         self.assertEqual(b.crispasr_backend, "mini-omni2")
 
+    def test_0822_tts_kwargs(self):
+        from workers.tts.backends.crispasr_tts_backend import CrispasrTTSBackend
+
+        b = CrispasrTTSBackend(
+            model_id="auto",
+            codec_quant="q4_k",
+            tts_cfg_scale=1.5,
+            tts_speed=1.1,
+            tts_trim_silence=True,
+            tts_max_input_chars=2048,
+            voice_dir="voices",
+            make_ref=True,
+            make_ref_output="voice.gguf",
+            accept_license="cc-by-nc-4.0",
+            no_c2pa=True,
+            accept_marking_responsibility=True,
+        )
+        self.assertEqual(b.codec_quant, "q4_k")
+        self.assertEqual(b.tts_cfg_scale, 1.5)
+        self.assertEqual(b.tts_speed, 1.1)
+        self.assertTrue(b.tts_trim_silence)
+        self.assertEqual(b.tts_max_input_chars, 2048)
+        self.assertEqual(b.voice_dir, "voices")
+        self.assertTrue(b.make_ref)
+        self.assertEqual(b.make_ref_output, "voice.gguf")
+        self.assertEqual(b.accept_license, "cc-by-nc-4.0")
+        self.assertTrue(b.no_c2pa)
+        self.assertTrue(b.accept_marking_responsibility)
+
 
 class TestConfigMaps(unittest.TestCase):
     """Test configuration maps."""
@@ -186,6 +215,19 @@ class TestConfigMaps(unittest.TestCase):
             "crispasr:reazonspeech",
         ):
             self.assertIn(name, BACKEND_MODEL_MAP, f"BACKEND_MODEL_MAP missing {name}")
+
+    def test_0822_tts_backends_in_maps(self):
+        from config import TTS_BACKEND_MAP
+
+        for name in (
+            "crispasr:miotts",
+            "crispasr:qwen3-tts-customvoice",
+            "crispasr:chatterbox-turbo",
+            "crispasr:kartoffelbox-turbo",
+            "crispasr:lahgtna-chatterbox",
+            "crispasr:omnivoice-singing",
+        ):
+            self.assertIn(name, TTS_BACKEND_MAP, f"TTS_BACKEND_MAP missing {name}")
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="susurrus",
-    version="1.1.0",
+    version="2.11.0",
     packages=find_packages(),
     install_requires=[
         "PyQt6>=6.0.0",
