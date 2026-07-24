@@ -46,7 +46,17 @@ jobs:
 
       - name: Build binary
         run: |
-          pyinstaller --onefile --name ${{ matrix.binary_name }} --hidden-import=PyQt6 --collect-submodules=PyQt6 main.py
+          pyinstaller \
+            --onefile \
+            --name ${{ matrix.binary_name }} \
+            --paths=. \
+            --hidden-import=PyQt6 \
+            --collect-submodules=PyQt6 \
+            --collect-submodules=gui \
+            --collect-submodules=utils \
+            --collect-submodules=workers \
+            --collect-submodules=backends \
+            main.py
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
