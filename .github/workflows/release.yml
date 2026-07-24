@@ -45,8 +45,9 @@ jobs:
           pip install pyinstaller
 
       - name: Build binary
+        shell: bash
         run: |
-          pyinstaller \
+          python -m PyInstaller \
             --onefile \
             --name ${{ matrix.binary_name }} \
             --paths=. \
