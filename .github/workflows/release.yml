@@ -43,7 +43,18 @@ jobs:
 
       - name: Build binary
         run: |
-          pyinstaller --onefile --name ${{ matrix.asset_name }} --hidden-import=PyQt6 --collect-submodules=PyQt6 main.py ${{ matrix.pyinstaller_args }}
+          pyinstaller \
+            --onefile \
+            --name ${{ matrix.asset_name }} \
+            --paths=. \
+            --hidden-import=PyQt6 \
+            --collect-submodules=PyQt6 \
+            --collect-submodules=gui \
+            --collect-submodules=utils \
+            --collect-submodules=workers \
+            --collect-submodules=backends \
+            main.py \
+            ${{ matrix.pyinstaller_args }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7

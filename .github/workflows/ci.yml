@@ -102,3 +102,38 @@ jobs:
         # like modules reassigning sys.stdout/stderr at import time, which
         # unittest would silently tolerate.
         run: python -m pytest tests/ -v
+
+  pyinstaller-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install packaging dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[gui]"
+          python -m pip install pyinstaller
+
+      - name: Build Windows binary
+        run: |
+          pyinstaller `
+            --onefile `
+            --name susurrus-windows-x86_64 `
+            --paths=. `
+            --hidden-import=PyQt6 `
+            --collect-submodules=PyQt6 `
+            --collect-submodules=gui `
+            --collect-submodules=utils `
+            --collect-submodules=workers `
+            --collect-submodules=backends `
+            main.py
+
+      - name: Upload smoke artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: susurrus-windows-x86_64-smoke
+          path: dist/susurrus-windows-x86_64.exe
