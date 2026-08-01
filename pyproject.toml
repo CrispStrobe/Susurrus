@@ -49,8 +49,14 @@ dev = [
     "pytest-cov>=4.1.0",
     "pytest-mock>=3.12.0",
 ]
+watermark = [
+    # Neural AI-content watermarking (EU AI Act Art. 50(2)). Optional: the
+    # declarative RIFF marker carries the obligation without it, but a neural
+    # watermark also survives re-encoding. Pulls torch + model weights.
+    "audioseal>=0.1.4",
+]
 all = [
-    "susurrus[gui,gpu,tts,text-extraction]",
+    "susurrus[gui,gpu,tts,text-extraction,watermark]",
 ]
 
 [project.scripts]

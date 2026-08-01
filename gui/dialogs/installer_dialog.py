@@ -7,6 +7,8 @@ import sys
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import QDialog, QLabel, QMessageBox, QProgressBar, QPushButton, QVBoxLayout
 
+from utils.i18n import t
+
 
 class DependencyInstallThread(QThread):
     """Thread for installing dependencies"""
@@ -151,50 +153,50 @@ class InstallerDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Install Dependencies")
+        self.setWindowTitle(t("msg.install_deps.title"))
         self.setMinimumWidth(500)
 
         layout = QVBoxLayout()
 
-        title = QLabel("<h2>Install Missing Dependencies</h2>")
+        title = QLabel(f"<h2>{t('heading.install_missing')}</h2>")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
-        info = QLabel("The following dependencies are needed for full functionality:")
+        info = QLabel(t("heading.deps_needed"))
         layout.addWidget(info)
 
         # FFMPEG button
-        ffmpeg_btn = QPushButton("Install FFMPEG")
+        ffmpeg_btn = QPushButton(t("btn.install_ffmpeg"))
         ffmpeg_btn.clicked.connect(self.install_ffmpeg)
         layout.addWidget(ffmpeg_btn)
 
         # PyTorch with CUDA
-        pytorch_btn = QPushButton("Install PyTorch with CUDA support")
+        pytorch_btn = QPushButton(t("btn.install_pytorch_cuda"))
         pytorch_btn.clicked.connect(self.install_pytorch_cuda)
         layout.addWidget(pytorch_btn)
 
         # Pydub button
-        pydub_btn = QPushButton("Install pydub")
+        pydub_btn = QPushButton(t("btn.install_pydub"))
         pydub_btn.clicked.connect(self.install_pydub)
         layout.addWidget(pydub_btn)
 
         # Diarization dependencies button
-        diarize_btn = QPushButton("Install Diarization Dependencies")
+        diarize_btn = QPushButton(t("btn.install_diarization"))
         diarize_btn.clicked.connect(self.install_diarization)
         layout.addWidget(diarize_btn)
 
         # yt-dlp dependencies button
-        yt_btn = QPushButton("Install yt-delp Dependencies")
+        yt_btn = QPushButton(t("btn.install_ytdlp"))
         yt_btn.clicked.connect(self.install_yt)
         layout.addWidget(yt_btn)
 
         # Voxtral dependencies button
-        voxtral_btn = QPushButton("Install Voxtral Dependencies")
+        voxtral_btn = QPushButton(t("btn.install_voxtral"))
         voxtral_btn.clicked.connect(self.install_voxtral)
         layout.addWidget(voxtral_btn)
 
         # Close button
-        close_btn = QPushButton("Close")
+        close_btn = QPushButton(t("btn.close"))
         close_btn.clicked.connect(self.reject)
         layout.addWidget(close_btn)
 
@@ -217,10 +219,10 @@ class InstallerDialog(QDialog):
         progress_bar.setMaximum(0)  # Indeterminate
         layout.addWidget(progress_bar)
 
-        status_label = QLabel("Preparing...")
+        status_label = QLabel(t("msg.preparing"))
         layout.addWidget(status_label)
 
-        cancel_button = QPushButton("Cancel")
+        cancel_button = QPushButton(t("btn.cancel"))
         cancel_button.clicked.connect(progress_dialog.reject)
         layout.addWidget(cancel_button)
 
@@ -236,14 +238,14 @@ class InstallerDialog(QDialog):
         def on_finished(success, message):
             progress_bar.setMaximum(100)
             progress_bar.setValue(100)
-            cancel_button.setText("Close")
+            cancel_button.setText(t("btn.close"))
 
             if success:
-                status_label.setText("Installation completed successfully!")
-                QMessageBox.information(progress_dialog, "Success", message)
+                status_label.setText(t("msg.install_complete"))
+                QMessageBox.information(progress_dialog, t("msg.success.title"), message)
             else:
                 status_label.setText(f"Installation completed with issues: {message}")
-                QMessageBox.warning(progress_dialog, "Warning", message)
+                QMessageBox.warning(progress_dialog, t("msg.warning.title"), message)
 
             progress_dialog.close()
 
@@ -261,7 +263,7 @@ class InstallerDialog(QDialog):
 
         QMessageBox.information(
             self,
-            "FFMPEG Installation Instructions",
+            t("msg.ffmpeg_instructions.title"),
             "1. Download the 'essentials' build\n"
             "2. Extract the zip file to C:\\ffmpeg\n"
             "3. Add C:\\ffmpeg\\bin to your system PATH:\n"
@@ -275,8 +277,8 @@ class InstallerDialog(QDialog):
         """Install PyTorch with CUDA support"""
         reply = QMessageBox.question(
             self,
-            "Install PyTorch with CUDA",
-            "This will reinstall PyTorch with CUDA support. Continue?",
+            t("msg.install_pytorch_cuda.title"),
+            t("msg.install_pytorch_cuda.body"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
 
@@ -314,7 +316,7 @@ class InstallerDialog(QDialog):
         """Install Voxtral dependencies"""
         reply = QMessageBox.question(
             self,
-            "Install Voxtral Dependencies",
+            t("msg.install_voxtral.title"),
             "This will install the development version of transformers.\n\n"
             "The following packages will be installed:\n"
             "• transformers (from GitHub)\n"

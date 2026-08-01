@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
 )
 
 from config import CRISPASR_TTS_BACKENDS
+from utils.i18n import t
 
 # Python-native TTS backends (non-CrispASR) always offered in the GUI.
 _NATIVE_TTS_BACKENDS = ["edge-tts", "piper", "kokoro-onnx", "chatterbox", "speecht5"]
@@ -32,27 +33,27 @@ class TTSSettingsWidget(QWidget):
         self.setLayout(layout)
 
         # Text input
-        layout.addWidget(QLabel("Text to synthesize:"))
+        layout.addWidget(QLabel(t("label.text_to_synthesize")))
         self.text_input = QPlainTextEdit()
-        self.text_input.setPlaceholderText("Enter text here, or load from a file below...")
+        self.text_input.setPlaceholderText(t("ph.tts_text"))
         self.text_input.setMaximumHeight(150)
         layout.addWidget(self.text_input)
 
         # File input row
         file_row = QHBoxLayout()
-        file_row.addWidget(QLabel("Or load text from file:"))
+        file_row.addWidget(QLabel(t("label.load_text_from_file")))
         self.text_file_path = QLineEdit()
-        self.text_file_path.setPlaceholderText("TXT, MD, HTML, PDF, or EPUB")
+        self.text_file_path.setPlaceholderText(t("ph.text_file"))
         self.text_file_path.setReadOnly(True)
         file_row.addWidget(self.text_file_path)
-        self.browse_file_btn = QPushButton("Browse")
+        self.browse_file_btn = QPushButton(t("btn.browse"))
         self.browse_file_btn.clicked.connect(self._browse_file)
         file_row.addWidget(self.browse_file_btn)
         layout.addLayout(file_row)
 
         # Backend and voice row
         bv_row = QHBoxLayout()
-        bv_row.addWidget(QLabel("TTS Backend:"))
+        bv_row.addWidget(QLabel(t("label.tts_backend")))
         self.tts_backend = QComboBox()
         # Native backends + every CrispASR TTS engine (synced with the release)
         self.tts_backend.addItems(
@@ -61,7 +62,7 @@ class TTSSettingsWidget(QWidget):
         self.tts_backend.currentTextChanged.connect(self._on_backend_changed)
         bv_row.addWidget(self.tts_backend)
 
-        bv_row.addWidget(QLabel("Voice:"))
+        bv_row.addWidget(QLabel(t("label.voice")))
         self.voice_selection = QComboBox()
         self.voice_selection.setEditable(True)
         bv_row.addWidget(self.voice_selection)
@@ -69,52 +70,54 @@ class TTSSettingsWidget(QWidget):
 
         # Model and device row
         md_row = QHBoxLayout()
-        md_row.addWidget(QLabel("Model:"))
+        md_row.addWidget(QLabel(t("label.model")))
         self.model_id = QComboBox()
         self.model_id.setEditable(True)
         self.model_id.addItem("auto")
         md_row.addWidget(self.model_id)
 
-        md_row.addWidget(QLabel("Device:"))
+        md_row.addWidget(QLabel(t("label.device")))
         self.device_selection = QComboBox()
         self.device_selection.addItems(["Auto", "CPU", "GPU", "MPS"])
         md_row.addWidget(self.device_selection)
 
-        md_row.addWidget(QLabel("Language:"))
+        md_row.addWidget(QLabel(t("label.language")))
         self.language = QLineEdit()
-        self.language.setPlaceholderText("de")
+        self.language.setPlaceholderText(t("ph.language_code"))
         self.language.setMaximumWidth(60)
         md_row.addWidget(self.language)
         layout.addLayout(md_row)
 
         # Voice cloning reference row
         ref_row = QHBoxLayout()
-        ref_row.addWidget(QLabel("Reference audio:"))
+        ref_row.addWidget(QLabel(t("label.reference_audio")))
         self.reference_audio = QLineEdit()
-        self.reference_audio.setPlaceholderText("WAV file for voice cloning (optional)")
+        self.reference_audio.setPlaceholderText(t("ph.reference_audio"))
         ref_row.addWidget(self.reference_audio)
-        self.browse_ref_btn = QPushButton("Browse")
+        self.browse_ref_btn = QPushButton(t("btn.browse"))
         self.browse_ref_btn.clicked.connect(self._browse_reference)
         ref_row.addWidget(self.browse_ref_btn)
         layout.addLayout(ref_row)
 
-        # Provenance / EU AI Act controls (CrispASR voice cloning)
+        # Reference transcription (voice cloning quality + wizard hand-off)
+        ref_text_row = QHBoxLayout()
+        ref_text_row.addWidget(QLabel(t("label.reference_text")))
+        self.ref_text = QLineEdit()
+        self.ref_text.setPlaceholderText(t("ph.reference_text"))
+        ref_text_row.addWidget(self.ref_text)
+        layout.addLayout(ref_text_row)
+
+        # Provenance / EU AI Act controls (applies to all cloning backends)
         prov_row = QHBoxLayout()
-        self.i_have_rights = QCheckBox("I have rights to clone this voice")
-        self.i_have_rights.setToolTip(
-            "Required for .wav voice cloning — attests consent of the cloned "
-            "speaker or that it is your own voice."
-        )
+        self.i_have_rights = QCheckBox(t("consent.clone_checkbox"))
+        self.i_have_rights.setToolTip(t("consent.clone_detail"))
         prov_row.addWidget(self.i_have_rights)
 
-        self.no_spoken_disclaimer = QCheckBox("No spoken disclaimer")
-        self.no_spoken_disclaimer.setToolTip(
-            "Skip the audible AI-disclosure prefix (watermark + C2PA provenance "
-            "are still applied)."
-        )
+        self.no_spoken_disclaimer = QCheckBox(t("chk.no_spoken_disclaimer"))
+        self.no_spoken_disclaimer.setToolTip(t("tip.no_spoken_disclaimer"))
         prov_row.addWidget(self.no_spoken_disclaimer)
 
-        prov_row.addWidget(QLabel("G2P dict:"))
+        prov_row.addWidget(QLabel(t("label.g2p_dict")))
         self.g2p_dict = QComboBox()
         self.g2p_dict.setEditable(True)
         self.g2p_dict.addItems(["(default)", "olaph", "open-dict"])
@@ -123,16 +126,13 @@ class TTSSettingsWidget(QWidget):
 
         # Provenance row 2: watermark + C2PA
         prov_row2 = QHBoxLayout()
-        self.no_watermark = QCheckBox("Disable watermark")
-        self.no_watermark.setToolTip(
-            "Disable AudioSeal AI-content watermark — shifts marking "
-            "responsibility to the operator (EU AI Act Art. 50)."
-        )
+        self.no_watermark = QCheckBox(t("chk.disable_watermark"))
+        self.no_watermark.setToolTip(t("tip.disable_watermark"))
         prov_row2.addWidget(self.no_watermark)
 
-        prov_row2.addWidget(QLabel("C2PA cert:"))
+        prov_row2.addWidget(QLabel(t("label.c2pa_cert")))
         self.c2pa_cert = QLineEdit()
-        self.c2pa_cert.setPlaceholderText("(bundled default)")
+        self.c2pa_cert.setPlaceholderText(t("ph.bundled_default"))
         self.c2pa_cert.setMaximumWidth(200)
         prov_row2.addWidget(self.c2pa_cert)
         self.browse_c2pa_cert_btn = QPushButton("...")
@@ -140,9 +140,9 @@ class TTSSettingsWidget(QWidget):
         self.browse_c2pa_cert_btn.clicked.connect(self._browse_c2pa_cert)
         prov_row2.addWidget(self.browse_c2pa_cert_btn)
 
-        prov_row2.addWidget(QLabel("Key:"))
+        prov_row2.addWidget(QLabel(t("label.key")))
         self.c2pa_key = QLineEdit()
-        self.c2pa_key.setPlaceholderText("(bundled default)")
+        self.c2pa_key.setPlaceholderText(t("ph.bundled_default"))
         self.c2pa_key.setMaximumWidth(200)
         prov_row2.addWidget(self.c2pa_key)
         self.browse_c2pa_key_btn = QPushButton("...")
@@ -151,13 +151,25 @@ class TTSSettingsWidget(QWidget):
         prov_row2.addWidget(self.browse_c2pa_key_btn)
         layout.addLayout(prov_row2)
 
+        # Provenance row 3: opt-outs that shift Art. 50 responsibility
+        prov_row3 = QHBoxLayout()
+        self.no_c2pa = QCheckBox(t("chk.disable_c2pa"))
+        self.no_c2pa.setToolTip(t("tip.disable_c2pa"))
+        prov_row3.addWidget(self.no_c2pa)
+
+        self.accept_marking_responsibility = QCheckBox(t("chk.accept_marking_responsibility"))
+        self.accept_marking_responsibility.setToolTip(t("tip.accept_marking_responsibility"))
+        prov_row3.addWidget(self.accept_marking_responsibility)
+        prov_row3.addStretch()
+        layout.addLayout(prov_row3)
+
         # Output row
         out_row = QHBoxLayout()
-        out_row.addWidget(QLabel("Output file:"))
+        out_row.addWidget(QLabel(t("label.output_file")))
         self.output_path = QLineEdit()
         self.output_path.setText("tts_output.wav")
         out_row.addWidget(self.output_path)
-        self.browse_output_btn = QPushButton("Browse")
+        self.browse_output_btn = QPushButton(t("btn.browse"))
         self.browse_output_btn.clicked.connect(self._browse_output)
         out_row.addWidget(self.browse_output_btn)
         layout.addLayout(out_row)
@@ -165,19 +177,19 @@ class TTSSettingsWidget(QWidget):
         # Action buttons
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        self.synthesize_btn = QPushButton("Synthesize")
+        self.synthesize_btn = QPushButton(t("btn.synthesize"))
         self.synthesize_btn.setStyleSheet(
             "background-color: #2d7d2d; color: white; font-weight: bold; padding: 10px 20px;"
         )
         btn_row.addWidget(self.synthesize_btn)
 
-        self.play_btn = QPushButton("Play")
+        self.play_btn = QPushButton(t("btn.play"))
         self.play_btn.setEnabled(False)
         btn_row.addWidget(self.play_btn)
         layout.addLayout(btn_row)
 
         # Status output
-        layout.addWidget(QLabel("Status:"))
+        layout.addWidget(QLabel(t("label.status")))
         self.status_output = QPlainTextEdit()
         self.status_output.setReadOnly(True)
         self.status_output.setMaximumHeight(100)

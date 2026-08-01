@@ -15,6 +15,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from utils.i18n import t
+
 
 class BatchPanel(QWidget):
     """Panel for batch transcription of multiple audio files."""
@@ -35,9 +37,9 @@ class BatchPanel(QWidget):
 
         # Header
         header = QHBoxLayout()
-        header.addWidget(QLabel("Batch Queue"))
+        header.addWidget(QLabel(t("label.batch_queue")))
         header.addStretch()
-        self.status_label = QLabel("0 files")
+        self.status_label = QLabel(t("label.file_count").format(count=0))
         header.addWidget(self.status_label)
         layout.addLayout(header)
 
@@ -49,25 +51,25 @@ class BatchPanel(QWidget):
         # Buttons
         btn_row = QHBoxLayout()
 
-        self.add_button = QPushButton("Add Files...")
+        self.add_button = QPushButton(t("btn.add_files"))
         self.add_button.clicked.connect(self._on_add_files)
         btn_row.addWidget(self.add_button)
 
-        self.remove_button = QPushButton("Remove")
+        self.remove_button = QPushButton(t("btn.remove"))
         self.remove_button.clicked.connect(self._on_remove)
         btn_row.addWidget(self.remove_button)
 
-        self.start_button = QPushButton("Start Batch")
+        self.start_button = QPushButton(t("btn.start_batch"))
         self.start_button.setStyleSheet("background-color: #388E3C; color: white;")
         self.start_button.clicked.connect(self._on_start)
         btn_row.addWidget(self.start_button)
 
-        self.stop_button = QPushButton("Stop")
+        self.stop_button = QPushButton(t("btn.stop"))
         self.stop_button.setEnabled(False)
         self.stop_button.clicked.connect(self._on_stop)
         btn_row.addWidget(self.stop_button)
 
-        self.clear_button = QPushButton("Clear Done")
+        self.clear_button = QPushButton(t("btn.clear_done"))
         self.clear_button.clicked.connect(self._on_clear_done)
         btn_row.addWidget(self.clear_button)
 
@@ -139,7 +141,7 @@ class BatchPanel(QWidget):
         summary = self._queue.summary
         total = sum(summary.values())
         done = summary.get("done", 0)
-        self.status_label.setText(f"{done}/{total} done")
+        self.status_label.setText(t("label.batch_progress").format(done=done, total=total))
 
     def update_display(self):
         """Refresh the list display (call from a timer or signal)."""

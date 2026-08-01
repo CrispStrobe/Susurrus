@@ -3,6 +3,8 @@
 
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout
 
+from utils.i18n import t
+
 from .collapsible_box import CollapsibleBox
 
 
@@ -14,24 +16,18 @@ class VoxtralSettingsBox(CollapsibleBox):
         layout = QVBoxLayout()
 
         # Info label
-        info_label = QLabel(
-            "Voxtral is Mistral AI's speech recognition model.\n"
-            "It supports 8 languages and offers both local and API-based inference."
-        )
+        info_label = QLabel(t("voxtral.description"))
         info_label.setWordWrap(True)
         info_label.setStyleSheet("color: #888888; font-style: italic;")
         layout.addWidget(info_label)
 
         # API key input
         api_key_layout = QHBoxLayout()
-        api_key_layout.addWidget(QLabel("Mistral API Key:"))
+        api_key_layout.addWidget(QLabel(t("label.mistral_api_key")))
         self.mistral_api_key = QLineEdit()
-        self.mistral_api_key.setPlaceholderText("Enter your Mistral AI API key (for voxtral-api)")
+        self.mistral_api_key.setPlaceholderText(t("ph.mistral_key"))
         self.mistral_api_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.mistral_api_key.setToolTip(
-            "Required for voxtral-api backend.\n"
-            "Get your API key from: https://console.mistral.ai/"
-        )
+        self.mistral_api_key.setToolTip(t("tip.mistral_key"))
         api_key_layout.addWidget(self.mistral_api_key)
 
         # Show/Hide password button
@@ -50,19 +46,13 @@ class VoxtralSettingsBox(CollapsibleBox):
         layout.addLayout(api_key_layout)
 
         # Supported languages info
-        languages_label = QLabel(
-            "<b>Supported Languages:</b> English, French, Spanish, German, "
-            "Italian, Portuguese, Polish, Dutch"
-        )
+        languages_label = QLabel(t("voxtral.languages"))
         languages_label.setWordWrap(True)
         languages_label.setStyleSheet("font-size: 11px; color: #999999;")
         layout.addWidget(languages_label)
 
         # Performance note
-        note_label = QLabel(
-            "<b>Note:</b> voxtral-local requires transformers from GitHub. "
-            "Run install_voxtral.sh/bat to set up."
-        )
+        note_label = QLabel(t("voxtral.note"))
         note_label.setWordWrap(True)
         note_label.setStyleSheet("font-size: 11px; color: #ff9900;")
         layout.addWidget(note_label)
@@ -83,7 +73,7 @@ class VoxtralSettingsBox(CollapsibleBox):
         """Show help dialog for Mistral API key"""
         QMessageBox.information(
             self,
-            "Mistral API Key Help",
+            t("msg.mistral_key_help.title"),
             "<h3>Mistral AI API Key</h3>"
             "<p>The Mistral API key is required for the <b>voxtral-api</b> backend.</p>"
             "<h4>How to get your API key:</h4>"

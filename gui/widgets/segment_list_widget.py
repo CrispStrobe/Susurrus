@@ -12,6 +12,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from utils.i18n import t
+
 
 class SegmentRow(QWidget):
     """A single segment row with timestamp, speaker chip, text, and confidence."""
@@ -67,13 +69,13 @@ class SegmentRow(QWidget):
             badge.setFixedWidth(40)
             badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
             badge.setStyleSheet(f"color: {color}; font-size: 11px; font-weight: bold;")
-            badge.setToolTip(f"Confidence: {label}")
+            badge.setToolTip(t("tip.confidence").format(label=label))
             layout.addWidget(badge)
 
         # Edited indicator
         if seg.edited:
             edited_label = QLabel("*")
-            edited_label.setToolTip("Edited")
+            edited_label.setToolTip(t("tip.edited"))
             edited_label.setStyleSheet("color: #FF9800; font-weight: bold;")
             layout.addWidget(edited_label)
 

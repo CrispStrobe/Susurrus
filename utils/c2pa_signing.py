@@ -42,13 +42,33 @@ def is_available():
     return _get_c2pa() is not None
 
 
+def _resolve_pem(value):
+    """Accept either an inline PEM string or a path to a PEM file.
+
+    The CLI (``--c2pa-cert``) and GUI file pickers supply paths, while the
+    c2pa-audio API wants the PEM text itself.
+    """
+    if not value:
+        return None
+    if "-----BEGIN" in value:
+        return value
+    try:
+        with open(value, "r", encoding="utf-8") as f:
+            return f.read()
+    except OSError as e:
+        logger.warning("Could not read PEM file %s: %s", value, e)
+        return None
+
+
 def sign_wav_file(wav_path, cert_pem=None, key_pem=None):
     """Sign a WAV file with C2PA Content Credentials in-place.
 
     Args:
         wav_path: Path to the WAV file to sign.
-        cert_pem: Optional PEM certificate string. Uses bundled cert if None.
-        key_pem: Optional PEM private key string. Uses bundled key if None.
+        cert_pem: PEM certificate, either inline or as a file path. Uses the
+            bundled cert if None.
+        key_pem: PEM private key, either inline or as a file path. Uses the
+            bundled key if None.
 
     Returns:
         True if signed, False if c2pa-audio is not available.
@@ -61,7 +81,11 @@ def sign_wav_file(wav_path, cert_pem=None, key_pem=None):
         with open(wav_path, "rb") as f:
             wav_data = f.read()
 
-        signed = c2pa.sign_wav(wav_data, cert_pem=cert_pem, key_pem=key_pem)
+        signed = c2pa.sign_wav(
+            wav_data,
+            cert_pem=_resolve_pem(cert_pem),
+            key_pem=_resolve_pem(key_pem),
+        )
 
         with open(wav_path, "wb") as f:
             f.write(signed)

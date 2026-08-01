@@ -12,6 +12,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from utils.i18n import t
+
 from .collapsible_box import CollapsibleBox
 
 
@@ -23,18 +25,16 @@ class DiarizationSettingsBox(CollapsibleBox):
         layout = QVBoxLayout()
 
         # Enable diarization checkbox
-        self.enable_diarization = QCheckBox("Enable Speaker Diarization")
-        self.enable_diarization.setToolTip("Identify different speakers in the audio")
+        self.enable_diarization = QCheckBox(t("chk.enable_diarization"))
+        self.enable_diarization.setToolTip(t("tip.enable_diarization"))
         layout.addWidget(self.enable_diarization)
 
         # Hugging Face token input
         token_layout = QHBoxLayout()
-        token_layout.addWidget(QLabel("Hugging Face Token:"))
+        token_layout.addWidget(QLabel(t("label.hf_token")))
         self.hf_token = QLineEdit()
-        self.hf_token.setPlaceholderText("Enter your Hugging Face API token")
-        self.hf_token.setToolTip(
-            "Required for speaker diarization. Get it from https://huggingface.co/settings/tokens"
-        )
+        self.hf_token.setPlaceholderText(t("ph.hf_token"))
+        self.hf_token.setToolTip(t("tip.hf_token"))
         token_layout.addWidget(self.hf_token)
 
         # Token help button
@@ -47,7 +47,7 @@ class DiarizationSettingsBox(CollapsibleBox):
 
         # Diarization model selection
         model_layout = QHBoxLayout()
-        model_layout.addWidget(QLabel("Diarization Model:"))
+        model_layout.addWidget(QLabel(t("label.diarization_model")))
         self.diarization_model = QComboBox()
 
         # Add models - will be populated when DiarizationManager is available
@@ -67,15 +67,15 @@ class DiarizationSettingsBox(CollapsibleBox):
 
         # Min/Max speakers row
         speakers_layout = QHBoxLayout()
-        speakers_layout.addWidget(QLabel("Min. Speakers:"))
+        speakers_layout.addWidget(QLabel(t("label.min_speakers")))
         self.min_speakers = QLineEdit()
-        self.min_speakers.setPlaceholderText("Auto")
+        self.min_speakers.setPlaceholderText(t("ph.auto"))
         self.min_speakers.setMaximumWidth(60)
         speakers_layout.addWidget(self.min_speakers)
 
-        speakers_layout.addWidget(QLabel("Max. Speakers:"))
+        speakers_layout.addWidget(QLabel(t("label.max_speakers_full")))
         self.max_speakers = QLineEdit()
-        self.max_speakers.setPlaceholderText("Auto")
+        self.max_speakers.setPlaceholderText(t("ph.auto"))
         self.max_speakers.setMaximumWidth(60)
         speakers_layout.addWidget(self.max_speakers)
 
@@ -89,7 +89,7 @@ class DiarizationSettingsBox(CollapsibleBox):
         """Show help dialog for Hugging Face token"""
         QMessageBox.information(
             self,
-            "Hugging Face Token Help",
+            t("msg.hf_token_help.title"),
             "A Hugging Face API token is required for speaker diarization.\n\n"
             "1. Create a free account at https://huggingface.co\n"
             "2. Go to https://huggingface.co/settings/tokens\n"
@@ -103,7 +103,7 @@ class DiarizationSettingsBox(CollapsibleBox):
         """Show help dialog for diarization model selection"""
         QMessageBox.information(
             self,
-            "Diarization Model Selection",
+            t("msg.diarization_model_help.title"),
             "Choose the appropriate diarization model for your audio:\n\n"
             "• Default: General purpose diarization model\n"
             "• English: Optimized for English conversations\n"
