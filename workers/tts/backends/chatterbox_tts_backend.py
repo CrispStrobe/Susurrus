@@ -23,6 +23,14 @@ class ChatterboxTTSBackend(TTSBackend):
     """
 
     def synthesize(self, text, output_path="tts_output.wav", voice=None):
+        # Resolve the reference first and gate on it before importing torch or
+        # fetching a model: a refusal should cost nothing. Both cloning routes
+        # (`voice=` and the `reference_audio` kwarg) converge here, so this is
+        # the single choke point. Raises PermissionError without consent.
+        reference_audio = voice or self.kwargs.get("reference_audio")
+        if reference_audio and os.path.isfile(reference_audio):
+            self.require_clone_consent(reference_audio)
+
         try:
             from chatterbox.tts import ChatterboxTTS
         except ImportError:
@@ -44,7 +52,6 @@ class ChatterboxTTSBackend(TTSBackend):
 
         model = ChatterboxTTS.from_pretrained(device=device)
 
-        reference_audio = voice or self.kwargs.get("reference_audio")
         exaggeration = float(self.kwargs.get("exaggeration", 0.5))
         cfg_weight = self.kwargs.get("cfg_weight")
 

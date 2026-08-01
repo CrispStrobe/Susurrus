@@ -279,13 +279,15 @@ Inspired by CrisperWeaver comparison. Priority order by impact/effort.
 - [x] CrispASR defaults: watermark ON, C2PA signing ON (bundled cert)
 - [x] Susurrus does NOT override these defaults — compliance by default
 
-## C2 — c2pa-audio Python Integration (DONE — v2.9.2)
+## C2 — c2pa-audio Python Integration (PARTIAL — see A1)
 
 - [x] `utils/c2pa_signing.py` — sign/verify via c2pa-audio ctypes
-- [x] `TTSBackend.sign_output()` — post-synthesis signing hook
+- [x] `TTSBackend.sign_output()` — post-synthesis signing hook *defined*
 - [x] `--verify-c2pa` CLI flag
 - [x] Unit tests: 6 tests (import, fallback, sign_output, non-WAV skip)
 - [x] Live tests: 5 provenance flag acceptance tests
+- [!] **Never called.** The hook had zero production callers until A1; the
+      tests only asserted the method existed. Fixed in A1.
 
 See https://github.com/CrispStrobe/c2pa-audio (160 KB, Python ctypes)
 
@@ -294,12 +296,14 @@ See https://github.com/CrispStrobe/c2pa-audio (160 KB, Python ctypes)
 - [x] "Detect Watermark" button in transcription tab
 - [x] Runs `--detect-watermark` on loaded audio, shows result dialog
 
-## F1 — GUI: CrispASR advanced settings for provenance (DONE)
+## F1 — GUI: CrispASR advanced settings for provenance (PARTIAL — see A3)
 
 - [x] C2PA cert/key file pickers in TTS settings
 - [x] "Disable watermark" checkbox with Art. 50 tooltip
 - [x] "Voice Cloning Consent" checkbox (was already present)
 - [x] "Skip AI Disclaimer" checkbox (was already present)
+- [!] **Widgets rendered but inert.** `TTSThread` forwarded only three keys,
+      so the watermark checkbox and both cert pickers did nothing. Fixed in A3.
 
 ## F2 — Live streaming in GUI (DONE — v2.10.0)
 
@@ -329,3 +333,260 @@ See https://github.com/CrispStrobe/c2pa-audio (160 KB, Python ctypes)
 - [x] `utils/semantic_search.py` — semantic_search() with substring fallback
 - [x] Falls back to substring when CrispEmbed binary not available
 - [x] 5 unit tests (import, empty, substring, title scoring)
+
+---
+
+# Susurrus v2.11.0 — EU AI Act Compliance Remediation Plan
+
+Findings from the 2026-08-01 compliance audit. C2 and F1 above were marked
+DONE but shipped disconnected code — the hooks exist, nothing calls them.
+This section supersedes those claims.
+
+**Scope note.** The MIT licence does *not* exempt this project: Art. 2(12)
+excludes free/open-source AI systems from most of the Regulation *except*
+those falling under Art. 5 or Art. 50. A TTS suite with voice cloning is an
+Art. 50 system, so the transparency obligations apply in full.
+
+## A1 — Wire `sign_output()` into the synthesis paths (CRITICAL)
+
+`workers/tts/backends/base.py:34` defines the C2PA hook; it has zero
+production callers. edge-tts / piper / kokoro-onnx / speecht5 / chatterbox
+therefore emit synthetic audio with no machine-readable marking (Art. 50(2)).
+
+- [x] Renamed to `TTSBackend.apply_provenance()` — it now applies two marking
+      layers, so `sign_output` no longer described what it did
+- [x] `workers/tts_thread.py`: called after `synthesize()` on both branches
+- [x] `cli.py:_run_tts`: same on both branches
+- [x] Report marking status to the user (`_describe_marking`, `_report_marking`)
+- [x] `CrispasrTTSBackend.apply_provenance()` overrides to a no-op — the binary
+      marks its own output, re-signing would stack a second manifest
+- [x] Replaced the `hasattr(TTSBackend, "sign_output")` test with
+      `tests/unit/test_provenance_wiring.py`, which asserts the call happens
+
+## A2 — Gate voice cloning on the Python path (CRITICAL)
+
+`chatterbox_tts_backend.py:55` clones from an arbitrary WAV via
+`audio_prompt_path` with no consent gate. `i_have_rights` is only consulted
+on the `crispasr` branch (`tts_thread.py:43-59`); the Python branch drops it.
+
+- [x] `TTSBackend.require_clone_consent()` in `base.py` — raises
+      `PermissionError` when a reference audio is used without attestation
+- [x] `ChatterboxTTSBackend.synthesize()`: gate moved to the *top* of the
+      method, before the torch import and `from_pretrained()`. Both cloning
+      routes (`voice=` and `reference_audio=`) converge there, so one gate
+      covers both, and a refusal costs no model download
+- [x] `cli.py` + `tts_thread.py`: pass `i_have_rights` / `reference_audio`
+      through to Python-native backends
+- [x] CLI exits 2 on refusal instead of surfacing a traceback; the GUI thread
+      routes `PermissionError` to `error_signal` as a refusal, not a crash
+- [x] `tests/unit/test_clone_consent.py` — 7 tests, including one asserting
+      the gate fires before any model is fetched
+
+## A3 — Wire the inert GUI provenance controls (CRITICAL)
+
+`main_window.py:1118-1120` collects `no_watermark`, `c2pa_cert`, `c2pa_key`;
+`tts_thread.py:53-59` forwards only three unrelated keys. The checkbox and
+both file pickers are no-ops.
+
+- [x] `tts_thread.py`: single `provenance` dict forwarded to *both* branches,
+      so a new control can't be added to one path and forgotten on the other
+- [x] Added "Disable C2PA" + "Accept marking responsibility" checkboxes to
+      `gui/widgets/tts_settings.py` (were CLI-only)
+- [x] `c2pa_signing._resolve_pem()` — the GUI/CLI supply cert *paths* while
+      the c2pa-audio API wants PEM *text*; the pickers were mismatched even
+      once wired
+- [x] Python path honours `no_c2pa`; `no_watermark` warns via i18n
+- [x] Unit test: every provenance widget reaches the backend kwargs
+
+## A4 — Make wizard consent an actual attestation (HIGH)
+
+`voice_clone_wizard.py:79-84` renders consent as a passive `QLabel`, then
+`main_window.py:1294` sets `i_have_rights` automatically — the app asserts
+the legal attestation on the user's behalf.
+
+- [x] Replaced the label with a required `QCheckBox`; "Clone Voice" is
+      disabled until it is ticked
+- [x] Exposed `wizard.consent_given`; `i_have_rights` is set from it rather
+      than unconditionally
+- [x] Added a "Reference text" field to the TTS panel and wired
+      `wizard.ref_text` to it — it was previously discarded into a log line
+- [x] `ref_text` passed through `tts_thread` to the CrispASR backend
+- [x] Verified headlessly: the wizard cannot be completed without consent
+
+## A5 — Machine-readable AI marking that survives a missing library (HIGH)
+
+C2PA signing degrades to a silent no-op when `c2pa-audio` is absent
+(`utils/c2pa_signing.py:34-37`), which would leave output unmarked on a
+default install. Art. 50(2) has no "unless a dependency is missing" clause.
+
+- [x] `utils/ai_marking.py` — embeds a RIFF `LIST/INFO` chunk
+      (`ISFT`/`ICMT`/`IENG`/`ITCH`), readable by any RIFF parser
+- [x] Applied on every Python-path synthesis, alongside C2PA rather than
+      instead of it — the two layers are complementary
+- [x] `read_wav_ai_marker()` / `is_ai_marked()` for verification, surfaced via
+      `--verify-c2pa`, which now reports both layers and exits 0 if either
+      marks the file. **Behaviour change:** it previously exited 1 whenever
+      `c2pa-audio` was absent, conflating "cannot check" with "not marked"
+- [x] Verified with `ffprobe`: the marker reads as standard format tags in
+      third-party tools, and the audio stream is byte-identical
+- [x] Documented in COMPLIANCE.md that the *spoken* disclaimer is CrispASR-only
+- [x] `tests/unit/test_ai_marking.py` — 9 tests: round-trip, idempotency,
+      RIFF size-header correctness, word alignment on odd-length payloads,
+      audio payload byte-identical after marking, no temp files left behind
+
+## A6 — Surface the speaker-DB biometric path (HIGH)
+
+`crispasr_backend.py:155-160` exposes `--speaker-db`, `--enroll-speaker`,
+`--titanet-model`, `--speaker-db-consent`. Storing voice embeddings keyed to
+named people is biometric identification — potentially Annex III(1)(a)
+high-risk, and GDPR Art. 9 special-category data. `--speaker-db-consent` is
+passed through as an unexplained boolean with no UI and no documentation.
+
+- [x] `cli.py:_warn_speaker_biometrics()` — warns when `--speaker-db`,
+      `--enroll-speaker` or `--expect-speakers` is used without consent
+- [x] Help text now states what is being attested (GDPR Art. 9), not just
+      "GDPR consent for persistent speaker database"
+- [x] README + COMPLIANCE.md sections on the biometric path, Annex III(1)(a)
+      classification, and deployer responsibilities
+- [x] Unit tests: warning fires on each of the three flags, stays silent when
+      attested or unused
+
+## A7 — Write the missing Art. 13 / Art. 4 documentation (HIGH)
+
+README has no statement of intended purpose, no limitations, no accuracy
+disclosure, no human-oversight guidance, no AI-literacy material.
+
+- [x] README "Intended Purpose & Limitations" section, including how accuracy
+      degrades by accent, audio quality and language
+- [x] Corrected the Python-native signing claim in the README compliance list
+- [x] Noted that transcripts/translations are model predictions, not records
+- [x] `COMPLIANCE.md` — obligations map, applicability dates, provider vs.
+      deployer split, Art. 2(12) FOSS analysis, and an explicit "what Susurrus
+      does not do for you" list
+- [x] Corrected the C2/F1 claims above to reflect shipped reality
+
+---
+
+# Susurrus v2.12.0 — Closing the Remaining Compliance Gaps
+
+The v2.11.0 work left four gaps recorded as "known limitations". This section
+closes them. Order matters: B3 runs last so strings added by B1/B2 are
+translated once, not twice.
+
+## B4 — Art. 12 record-keeping for biometric events (HIGH)
+
+Art. 12 requires high-risk systems to automatically record events over their
+lifetime. A deployment using the speaker database may land in Annex III(1)(a),
+and today Susurrus records nothing — a deployer cannot show who was enrolled,
+when, or under what attestation.
+
+- [x] `utils/audit_log.py` — append-only JSONL at
+      `~/.local/share/susurrus/audit/biometric.jsonl` (XDG), one event per line
+- [x] Records UTC timestamp, event type, speaker, database path, consent
+      attestation, embedding model, Susurrus version
+- [x] Logs enrollment *and* identification — Art. 12 covers use, not just setup
+- [x] Never records the embedding or audio; a test greps the written file for
+      biometric field names so a future edit cannot quietly add one
+- [x] SHA-256 hash chain; detects modification, deletion, truncation *and*
+      reordering
+- [x] `--audit-log` CLI verb (exit 1 on a broken chain) + Tools → Biometric
+      Audit Log in the GUI
+- [x] Wired into `cli.py` alongside `_warn_speaker_biometrics`
+- [x] `tests/unit/test_audit_log.py` — 19 tests
+- [x] Fixed `__init__.py` version (was a stale 1.1.0 vs pyproject's 2.11.0) —
+      it is recorded into every audit entry
+
+## B1 — Spoken disclosure on Python-native TTS (HIGH)
+
+Art. 50(4) disclosure is currently machine-readable only on the Python path;
+CrispASR prepends an audible prefix in-binary. Close it by synthesizing the
+disclosure with the same backend and concatenating.
+
+- [x] `utils/spoken_disclosure.py` — synthesizes the phrase with the *same*
+      backend/model, so sample rate and channel count align by construction
+- [x] Recursion guard via a `_synthesizing_disclosure` flag
+- [x] Refuses to concatenate mismatched WAV formats; a backend that cannot
+      speak the disclosure loses the prefix, never the user's audio
+- [x] Localized via `t("disclosure.spoken", locale=...)`
+- [x] Cloning only (matching CrispASR), suppressible with
+      `--no-spoken-disclaimer`
+- [x] `tests/unit/test_spoken_disclosure.py` — 21 tests, including one that
+      asserts the disclosure *precedes* the content (a trailing disclosure is
+      not a disclosure)
+
+## B2 — Neural watermark on Python-native TTS (HIGH)
+
+The declarative marker satisfies Art. 50(2) machine-readability but is
+metadata: strippable, and lost on re-encode. AudioSeal survives both.
+
+- [x] `utils/audio_watermark.py` — AudioSeal embed/detect, lazily imported,
+      with the failed-load result cached so a missing model is not re-fetched
+      on every synthesis
+- [x] Applied in `apply_provenance()` before C2PA signing; a test asserts the
+      call order, since watermarking mutates samples that C2PA then hashes
+- [x] Honours `no_watermark` / `accept_marking_responsibility`
+- [x] `--detect-watermark` now falls back to the Python detector when no
+      CrispASR binary is present, and exits 2 for "could not check" so it is
+      not read as "not AI-generated"
+- [x] `audioseal` added as a `pyproject.toml` extra, not a hard dependency
+- [x] `tests/unit/test_audio_watermark.py` — 14 tests.
+      **The live embed/detect round-trip is skipped here: `audioseal` is not
+      installed in this environment, so that path is wired and unit-tested but
+      not executed.**
+
+## B3 — Complete the GUI internationalization (MEDIUM)
+
+~440 user-visible strings are hardcoded English across 19 GUI files, so a
+German user sees German only for the handful of consent strings added in
+v2.11.0. Consent and compliance text especially must be in the user's language.
+
+- [x] Split into `utils/translations/{en,de}.py`; `utils/i18n.py` keeps its
+      public API and re-exports `TRANSLATIONS`
+- [x] Migrated every user-visible string across 15 GUI files — 259 keys.
+      Log messages stay English (developer-facing)
+- [x] German translation for every key
+- [x] View → Language selector, persisted in QSettings, defaulting to the
+      system language via `detect_system_locale()`
+- [x] `tests/unit/test_i18n.py` rewritten — 18 tests. Beyond key parity it
+      asserts format placeholders match across locales (a dropped `{count}`
+      would raise KeyError in German only), that compliance strings are
+      actually translated rather than copied, and — via an AST scan of the
+      whole `gui/` tree — that **no hardcoded user-visible string remains**.
+      That last test is what found the 11 multi-line strings literal matching
+      missed, and it is what stops the next new widget reintroducing English
+
+## B5 — Fallout found while closing B1–B4
+
+Not planned; recorded because each was a real defect the work surfaced.
+
+- [x] `--detect-watermark` delegated to the CrispASR binary whenever one was
+      *present*, and returned its exit code even when it crashed. A stale local
+      build made the verb exit 250 with a dyld error instead of answering.
+      It now falls through to the Python detector when the binary cannot
+      produce a verdict, and distinguishes exit 1 ("not marked") from exit 2
+      ("could not check") so an inconclusive result is never read as clean
+- [x] The detector report named a single `detector` field covering two
+      independent checks; split into `neural_detector` + `ai_marker`
+- [!] **Known wart:** the two detector paths have different exit-code
+      semantics. The binary path passes the binary's own code through
+      (pre-existing behaviour); the Python fallback uses 0/1/2. Unifying them
+      would mean parsing the binary's stdout for its verdict, which breaks on
+      any output-format change — so the difference is documented in `--help`
+      instead. Scripts that branch on the exit code should pin one path
+- [x] `apply_provenance()` gained `voice`/`locale` parameters and two result
+      keys, which broke four v2.11.0 tests. Fixed — noting it here because the
+      signature is now implemented by four classes and two call sites
+
+## Remaining limitations
+
+Down from four to one, and this one is environmental rather than structural:
+
+- **The AudioSeal round-trip is wired but unexecuted here.** `audioseal` is not
+  installed in this environment, so `tests/unit/test_audio_watermark.py`
+  skips its two live tests. Everything around them — layer ordering, opt-outs,
+  degradation, caching — is tested. Install `susurrus[watermark]` and re-run to
+  execute the round-trip.
+
+Organisational obligations (lawful basis, conformity assessment, disclosure to
+your audience, registration) remain the provider's or deployer's and cannot be
+discharged by code. COMPLIANCE.md states which are which.

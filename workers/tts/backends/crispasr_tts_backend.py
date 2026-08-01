@@ -177,6 +177,29 @@ class CrispasrTTSBackend(TTSBackend):
 
         raise FileNotFoundError(f"TTS output not created: {output_path}")
 
+    def apply_provenance(self, output_path, model=None, voice=None, locale=None):
+        """No-op — the CrispASR binary applies every layer itself.
+
+        Re-running them here would stack a second C2PA manifest and a second
+        watermark on top of the binary's. This only reports what the binary
+        was asked to do.
+        """
+        if self.accept_marking_responsibility:
+            return {
+                "spoken": False,
+                "watermark": False,
+                "marker": False,
+                "c2pa": False,
+                "opted_out": True,
+            }
+        return {
+            "spoken": bool(self.voice) and not self.no_spoken_disclaimer,
+            "watermark": not self.no_watermark,
+            "marker": not self.no_watermark,
+            "c2pa": not self.no_c2pa,
+            "opted_out": False,
+        }
+
     def list_voices(self):
         from config import TTS_BACKEND_MAP
 

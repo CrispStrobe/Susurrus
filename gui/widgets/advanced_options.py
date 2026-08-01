@@ -3,6 +3,8 @@
 
 from PyQt6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
+from utils.i18n import t
+
 from .collapsible_box import CollapsibleBox
 
 
@@ -49,18 +51,18 @@ class AdvancedOptionsBox(CollapsibleBox):
         layout = QHBoxLayout()
 
         self.proxy_url = QLineEdit()
-        self.proxy_url.setPlaceholderText("Enter proxy URL if needed")
+        self.proxy_url.setPlaceholderText(t("ph.proxy_url"))
         self.proxy_username = QLineEdit()
-        self.proxy_username.setPlaceholderText("Proxy username (optional)")
+        self.proxy_username.setPlaceholderText(t("ph.proxy_user"))
         self.proxy_password = QLineEdit()
         self.proxy_password.setEchoMode(QLineEdit.EchoMode.Password)
-        self.proxy_password.setPlaceholderText("Proxy password (optional)")
+        self.proxy_password.setPlaceholderText(t("ph.proxy_pass"))
 
-        layout.addWidget(QLabel("Proxy URL:"))
+        layout.addWidget(QLabel(t("label.proxy_url")))
         layout.addWidget(self.proxy_url)
-        layout.addWidget(QLabel("Username:"))
+        layout.addWidget(QLabel(t("label.username")))
         layout.addWidget(self.proxy_username)
-        layout.addWidget(QLabel("Password:"))
+        layout.addWidget(QLabel(t("label.password")))
         layout.addWidget(self.proxy_password)
 
         widget.setLayout(layout)
@@ -71,7 +73,7 @@ class AdvancedOptionsBox(CollapsibleBox):
         """Create backend selection row"""
         layout = QHBoxLayout()
         self.backend_selection = QComboBox()
-        layout.addWidget(QLabel("Backend:"))
+        layout.addWidget(QLabel(t("label.backend")))
         layout.addWidget(self.backend_selection)
         return layout
 
@@ -79,17 +81,17 @@ class AdvancedOptionsBox(CollapsibleBox):
         """Create model, device, language row"""
         layout = QHBoxLayout()
 
-        layout.addWidget(QLabel("Model:"))
+        layout.addWidget(QLabel(t("label.model")))
         self.model_id = QComboBox()
         self.model_id.setEditable(True)
         layout.addWidget(self.model_id)
 
-        layout.addWidget(QLabel("Device:"))
+        layout.addWidget(QLabel(t("label.device")))
         self.device_selection = QComboBox()
         self.device_selection.addItems(["Auto", "CPU", "GPU", "MPS"])
         layout.addWidget(self.device_selection)
 
-        layout.addWidget(QLabel("Language:"))
+        layout.addWidget(QLabel(t("label.language")))
         self.language = QLineEdit()
         self.language.setPlaceholderText("en")
         layout.addWidget(self.language)
@@ -102,10 +104,10 @@ class AdvancedOptionsBox(CollapsibleBox):
         layout = QHBoxLayout()
 
         self.max_chunk_length = QLineEdit()
-        self.max_chunk_length.setPlaceholderText("Max Chunk Length (seconds, 0=No Chunking)")
+        self.max_chunk_length.setPlaceholderText(t("ph.max_chunk"))
         self.max_chunk_length.setText("0")
 
-        layout.addWidget(QLabel("Max Chunk Length:"))
+        layout.addWidget(QLabel(t("label.max_chunk_length")))
         layout.addWidget(self.max_chunk_length)
 
         widget.setLayout(layout)
@@ -120,7 +122,7 @@ class AdvancedOptionsBox(CollapsibleBox):
         self.output_format_selection = QComboBox()
         self.output_format_selection.addItems(["txt", "srt", "vtt"])
 
-        layout.addWidget(QLabel("Output Format:"))
+        layout.addWidget(QLabel(t("label.output_format")))
         layout.addWidget(self.output_format_selection)
 
         widget.setLayout(layout)
@@ -132,13 +134,13 @@ class AdvancedOptionsBox(CollapsibleBox):
         layout = QHBoxLayout()
 
         self.start_time = QLineEdit()
-        self.start_time.setPlaceholderText("Start Time (seconds)")
+        self.start_time.setPlaceholderText(t("ph.start_time"))
         self.end_time = QLineEdit()
-        self.end_time.setPlaceholderText("End Time (seconds)")
+        self.end_time.setPlaceholderText(t("ph.end_time"))
 
-        layout.addWidget(QLabel("Start Time (s):"))
+        layout.addWidget(QLabel(t("label.start_time")))
         layout.addWidget(self.start_time)
-        layout.addWidget(QLabel("End Time (s):"))
+        layout.addWidget(QLabel(t("label.end_time")))
         layout.addWidget(self.end_time)
 
         return layout

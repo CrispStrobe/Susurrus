@@ -16,6 +16,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from utils.i18n import t
+
 
 class HistoryPanel(QWidget):
     """Panel for browsing and managing transcription history."""
@@ -35,11 +37,11 @@ class HistoryPanel(QWidget):
         # Search bar
         search_row = QHBoxLayout()
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Search history...")
+        self.search_input.setPlaceholderText(t("label.search"))
         self.search_input.textChanged.connect(self._on_search)
         search_row.addWidget(self.search_input)
 
-        self.refresh_button = QPushButton("Refresh")
+        self.refresh_button = QPushButton(t("btn.refresh"))
         self.refresh_button.clicked.connect(self.refresh)
         search_row.addWidget(self.refresh_button)
         layout.addLayout(search_row)
@@ -51,18 +53,18 @@ class HistoryPanel(QWidget):
 
         # Action buttons
         button_row = QHBoxLayout()
-        self.load_button = QPushButton("Load")
-        self.load_button.setToolTip("Load selected transcript into output")
+        self.load_button = QPushButton(t("btn.load"))
+        self.load_button.setToolTip(t("tip.load_entry"))
         self.load_button.clicked.connect(self._on_load)
         button_row.addWidget(self.load_button)
 
-        self.delete_button = QPushButton("Delete")
-        self.delete_button.setToolTip("Delete selected entry")
+        self.delete_button = QPushButton(t("btn.delete"))
+        self.delete_button.setToolTip(t("tip.delete_entry"))
         self.delete_button.clicked.connect(self._on_delete)
         button_row.addWidget(self.delete_button)
 
-        self.clear_button = QPushButton("Clear All")
-        self.clear_button.setToolTip("Delete all history entries")
+        self.clear_button = QPushButton(t("btn.clear_all"))
+        self.clear_button.setToolTip(t("tip.clear_all_history"))
         self.clear_button.clicked.connect(self._on_clear_all)
         button_row.addWidget(self.clear_button)
 
@@ -138,7 +140,7 @@ class HistoryPanel(QWidget):
             return
         reply = QMessageBox.question(
             self,
-            "Delete Entry",
+            t("msg.delete_entry.title"),
             f"Delete '{entry.title}'?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
@@ -149,13 +151,13 @@ class HistoryPanel(QWidget):
                 HistoryService().delete(entry.id)
                 self.refresh()
             except Exception as e:
-                QMessageBox.warning(self, "Error", f"Failed to delete: {e}")
+                QMessageBox.warning(self, t("msg.error.title"), f"Failed to delete: {e}")
 
     def _on_clear_all(self):
         reply = QMessageBox.question(
             self,
-            "Clear History",
-            "Delete ALL history entries? This cannot be undone.",
+            t("msg.clear_history.title"),
+            t("msg.clear_history.body"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
@@ -165,4 +167,4 @@ class HistoryPanel(QWidget):
                 HistoryService().clear_all()
                 self.refresh()
             except Exception as e:
-                QMessageBox.warning(self, "Error", f"Failed to clear: {e}")
+                QMessageBox.warning(self, t("msg.error.title"), f"Failed to clear: {e}")

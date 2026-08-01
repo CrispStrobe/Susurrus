@@ -28,6 +28,14 @@ from utils.dependency_check import (
     is_diarization_available,
 )
 from utils.device_detection import check_nvidia_installation, get_default_device
+from utils.i18n import (
+    available_locales,
+    detect_system_locale,
+    get_locale,
+    locale_name,
+    set_locale,
+    t,
+)
 from workers.transcription_thread import TranscriptionThread
 from workers.tts_thread import TranslationThread, TTSThread
 
@@ -48,7 +56,7 @@ class MainWindow(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f"{APP_NAME}: Audio Transcription & Speech")
+        self.setWindowTitle(f"{APP_NAME}: {t('app.window_subtitle')}")
         self.setMinimumSize(900, 700)
         self.setAcceptDrops(True)
 
@@ -57,6 +65,10 @@ class MainWindow(QWidget):
         self.translation_thread = None
         self.settings = get_settings()
         self.backend_model_map = BACKEND_MODEL_MAP
+
+        # Locale must be set before any widget is built — widgets resolve their
+        # strings at construction time. Falls back to the system language.
+        set_locale(self.settings.value("locale", detect_system_locale()))
 
         # Check environment tokens
         self.has_env_token = bool(os.environ.get("HF_TOKEN"))
@@ -93,18 +105,15 @@ class MainWindow(QWidget):
         if not self.ffmpeg_available:
             QMessageBox.warning(
                 self,
-                "FFMPEG Not Found",
-                "FFMPEG is not installed or not in your PATH. "
-                "Audio format support will be limited.\n\n"
-                "You can install FFMPEG through the Tools > Install Dependencies menu.",
+                t("msg.ffmpeg_missing.title"),
+                t("msg.ffmpeg_missing.body"),
             )
 
         if self.pytorch_needs_cuda:
             reply = QMessageBox.warning(
                 self,
-                "PyTorch CUDA Support Missing",
-                "An NVIDIA GPU was detected, but PyTorch was installed without CUDA support.\n\n"
-                "Would you like to reinstall PyTorch with CUDA support now?",
+                t("msg.cuda_missing.title"),
+                t("msg.cuda_missing.body"),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.Yes:
@@ -120,12 +129,9 @@ class MainWindow(QWidget):
 
         # Title
         title_label = QLabel(
-            f"<h1 style='color: #FFFFFF;'>{APP_NAME}: Audio Transcription & Speech</h1>"
+            f"<h1 style='color: #FFFFFF;'>{APP_NAME}: {t('app.window_subtitle')}</h1>"
         )
-        subtitle_label = QLabel(
-            "<p style='color: #666666;'>Transcribe, synthesize, and translate audio using "
-            "multiple backends.</p>"
-        )
+        subtitle_label = QLabel(f"<p style='color: #666666;'>{t('app.tagline')}</p>")
         main_layout.addWidget(title_label)
         main_layout.addWidget(subtitle_label)
 
@@ -135,19 +141,19 @@ class MainWindow(QWidget):
 
         # Transcription tab
         transcription_tab = self._create_transcription_tab()
-        self.tab_widget.addTab(transcription_tab, "Transcription")
+        self.tab_widget.addTab(transcription_tab, t("tab.transcription"))
 
         # TTS tab
         tts_tab = self._create_tts_tab()
-        self.tab_widget.addTab(tts_tab, "Text-to-Speech")
+        self.tab_widget.addTab(tts_tab, t("tab.tts"))
 
         # Translation tab
         translation_tab = self._create_translation_tab()
-        self.tab_widget.addTab(translation_tab, "Translation")
+        self.tab_widget.addTab(translation_tab, t("tab.translation"))
 
         # History tab
         history_tab = self._create_history_tab()
-        self.tab_widget.addTab(history_tab, "History")
+        self.tab_widget.addTab(history_tab, t("tab.history"))
 
         # Auto-refresh history when switching to that tab
         self.tab_widget.currentChanged.connect(self._on_tab_changed)
@@ -215,7 +221,7 @@ class MainWindow(QWidget):
             on_job_done=self._on_batch_job_done,
             on_job_error=self._on_batch_job_error,
         )
-        batch_box = CollapsibleBox("Batch Queue")
+        batch_box = CollapsibleBox(t("label.batch_queue"))
         self.batch_panel = BatchPanel()
         self.batch_panel.set_queue(self._batch_queue)
         batch_layout = QVBoxLayout()
@@ -230,21 +236,21 @@ class MainWindow(QWidget):
         layout = QHBoxLayout()
 
         self.audio_input_path = QLineEdit()
-        self.audio_input_path.setPlaceholderText("Select (or Drop) Audio file")
+        self.audio_input_path.setPlaceholderText(t("ph.audio_file"))
         self.audio_input_path.textChanged.connect(self.check_transcribe_button_state)
 
-        self.audio_input_button = QPushButton("Browse")
+        self.audio_input_button = QPushButton(t("btn.browse"))
         self.audio_input_button.clicked.connect(self.select_audio_file)
 
         self.audio_url = QLineEdit()
-        self.audio_url.setPlaceholderText("Or Enter URL of audio file or video link")
+        self.audio_url.setPlaceholderText(t("ph.url"))
         self.audio_url.textChanged.connect(self.check_transcribe_button_state)
         self.audio_url.textChanged.connect(self.toggle_proxy_settings)
 
-        layout.addWidget(QLabel("Audio File:"))
+        layout.addWidget(QLabel(t("label.audio_file")))
         layout.addWidget(self.audio_input_path)
         layout.addWidget(self.audio_input_button)
-        layout.addWidget(QLabel("or URL:"))
+        layout.addWidget(QLabel(t("label.or_url")))
         layout.addWidget(self.audio_url)
 
         return layout
@@ -254,26 +260,24 @@ class MainWindow(QWidget):
         layout = QHBoxLayout()
         layout.addStretch()
 
-        self.transcribe_button = QPushButton("Transcribe")
+        self.transcribe_button = QPushButton(t("btn.transcribe"))
         self.transcribe_button.setEnabled(False)
         self.transcribe_button.clicked.connect(self.start_transcription)
 
-        self.abort_button = QPushButton("Abort")
+        self.abort_button = QPushButton(t("btn.abort"))
         self.abort_button.setEnabled(False)
         self.abort_button.clicked.connect(self.abort_transcription)
 
-        self.save_button = QPushButton("Save")
-        self.save_button.setToolTip("Save Transcription")
+        self.save_button = QPushButton(t("btn.save"))
+        self.save_button.setToolTip(t("tip.save_transcription"))
         self.save_button.clicked.connect(self.save_transcription)
 
-        self.stream_mic_button = QPushButton("Stream Mic")
-        self.stream_mic_button.setToolTip("Live transcription from microphone")
+        self.stream_mic_button = QPushButton(t("btn.stream_mic"))
+        self.stream_mic_button.setToolTip(t("tip.stream_mic"))
         self.stream_mic_button.clicked.connect(self._toggle_mic_stream)
 
-        self.detect_watermark_button = QPushButton("Detect Watermark")
-        self.detect_watermark_button.setToolTip(
-            "Check if the loaded audio contains an AI-generated watermark"
-        )
+        self.detect_watermark_button = QPushButton(t("btn.detect_watermark"))
+        self.detect_watermark_button.setToolTip(t("tip.detect_watermark"))
         self.detect_watermark_button.setEnabled(False)
         self.detect_watermark_button.clicked.connect(self._detect_watermark)
 
@@ -291,7 +295,7 @@ class MainWindow(QWidget):
 
         # Metrics output
         metrics_layout = QVBoxLayout()
-        metrics_label = QLabel("Metrics")
+        metrics_label = QLabel(t("label.metrics"))
         self.metrics_output = QPlainTextEdit()
         self.metrics_output.setReadOnly(True)
         self.metrics_output.setMaximumWidth(300)
@@ -300,7 +304,7 @@ class MainWindow(QWidget):
 
         # Transcription output (segment list with fallback to plain text)
         transcription_layout = QVBoxLayout()
-        transcription_label = QLabel("Transcription")
+        transcription_label = QLabel(t("label.transcription"))
         from gui.widgets.segment_list_widget import SegmentListWidget
 
         self.transcription_output = SegmentListWidget()
@@ -377,9 +381,9 @@ class MainWindow(QWidget):
     def _configure_diarization_box(self):
         """Configure diarization settings from saved settings"""
         if self.has_env_token:
-            self.diarization_box.hf_token.setText("Using HF_TOKEN from environment")
+            self.diarization_box.hf_token.setText(t("label.using_hf_token_env"))
             self.diarization_box.hf_token.setEnabled(False)
-            env_token_note = QLabel("Token loaded from environment variable")
+            env_token_note = QLabel(t("label.token_from_env"))
             env_token_note.setStyleSheet("color: green; font-style: italic;")
             env_token_layout = QHBoxLayout()
             env_token_layout.addWidget(env_token_note)
@@ -435,9 +439,9 @@ class MainWindow(QWidget):
         """Configure Voxtral settings from saved settings"""
         mistral_api_key = os.environ.get("MISTRAL_API_KEY", "")
         if mistral_api_key:
-            self.voxtral_box.mistral_api_key.setText("Using MISTRAL_API_KEY from environment")
+            self.voxtral_box.mistral_api_key.setText(t("label.using_mistral_key_env"))
             self.voxtral_box.mistral_api_key.setEnabled(False)
-            env_key_note = QLabel("API key loaded from environment variable")
+            env_key_note = QLabel(t("label.api_key_from_env"))
             env_key_note.setStyleSheet("color: green; font-style: italic;")
             env_key_layout = QHBoxLayout()
             env_key_layout.addWidget(env_key_note)
@@ -552,7 +556,7 @@ class MainWindow(QWidget):
             from PyQt6.QtWidgets import QVBoxLayout as QVL
 
             dlg = QDialog(self)
-            dlg.setWindowTitle("Susurrus Logs")
+            dlg.setWindowTitle(t("app.logs_title"))
             dlg.resize(800, 500)
             lay = QVL(dlg)
             viewer = LogViewer(dlg)
@@ -573,19 +577,19 @@ class MainWindow(QWidget):
         # File menu
         file_menu = menu_bar.addMenu("&File")
 
-        open_action = QAction("&Open Audio File...", self)
+        open_action = QAction(t("action.open_audio"), self)
         open_action.setShortcut("Ctrl+O")
         open_action.triggered.connect(self.select_audio_file)
         file_menu.addAction(open_action)
 
-        save_action = QAction("&Save Transcript...", self)
+        save_action = QAction(t("action.save_transcript"), self)
         save_action.setShortcut("Ctrl+S")
         save_action.triggered.connect(self.save_transcription)
         file_menu.addAction(save_action)
 
         file_menu.addSeparator()
 
-        exit_action = QAction("E&xit", self)
+        exit_action = QAction(t("action.exit"), self)
         exit_action.setShortcut("Ctrl+Q")
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
@@ -593,87 +597,159 @@ class MainWindow(QWidget):
         # Tools menu
         tools_menu = menu_bar.addMenu("&Tools")
 
-        transcribe_action = QAction("&Transcribe", self)
+        transcribe_action = QAction(t("action.transcribe"), self)
         transcribe_action.setShortcut("F5")
         transcribe_action.triggered.connect(self.start_transcription)
         tools_menu.addAction(transcribe_action)
 
-        abort_action = QAction("&Abort Transcription", self)
+        abort_action = QAction(t("action.abort"), self)
         abort_action.setShortcut("Esc")
         abort_action.triggered.connect(self.abort_transcription)
         tools_menu.addAction(abort_action)
 
         tools_menu.addSeparator()
 
-        synthesize_action = QAction("&Synthesize (TTS)", self)
+        synthesize_action = QAction(t("action.synthesize"), self)
         synthesize_action.setShortcut("F6")
         synthesize_action.triggered.connect(self.start_synthesis)
         tools_menu.addAction(synthesize_action)
 
-        translate_action = QAction("Trans&late", self)
+        translate_action = QAction(t("action.translate"), self)
         translate_action.setShortcut("F7")
         translate_action.triggered.connect(self.start_translation)
         tools_menu.addAction(translate_action)
 
         tools_menu.addSeparator()
 
-        dependencies_action = QAction("Check &Dependencies...", self)
+        dependencies_action = QAction(t("action.check_deps"), self)
         dependencies_action.triggered.connect(self.show_dependencies_dialog)
         tools_menu.addAction(dependencies_action)
 
-        install_action = QAction("&Install Dependencies...", self)
+        install_action = QAction(t("action.install_deps"), self)
         install_action.triggered.connect(self.install_dependencies)
         tools_menu.addAction(install_action)
 
-        cuda_diagnostics_action = QAction("CUDA &Diagnostics...", self)
+        cuda_diagnostics_action = QAction(t("action.cuda_diagnostics"), self)
         cuda_diagnostics_action.triggered.connect(self.show_cuda_diagnostics)
         tools_menu.addAction(cuda_diagnostics_action)
 
-        yt_deps_action = QAction("Install &yt-dlp Dependencies...", self)
+        yt_deps_action = QAction(t("action.install_ytdlp"), self)
         yt_deps_action.triggered.connect(self.install_yt_dependencies)
         tools_menu.addAction(yt_deps_action)
 
-        voxtral_deps_action = QAction("Install &Voxtral Dependencies...", self)
+        voxtral_deps_action = QAction(t("action.install_voxtral"), self)
         voxtral_deps_action.triggered.connect(self.install_voxtral_dependencies)
         tools_menu.addAction(voxtral_deps_action)
 
         tools_menu.addSeparator()
 
-        voice_clone_action = QAction("Voice &Clone Wizard...", self)
+        voice_clone_action = QAction(t("action.voice_clone_wizard"), self)
         voice_clone_action.triggered.connect(self._open_voice_clone_wizard)
         tools_menu.addAction(voice_clone_action)
 
-        server_action = QAction("Start/Stop &Server", self)
+        server_action = QAction(t("action.toggle_server"), self)
         server_action.triggered.connect(self._toggle_server)
         tools_menu.addAction(server_action)
+
+        audit_log_action = QAction(t("action.audit_log"), self)
+        audit_log_action.triggered.connect(self._show_audit_log)
+        tools_menu.addAction(audit_log_action)
 
         # View menu
         view_menu = menu_bar.addMenu("&View")
 
-        toggle_theme_action = QAction("Toggle &Light/Dark Theme", self)
+        toggle_theme_action = QAction(t("action.toggle_theme"), self)
         toggle_theme_action.setShortcut("Ctrl+T")
         toggle_theme_action.triggered.connect(self._toggle_theme)
         view_menu.addAction(toggle_theme_action)
 
-        show_history_action = QAction("&History Tab", self)
+        show_history_action = QAction(t("action.history_tab"), self)
         show_history_action.setShortcut("Ctrl+H")
         show_history_action.triggered.connect(self._switch_to_history)
         view_menu.addAction(show_history_action)
 
-        show_logs_action = QAction("Show &Logs", self)
+        show_logs_action = QAction(t("action.show_logs"), self)
         show_logs_action.triggered.connect(self._show_log_viewer)
         view_menu.addAction(show_logs_action)
+
+        # Language submenu — exclusive, checked on the active locale
+        language_menu = view_menu.addMenu(t("menu.language"))
+        self._language_actions = {}
+        for code in available_locales():
+            action = QAction(locale_name(code), self)
+            action.setCheckable(True)
+            action.setChecked(code == get_locale())
+            action.triggered.connect(lambda _checked, c=code: self._set_language(c))
+            language_menu.addAction(action)
+            self._language_actions[code] = action
 
         # Help menu
         help_menu = menu_bar.addMenu("&Help")
 
-        about_action = QAction("&About Susurrus", self)
+        about_action = QAction(t("action.about"), self)
         about_action.triggered.connect(self.show_about_dialog)
         help_menu.addAction(about_action)
 
-        diarization_help_action = QAction("Speaker &Diarization Help", self)
+        diarization_help_action = QAction(t("action.diarization_help"), self)
         diarization_help_action.triggered.connect(self.show_diarization_help)
         help_menu.addAction(diarization_help_action)
+
+    def _show_audit_log(self):
+        """Show the Art. 12 biometric audit log and its chain status."""
+        from utils.audit_log import audit_log_path, read_events, verify_chain
+
+        events = read_events()
+        chain = verify_chain()
+
+        if chain["valid"]:
+            status = t("msg.audit_log_valid").format(count=chain["entries"])
+        else:
+            status = t("msg.audit_log_invalid").format(errors="; ".join(chain["errors"]))
+
+        if not events:
+            body = t("msg.audit_log_empty")
+        else:
+            rows = "".join(
+                f"<tr><td>{e.get('timestamp', '')}</td>"
+                f"<td>{e.get('event', '')}</td>"
+                f"<td>{e.get('speaker') or '—'}</td>"
+                f"<td>{'yes' if e.get('consent_attested') else 'no'}</td></tr>"
+                for e in events[-100:]
+            )
+            body = (
+                "<table border='1' cellpadding='4' cellspacing='0'>"
+                "<tr><th>Timestamp (UTC)</th><th>Event</th>"
+                "<th>Speaker</th><th>Consent</th></tr>"
+                f"{rows}</table>"
+            )
+
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle(t("msg.audit_log.title"))
+        dialog.setText(f"<p>{status}</p>{body}")
+        dialog.setDetailedText(audit_log_path())
+        dialog.exec()
+
+    def _set_language(self, code):
+        """Switch the UI language and persist the choice.
+
+        Widget text is built at construction time, so an already-open window
+        keeps its current strings; the change takes full effect on restart.
+        Rather than silently doing nothing visible, say so.
+        """
+        if code == get_locale():
+            return
+
+        set_locale(code)
+        self.settings.setValue("locale", code)
+
+        for locale_code, action in self._language_actions.items():
+            action.setChecked(locale_code == code)
+
+        QMessageBox.information(
+            self,
+            t("msg.language_changed.title"),
+            t("msg.language_changed.body"),
+        )
 
     # Event handlers
     def dragEnterEvent(self, event):
@@ -838,7 +914,7 @@ class MainWindow(QWidget):
             except Exception as e:
                 error_msg = f"Model preparation failed: {str(e)}"
                 logging.error(error_msg)
-                QMessageBox.critical(self, "Error", error_msg)
+                QMessageBox.critical(self, t("msg.error.title"), error_msg)
                 self.progress_bar.setVisible(False)
                 self.transcribe_button.setEnabled(True)
                 self.abort_button.setEnabled(False)
@@ -852,9 +928,7 @@ class MainWindow(QWidget):
             return False
 
         if not args["audio_input"] and not args["audio_url"]:
-            QMessageBox.warning(
-                self, "No Audio Input", "Please provide either an audio file or URL."
-            )
+            QMessageBox.warning(self, t("msg.no_audio_input.title"), t("msg.no_audio_input.body"))
             self.transcribe_button.setEnabled(True)
             return False
 
@@ -868,7 +942,7 @@ class MainWindow(QWidget):
                 if available and sub not in available:
                     QMessageBox.warning(
                         self,
-                        "Backend Not Available",
+                        t("msg.backend_unavailable.title"),
                         f"The '{sub}' backend is not compiled into the CrispASR binary.\n\n"
                         f"Available backends: {', '.join(available)}\n\n"
                         "Rebuild CrispASR with the required backend enabled.",
@@ -883,9 +957,8 @@ class MainWindow(QWidget):
         ):
             QMessageBox.critical(
                 self,
-                "Unsupported URL",
-                "Downloading from YouTube is not supported due to Terms of Service restrictions.\n\n"
-                "Please use a local file or a direct URL to a non-YouTube media file.",
+                t("msg.unsupported_url.title"),
+                t("msg.unsupported_url.body"),
             )
             self.transcribe_button.setEnabled(True)
             self.progress_bar.setVisible(False)
@@ -896,11 +969,8 @@ class MainWindow(QWidget):
             if not mistral_api_key:
                 QMessageBox.critical(
                     self,
-                    "Missing API Key",
-                    "Mistral AI API key is required for voxtral-api backend.\n\n"
-                    "Please enter your API key in the Voxtral API Settings section,\n"
-                    "or set the MISTRAL_API_KEY environment variable.\n\n"
-                    "Get your API key from: https://console.mistral.ai/",
+                    t("msg.missing_api_key.title"),
+                    t("msg.missing_api_key.body"),
                 )
                 self.transcribe_button.setEnabled(True)
                 return False
@@ -911,16 +981,15 @@ class MainWindow(QWidget):
             except ImportError:
                 reply = QMessageBox.question(
                     self,
-                    "Voxtral Dependencies Missing",
-                    "The voxtral-local backend requires the development version of transformers.\n\n"
-                    "Would you like to view installation instructions?",
+                    t("msg.voxtral_missing.title"),
+                    t("msg.voxtral_missing.body"),
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 )
 
                 if reply == QMessageBox.StandardButton.Yes:
                     QMessageBox.information(
                         self,
-                        "Voxtral Installation Instructions",
+                        t("msg.voxtral_instructions.title"),
                         "<h3>Installing Voxtral Dependencies</h3>"
                         "<p>Run these commands:</p>"
                         "<p><b>Windows:</b></p>"
@@ -940,7 +1009,7 @@ class MainWindow(QWidget):
             if not is_diarization_available():
                 QMessageBox.critical(
                     self,
-                    "Diarization Not Available",
+                    t("msg.diarization_unavailable.title"),
                     "Speaker diarization is not available. Please ensure you have:\n\n"
                     "1. Installed pyannote.audio\n"
                     "2. Set a valid Hugging Face token in the HF_TOKEN environment variable\n\n"
@@ -954,9 +1023,8 @@ class MainWindow(QWidget):
             if not hf_token:
                 QMessageBox.critical(
                     self,
-                    "Missing Token",
-                    "A Hugging Face token is required for speaker diarization.\n\n"
-                    "Please enter your token or disable speaker diarization.",
+                    t("msg.missing_token.title"),
+                    t("msg.missing_token.body"),
                 )
                 self.progress_bar.setVisible(False)
                 self.transcribe_button.setEnabled(True)
@@ -965,7 +1033,7 @@ class MainWindow(QWidget):
             if not self.settings.value("diarization_warning_shown", False):
                 reply = QMessageBox.information(
                     self,
-                    "Speaker Diarization Information",
+                    t("msg.diarization_info.title"),
                     "You are using speaker diarization for the first time.\n\n"
                     "Important notes:\n"
                     "- The first run will download the diarization model (approx. 1GB)\n"
@@ -1090,7 +1158,7 @@ class MainWindow(QWidget):
     def show_error(self, error_msg):
         self.metrics_output.appendPlainText(error_msg)
         logging.error(error_msg)
-        QMessageBox.critical(self, "Error", error_msg)
+        QMessageBox.critical(self, t("msg.error.title"), error_msg)
         self.transcribe_button.setEnabled(True)
         self.abort_button.setEnabled(False)
         self.progress_bar.setVisible(False)
@@ -1101,7 +1169,7 @@ class MainWindow(QWidget):
         """Start TTS synthesis."""
         text = self.tts_widget.get_text()
         if not text:
-            QMessageBox.warning(self, "No Text", "Please enter text or load a text file.")
+            QMessageBox.warning(self, t("msg.no_text.title"), t("msg.no_text_tts.body"))
             return
 
         args = {
@@ -1113,9 +1181,14 @@ class MainWindow(QWidget):
             "device": self.tts_widget.device_selection.currentText().lower(),
             "language": self.tts_widget.language.text().strip() or None,
             "reference_audio": self.tts_widget.reference_audio.text().strip() or None,
+            "ref_text": self.tts_widget.ref_text.text().strip() or None,
             "i_have_rights": self.tts_widget.i_have_rights.isChecked(),
             "no_spoken_disclaimer": self.tts_widget.no_spoken_disclaimer.isChecked(),
             "no_watermark": self.tts_widget.no_watermark.isChecked(),
+            "no_c2pa": self.tts_widget.no_c2pa.isChecked(),
+            "accept_marking_responsibility": (
+                self.tts_widget.accept_marking_responsibility.isChecked()
+            ),
             "c2pa_cert": self.tts_widget.c2pa_cert.text().strip() or None,
             "c2pa_key": self.tts_widget.c2pa_key.text().strip() or None,
             "g2p_dict": (
@@ -1146,13 +1219,13 @@ class MainWindow(QWidget):
     def _on_tts_error(self, error_msg):
         self.tts_widget.synthesize_btn.setEnabled(True)
         self.tts_widget.status_output.appendPlainText(f"Error: {error_msg}")
-        QMessageBox.critical(self, "TTS Error", error_msg)
+        QMessageBox.critical(self, t("msg.tts_error.title"), error_msg)
 
     def _play_tts_output(self):
         """Play the last TTS output."""
         path = getattr(self, "_tts_output_path", None)
         if not path or not os.path.isfile(path):
-            QMessageBox.warning(self, "No Audio", "No TTS output available to play.")
+            QMessageBox.warning(self, t("msg.no_audio.title"), t("msg.no_audio.body"))
             return
 
         try:
@@ -1163,7 +1236,9 @@ class MainWindow(QWidget):
             pydub_play(audio)
         except Exception as e:
             QMessageBox.warning(
-                self, "Playback Error", f"Could not play audio: {e}\n\nThe file is saved at: {path}"
+                self,
+                t("msg.playback_error.title"),
+                f"Could not play audio: {e}\n\nThe file is saved at: {path}",
             )
 
     # ---- Translation ----
@@ -1172,7 +1247,7 @@ class MainWindow(QWidget):
         """Start translation."""
         text = self.translation_widget.source_text.toPlainText().strip()
         if not text:
-            QMessageBox.warning(self, "No Text", "Please enter text to translate.")
+            QMessageBox.warning(self, t("msg.no_text.title"), t("msg.no_text_translate.body"))
             return
 
         args = {
@@ -1184,7 +1259,7 @@ class MainWindow(QWidget):
         }
 
         self.translation_widget.result_text.clear()
-        self.translation_widget.status_label.setText("Translating...")
+        self.translation_widget.status_label.setText(t("msg.translating"))
         self.translation_widget.translate_btn.setEnabled(False)
 
         self.translation_thread = TranslationThread(args)
@@ -1198,12 +1273,12 @@ class MainWindow(QWidget):
     def _on_translation_finished(self, result):
         self.translation_widget.translate_btn.setEnabled(True)
         self.translation_widget.result_text.setPlainText(result)
-        self.translation_widget.status_label.setText("Translation complete.")
+        self.translation_widget.status_label.setText(t("msg.translation_complete"))
 
     def _on_translation_error(self, error_msg):
         self.translation_widget.translate_btn.setEnabled(True)
         self.translation_widget.status_label.setText(f"Error: {error_msg}")
-        QMessageBox.critical(self, "Translation Error", error_msg)
+        QMessageBox.critical(self, t("msg.translation_error.title"), error_msg)
 
     # ---- History ----
 
@@ -1255,7 +1330,7 @@ class MainWindow(QWidget):
 
         exe = find_crispasr()
         if not exe:
-            QMessageBox.warning(self, "Warning", "CrispASR binary not found.")
+            QMessageBox.warning(self, t("msg.warning.title"), t("msg.crispasr_missing.body"))
             return
 
         import subprocess
@@ -1291,14 +1366,10 @@ class MainWindow(QWidget):
             # Pre-populate TTS tab with the wizard's output
             if hasattr(self, "tts_widget"):
                 self.tts_widget.reference_audio.setText(wizard.voice_path)
-                self.tts_widget.i_have_rights.setChecked(True)
-                if wizard.ref_text:
-                    # Find a ref_text field if it exists, otherwise log
-                    logging.info(
-                        "Voice clone: ref audio=%s, ref text=%s",
-                        wizard.voice_path,
-                        wizard.ref_text[:50],
-                    )
+                self.tts_widget.ref_text.setText(wizard.ref_text)
+                # Only carry the attestation across if the user actually gave
+                # it — the app must never assert consent on their behalf.
+                self.tts_widget.i_have_rights.setChecked(wizard.consent_given)
                 self.tab_widget.setCurrentIndex(1)  # Switch to TTS tab
 
     # ---- Mic streaming ----
@@ -1313,7 +1384,7 @@ class MainWindow(QWidget):
 
         exe = find_crispasr()
         if not exe:
-            QMessageBox.warning(self, "Warning", "CrispASR binary not found.")
+            QMessageBox.warning(self, t("msg.warning.title"), t("msg.crispasr_missing.body"))
             return
 
         import subprocess
@@ -1345,7 +1416,7 @@ class MainWindow(QWidget):
             text=True,
             bufsize=1,
         )
-        self.stream_mic_button.setText("Stop Mic")
+        self.stream_mic_button.setText(t("btn.stop_mic"))
         self.stream_mic_button.setStyleSheet("background-color: #D32F2F; color: white;")
         self.transcription_output.clear()
         self._transcription_segments = []
@@ -1367,7 +1438,7 @@ class MainWindow(QWidget):
             self._stream_process.terminate()
             self._stream_process.wait(timeout=5)
             self._stream_process = None
-        self.stream_mic_button.setText("Stream Mic")
+        self.stream_mic_button.setText(t("btn.stream_mic"))
         self.stream_mic_button.setStyleSheet("")
         self.transcription_text = self.transcription_output.toPlainText()
         self.save_button.setEnabled(True)
@@ -1379,7 +1450,7 @@ class MainWindow(QWidget):
         """Run watermark detection on the loaded audio file."""
         audio_path = self.audio_input_path.text().strip()
         if not audio_path or not os.path.isfile(audio_path):
-            QMessageBox.warning(self, "Warning", "No audio file selected.")
+            QMessageBox.warning(self, t("msg.warning.title"), t("msg.no_audio_selected.body"))
             return
 
         try:
@@ -1388,7 +1459,7 @@ class MainWindow(QWidget):
             exe = find_crispasr()
             if not exe:
                 QMessageBox.warning(
-                    self, "Warning", "CrispASR binary not found for watermark detection."
+                    self, t("msg.warning.title"), t("msg.crispasr_missing_watermark.body")
                 )
                 return
 
@@ -1403,12 +1474,14 @@ class MainWindow(QWidget):
             output = (result.stdout + result.stderr).strip()
             if result.returncode == 0:
                 QMessageBox.information(
-                    self, "Watermark Detection", output or "Detection complete."
+                    self, t("msg.watermark_detection.title"), output or "Detection complete."
                 )
             else:
-                QMessageBox.warning(self, "Watermark Detection", output or "Detection failed.")
+                QMessageBox.warning(
+                    self, t("msg.watermark_detection.title"), output or "Detection failed."
+                )
         except subprocess.TimeoutExpired:
-            QMessageBox.warning(self, "Timeout", "Watermark detection timed out.")
+            QMessageBox.warning(self, t("msg.timeout.title"), t("msg.watermark_timeout.body"))
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Watermark detection failed: {e}")
 
@@ -1444,7 +1517,7 @@ class MainWindow(QWidget):
 
     def save_transcription(self):
         if not hasattr(self, "transcription_text") or not self.transcription_text:
-            QMessageBox.warning(self, "Warning", "No transcription available to save.")
+            QMessageBox.warning(self, t("msg.warning.title"), t("warn.no_transcription"))
             return
 
         filter_str = (
@@ -1502,7 +1575,7 @@ class MainWindow(QWidget):
             logging.error(f"Error checking dependencies: {str(e)}")
             QMessageBox.warning(
                 self,
-                "Dependency Check Error",
+                t("msg.dependency_check_error.title"),
                 f"There was an error checking dependencies: {str(e)}",
             )
             dependencies = self.dependencies
@@ -1549,7 +1622,7 @@ class MainWindow(QWidget):
     def show_diarization_help(self):
         QMessageBox.information(
             self,
-            "Speaker Diarization Help",
+            t("msg.diarization_help.title"),
             "<h2>Speaker Diarization in Susurrus</h2>"
             "<p>Speaker diarization identifies different speakers in your audio recordings "
             "and creates transcriptions with speaker labels.</p>"

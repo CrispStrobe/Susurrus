@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
 )
 
 from utils.device_detection import check_nvidia_installation
+from utils.i18n import t
 
 
 class CUDADiagnosticsDialog(QDialog):
@@ -18,7 +19,7 @@ class CUDADiagnosticsDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("CUDA and NVIDIA Diagnostics")
+        self.setWindowTitle(t("heading.cuda_diagnostics"))
         self.setMinimumSize(600, 400)
         self._init_ui()
 
@@ -31,13 +32,13 @@ class CUDADiagnosticsDialog(QDialog):
 
         # Create dialog
         dialog = QDialog(self)
-        dialog.setWindowTitle("CUDA and NVIDIA Diagnostics")
+        dialog.setWindowTitle(t("heading.cuda_diagnostics"))
         dialog.setMinimumSize(600, 400)
 
         layout = QVBoxLayout()
 
         # Title
-        title = QLabel("<h2>CUDA and NVIDIA Diagnostics</h2>")
+        title = QLabel(f"<h2>{t('heading.cuda_diagnostics')}</h2>")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 

@@ -72,13 +72,59 @@ Susurrus is a professional, modular audio suite providing transcription, text-to
 
 ### EU AI Act Compliance
 
-- **Watermark ON by default**: All TTS output gets AudioSeal watermark (CrispASR default)
+See **[COMPLIANCE.md](COMPLIANCE.md)** for the full obligations map — what the
+software does for you, and what remains yours to do as provider or deployer.
+
+- **Marking ON by default, on every TTS path**: no backend emits unmarked audio
+- **Watermark ON by default**: AudioSeal neural watermark (CrispASR backends)
 - **C2PA signing ON by default**: Content Credentials signed with bundled cert
-- **Voice cloning gated**: `--i-have-rights` required for .wav reference cloning
-- **`--no-watermark`**: Explicit opt-out with Art. 50 responsibility-shift warning
+- **Dependency-free fallback marker**: a RIFF `LIST/INFO` chunk declaring AI
+  generation is embedded even when the optional `c2pa-audio` library is absent,
+  so a default install still satisfies Art. 50(2)
+- **Voice cloning gated everywhere**: an explicit rights attestation is required
+  before cloning on *both* the CrispASR and Python-native paths — refused before
+  any model loads. Susurrus never sets the attestation on your behalf
+- **Spoken disclosure on every backend**: cloned audio gets an audible,
+  localized AI-disclosure prefix — CrispASR in-binary, Python-native backends
+  by synthesizing the phrase with the same model (`--no-spoken-disclaimer` opts out)
+- **Neural watermark**: AudioSeal survives re-encoding where metadata does not.
+  `pip install 'susurrus[watermark]'` for the Python backends
+- **Art. 12 audit log**: every speaker enrollment *and* identification is
+  recorded to a hash-chained append-only log. `susurrus --audit-log` prints it
+  and verifies the chain; Tools → Biometric Audit Log in the GUI
+- **`--accept-marking-responsibility`**: the single explicit opt-out that
+  produces unmarked audio and shifts the Art. 50 obligation to the operator
 - **`--detect-watermark`**: Standalone AI-content detection (confidence + verdict)
-- **`--verify-c2pa`**: Verify C2PA Content Credentials in audio files
-- **c2pa-audio integration**: Python-native signing for non-CrispASR TTS backends via [c2pa-audio](https://github.com/CrispStrobe/c2pa-audio)
+- **`--verify-c2pa`**: Check whether a file is marked as AI-generated —
+  reports both the C2PA credentials and the declarative marker, exits 0 if
+  either is present
+- **Biometric warning**: using the speaker database without `--speaker-db-consent`
+  warns about GDPR Art. 9 and possible Annex III(1)(a) high-risk classification
+- **c2pa-audio integration**: Python-native C2PA signing for non-CrispASR TTS
+  backends via [c2pa-audio](https://github.com/CrispStrobe/c2pa-audio)
+
+### Intended Purpose & Limitations
+
+Susurrus is a local-first tool for transcribing audio, synthesizing speech,
+translating text, and separating speakers — for individuals and teams
+processing their own or consented material.
+
+**Output is a model prediction, not a record.** Transcription accuracy varies
+sharply with accent, audio quality, background noise, domain vocabulary and
+language; non-native accents and under-resourced languages typically fare
+worse. Diarization guesses speaker boundaries and counts, and struggles with
+overlapping or similar voices. Translation loses nuance and can invert meaning.
+Review all output before relying on it.
+
+**Not validated for** uses where an error carries legal or safety
+consequences without human review — evidentiary transcripts, medical
+documentation, employment or education decisions, law enforcement, or border
+control. Several are Annex III high-risk areas whose obligations this project
+does not implement. See [COMPLIANCE.md](COMPLIANCE.md).
+
+**Speaker enrollment stores biometric data.** `--enroll-speaker` and
+`--speaker-db` persist voice embeddings linked to named people — GDPR Art. 9
+special-category data requiring a lawful basis.
 
 ### GUI
 
@@ -89,11 +135,13 @@ Susurrus is a professional, modular audio suite providing transcription, text-to
 - **Watermark detection**: "Detect Watermark" button — check if audio is AI-generated
 - **Batch queue**: Multi-file sequential processing with status tracking
 - **History browser**: Search, load, delete past transcriptions (auto-saved)
-- **Voice clone wizard**: 3-step guided dialog with EU AI Act consent (Tools menu)
+- **Voice clone wizard**: 3-step guided dialog with a required EU AI Act consent
+  checkbox — "Clone Voice" stays disabled until the attestation is given (Tools menu)
 - **Server toggle**: Start/stop OpenAI-compatible HTTP server from Tools menu
 - **Light/dark themes**: Toggle via Ctrl+T, persisted in QSettings
 - **Log viewer**: Real-time log display with level filtering (View → Show Logs)
-- **i18n**: English + German translations (90+ strings)
+- **i18n**: full English + German interface (259 strings, no hardcoded text) —
+  View → Language, persisted across sessions, defaults to the system language
 - **CrispASR advanced settings**: Collapsible panel for VAD, diarization, LID, alignment, grammar, streaming
 - **TTS panel**: Text input, file loading, backend/voice selection, reference audio, C2PA/watermark controls
 - **Translation panel**: Source/target language, backend selection

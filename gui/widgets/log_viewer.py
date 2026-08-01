@@ -15,6 +15,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from utils.i18n import t
+
 # Color per log level
 _LEVEL_COLORS = {
     "DEBUG": "#888888",
@@ -62,11 +64,11 @@ class LogViewer(QWidget):
         filter_row.addWidget(self.level_filter)
 
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Search logs...")
+        self.search_input.setPlaceholderText(t("ph.search_logs"))
         self.search_input.textChanged.connect(self._refresh)
         filter_row.addWidget(self.search_input)
 
-        self.clear_button = QPushButton("Clear")
+        self.clear_button = QPushButton(t("btn.clear"))
         self.clear_button.clicked.connect(self._on_clear)
         filter_row.addWidget(self.clear_button)
 

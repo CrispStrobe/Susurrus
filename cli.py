@@ -292,7 +292,12 @@ def main():
     prov_group.add_argument(
         "--detect-watermark",
         default=None,
-        help="Detect AI watermark in a WAV file and exit",
+        help=(
+            "Detect an AI watermark in a WAV file and exit. Uses the CrispASR "
+            "binary when available and passes through its exit code; "
+            "otherwise falls back to the Python detector, which exits 0 if "
+            "marked, 1 if not, and 2 if it could not check"
+        ),
     )
     prov_group.add_argument("--c2pa-cert", default=None, help="X.509 cert for C2PA signing")
     prov_group.add_argument("--c2pa-key", default=None, help="Private key for C2PA signing")
@@ -384,7 +389,11 @@ def main():
     dia_group.add_argument(
         "--speaker-db-consent",
         action="store_true",
-        help="GDPR consent for persistent speaker database",
+        help=(
+            "Attest a lawful basis for storing voice biometrics linked to "
+            "named people (GDPR Art. 9 special-category data). Required for "
+            "--speaker-db and --enroll-speaker"
+        ),
     )
 
     # --- CrispASR LID ---
@@ -425,6 +434,14 @@ def main():
     spk_group.add_argument("--enroll-speaker", default=None, help="Enroll speaker name")
     spk_group.add_argument("--speaker-threshold", type=float, default=None, help="Match threshold")
     spk_group.add_argument("--titanet-model", default=None, help="Speaker embedding model")
+    spk_group.add_argument(
+        "--audit-log",
+        action="store_true",
+        help=(
+            "Print the EU AI Act Art. 12 biometric audit log and verify its "
+            "hash chain, then exit (exit 1 if the chain is broken)"
+        ),
+    )
 
     # --- CrispASR audio analysis ---
     analysis_group = parser.add_argument_group("CrispASR Audio Analysis Options")
@@ -515,42 +532,52 @@ def main():
             "responsibility rests with the operator per EU AI Act Art. 50."
         )
 
-    # --verify-c2pa is a standalone verb (Python-side, no binary needed)
+    _warn_speaker_biometrics(args)
+    _audit_speaker_biometrics(args)
+
+    # --audit-log is a standalone verb: read and verify the Art. 12 record
+    if getattr(args, "audit_log", False):
+        import json
+
+        from utils.audit_log import audit_log_path, read_events, verify_chain
+
+        events = read_events()
+        chain = verify_chain()
+        print(json.dumps({"path": audit_log_path(), "chain": chain, "events": events}, indent=2))
+        sys.exit(0 if chain["valid"] else 1)
+
+    # --verify-c2pa is a standalone verb (Python-side, no binary needed).
+    # It reports *both* marking layers: a file carrying only the declarative
+    # marker is still marked as AI-generated, and answering "is this marked?"
+    # with exit 1 just because c2pa-audio is missing would be misleading.
     if getattr(args, "verify_c2pa", None):
         try:
-            from utils.c2pa_signing import verify_wav_file
-
-            result = verify_wav_file(args.verify_c2pa)
-            if result is None:
-                print("c2pa-audio library not available", file=sys.stderr)
-                sys.exit(1)
             import json
 
-            print(json.dumps(result, indent=2))
-            sys.exit(0 if result["valid"] else 1)
+            from utils.ai_marking import read_wav_ai_marker
+            from utils.c2pa_signing import verify_wav_file
+
+            c2pa_result = verify_wav_file(args.verify_c2pa)
+            marker = read_wav_ai_marker(args.verify_c2pa)
+
+            report = {
+                "c2pa": c2pa_result if c2pa_result else {"available": c2pa_result is not None},
+                "ai_marker": marker or None,
+                "marked_as_ai_generated": bool(
+                    (c2pa_result and c2pa_result.get("valid")) or marker
+                ),
+            }
+            print(json.dumps(report, indent=2))
+            sys.exit(0 if report["marked_as_ai_generated"] else 1)
         except Exception as e:
-            print(f"C2PA verification error: {e}", file=sys.stderr)
+            print(f"Provenance verification error: {e}", file=sys.stderr)
             sys.exit(1)
 
-    # --detect-watermark is a standalone verb
+    # --detect-watermark is a standalone verb. Prefer the CrispASR binary when
+    # available; fall back to the Python AudioSeal detector so the verb works
+    # on installs that have no binary.
     if getattr(args, "detect_watermark", None):
-        kwargs = _build_crispasr_kwargs(args)
-        from workers.transcription.backends.crispasr_backend import CrispasrBackend
-
-        backend = CrispasrBackend(model_id="auto", device="cpu", **kwargs)
-        try:
-            cmd, _ = backend._build_base_cmd()
-            cmd.extend(["--detect-watermark", args.detect_watermark])
-            backend._append_params(cmd)
-            import subprocess
-
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-            print(proc.stdout)
-            if proc.stderr:
-                print(proc.stderr, file=sys.stderr)
-            sys.exit(proc.returncode)
-        finally:
-            backend.cleanup()
+        sys.exit(_run_detect_watermark(args))
 
     if args.mode == "transcribe":
         _run_transcribe(args)
@@ -810,6 +837,184 @@ def _run_transcribe(args):
         backend.cleanup()
 
 
+def _warn_speaker_biometrics(args):
+    """Warn when the speaker database is used without a consent attestation.
+
+    Enrolling a named speaker stores a voice embedding — biometric data under
+    GDPR Art. 9, and potentially an Annex III(1)(a) high-risk use under the
+    EU AI Act depending on how the deployment identifies people.
+
+    Returns True if a warning was emitted.
+    """
+    uses_biometrics = bool(
+        getattr(args, "speaker_db", None)
+        or getattr(args, "enroll_speaker", None)
+        or getattr(args, "expect_speakers", None)
+    )
+    if not uses_biometrics or getattr(args, "speaker_db_consent", False):
+        return False
+
+    logging.warning(
+        "Speaker database in use without --speaker-db-consent. Enrolling a "
+        "named speaker stores voice biometrics (GDPR Art. 9 special-category "
+        "data). Confirm you have a lawful basis and the speaker's consent. "
+        "Identifying people this way may also be a high-risk use under EU AI "
+        "Act Annex III(1)(a) — see COMPLIANCE.md."
+    )
+    return True
+
+
+def _audit_speaker_biometrics(args):
+    """Record biometric events to the Art. 12 audit log.
+
+    Enrollment and identification are logged separately: Art. 12 covers use of
+    the system, not only its setup, so a deployer must be able to show when
+    people were *matched* against the database as well as added to it.
+
+    Returns the list of entries written.
+    """
+    enroll = getattr(args, "enroll_speaker", None)
+    database = getattr(args, "speaker_db", None)
+    identifies = bool(getattr(args, "expect_speakers", None) or (database and not enroll))
+    if not enroll and not identifies:
+        return []
+
+    from utils.audit_log import EVENT_ENROLL, EVENT_IDENTIFY, record_event
+
+    common = {
+        "database": database,
+        "consent": getattr(args, "speaker_db_consent", False),
+        "model": getattr(args, "titanet_model", None),
+    }
+
+    written = []
+    if enroll:
+        written.append(record_event(EVENT_ENROLL, speaker=enroll, **common))
+    if identifies:
+        written.append(record_event(EVENT_IDENTIFY, speaker=None, **common))
+    return [e for e in written if e]
+
+
+def _detect_watermark_via_binary(args, target):
+    """Run the CrispASR detector. Returns its exit code, or None if unusable.
+
+    None means "fall back to the Python detector": either no binary is
+    installed, or the one that is installed failed to run at all (a stale
+    build, a missing dylib). A broken binary should not turn "is this AI
+    audio?" into an unanswered question when a Python detector is available.
+    """
+    from utils.crispasr_utils import find_crispasr
+
+    if not find_crispasr():
+        return None
+
+    kwargs = _build_crispasr_kwargs(args)
+    from workers.transcription.backends.crispasr_backend import CrispasrBackend
+
+    backend = CrispasrBackend(model_id="auto", device="cpu", **kwargs)
+    try:
+        cmd, _ = backend._build_base_cmd()
+        cmd.extend(["--detect-watermark", target])
+        backend._append_params(cmd)
+        import subprocess
+
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.SubprocessError) as e:
+            logging.warning("CrispASR watermark detector could not run: %s", e)
+            return None
+
+        if proc.returncode != 0 and not proc.stdout.strip():
+            # Crashed before producing a verdict — not a "no watermark" answer.
+            logging.warning(
+                "CrispASR watermark detector failed (exit %d); falling back to "
+                "the Python detector. %s",
+                proc.returncode,
+                proc.stderr.strip().splitlines()[0] if proc.stderr.strip() else "",
+            )
+            return None
+
+        print(proc.stdout)
+        if proc.stderr:
+            print(proc.stderr, file=sys.stderr)
+        return proc.returncode
+    finally:
+        backend.cleanup()
+
+
+def _run_detect_watermark(args):
+    """Detect an AI watermark in a file. Returns the process exit code.
+
+    Tries the CrispASR binary first (it also knows about its own watermark
+    variants), then the Python AudioSeal detector. Reports which detector ran
+    so an inconclusive answer is not mistaken for a negative one.
+    """
+    target = args.detect_watermark
+
+    binary_result = _detect_watermark_via_binary(args, target)
+    if binary_result is not None:
+        return binary_result
+
+    import json
+
+    from utils.ai_marking import read_wav_ai_marker
+    from utils.audio_watermark import detect_watermark
+
+    neural = detect_watermark(target)
+    marker = read_wav_ai_marker(target)
+
+    # Two independent checks. Name them separately: the declarative marker is
+    # always readable, the neural detector needs audioseal, and a report that
+    # collapses them makes "could not check" look like "clean".
+    report = {
+        "neural_detector": "audioseal" if neural is not None else "unavailable",
+        "neural_watermark": neural,
+        "ai_marker": marker or None,
+        "detected_as_ai_generated": bool((neural and neural["watermarked"]) or marker),
+    }
+    print(json.dumps(report, indent=2))
+
+    if neural is None and marker is None:
+        print(
+            "Inconclusive: no neural detector available (install the crispasr "
+            "binary or 'pip install audioseal') and no declarative marker "
+            "found. This is 'could not check', not 'not AI-generated'.",
+            file=sys.stderr,
+        )
+        return 2
+
+    return 0 if report["detected_as_ai_generated"] else 1
+
+
+def _report_marking(marking):
+    """Print the EU AI Act Art. 50(2) marking status for synthesized audio."""
+    if marking.get("opted_out"):
+        print(
+            "AI-content marking skipped. Responsibility for marking this "
+            "output rests with the operator per EU AI Act Art. 50.",
+            file=sys.stderr,
+        )
+        return
+    layers = [
+        label
+        for key, label in (
+            ("spoken", "spoken disclosure"),
+            ("watermark", "watermark"),
+            ("marker", "AI marker"),
+            ("c2pa", "C2PA"),
+        )
+        if marking.get(key)
+    ]
+    if layers:
+        print(f"Marked as AI-generated ({' + '.join(layers)}).")
+    else:
+        print(
+            "WARNING: could not mark this audio as AI-generated. EU AI Act "
+            "Art. 50(2) requires machine-readable marking of synthetic audio.",
+            file=sys.stderr,
+        )
+
+
 def _run_tts(args):
     """Run TTS mode."""
     text = _read_input_text(args)
@@ -828,12 +1033,21 @@ def _run_tts(args):
         backend = BackendClass(model_id=model, device=args.device, language=args.language, **kwargs)
         try:
             result = backend.synthesize(text, output_path)
+            _report_marking(backend.apply_provenance(result, model=model))
             print(f"Audio saved to: {result}")
         finally:
             backend.cleanup()
     else:
         TTSClass = get_tts_backend_class(tts_backend)
-        tts_kwargs = {}
+        # Provenance kwargs must reach the Python-native backends too — they
+        # gate cloning and mark output via TTSBackend, not via binary flags.
+        tts_kwargs = {
+            "i_have_rights": args.i_have_rights,
+            "no_c2pa": args.no_c2pa,
+            "accept_marking_responsibility": args.accept_marking_responsibility,
+            "c2pa_cert": args.c2pa_cert,
+            "c2pa_key": args.c2pa_key,
+        }
         if args.voice:
             tts_kwargs["voice"] = args.voice
         backend = TTSClass(
@@ -846,7 +1060,12 @@ def _run_tts(args):
                     print(f"  {v}")
                 return
             result = backend.synthesize(text, output_path, voice=args.voice)
+            _report_marking(backend.apply_provenance(result, model=args.model, voice=args.voice))
             print(f"Audio saved to: {result}")
+        except PermissionError as e:
+            # Voice-cloning consent gate — a refusal, not a crash.
+            print(f"Refused: {e}", file=sys.stderr)
+            sys.exit(2)
         finally:
             backend.cleanup()
 

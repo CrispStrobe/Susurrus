@@ -12,24 +12,26 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from utils.i18n import t
+
 
 class DependenciesDialog(QDialog):
     """Dialog to display the status of dependencies"""
 
     def __init__(self, dependencies, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Susurrus Dependencies")
+        self.setWindowTitle(t("dialog.dependencies.title"))
         self.setMinimumWidth(500)
 
         layout = QVBoxLayout()
 
         # Title
-        title = QLabel("<h2>Dependency Status</h2>")
+        title = QLabel(f"<h2>{t('heading.dependency_status')}</h2>")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
         # Info text
-        info = QLabel("The following dependencies are required or recommended for Susurrus:")
+        info = QLabel(t("heading.dependencies_required"))
         layout.addWidget(info)
 
         # Create a table for dependencies
@@ -78,16 +80,10 @@ class DependenciesDialog(QDialog):
 
         # Add installation instructions for missing dependencies
         if any(not info["installed"] and info["required"] for info in dependencies.values()):
-            instructions_label = QLabel("<b>Installation Instructions:</b>")
+            instructions_label = QLabel(f"<b>{t('heading.install_instructions')}</b>")
             layout.addWidget(instructions_label)
 
-            instructions_text = QLabel(
-                "Missing required dependencies can be installed with pip:<br>"
-                "<code>pip install torch transformers pydub numpy</code><br><br>"
-                "For speaker diarization, also install:<br>"
-                "<code>pip install pyannote.audio huggingface_hub</code><br><br>"
-                "For ffmpeg, visit <a href='https://ffmpeg.org/download.html'>ffmpeg.org/download.html</a>"
-            )
+            instructions_text = QLabel(t("help.install_pip"))
             instructions_text.setTextFormat(Qt.TextFormat.RichText)
             instructions_text.setOpenExternalLinks(True)
             layout.addWidget(instructions_text)

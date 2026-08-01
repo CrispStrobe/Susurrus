@@ -306,6 +306,32 @@ class CrispasrBackend(TranscriptionBackend):
         self.extra_kwargs = kwargs
         self.temp_files = []
 
+    def apply_provenance(self, output_path, model=None, voice=None, locale=None):
+        """Report Art. 50 marking status for ``synthesize()`` output.
+
+        This class also drives ``--tts``, so callers of ``synthesize()`` ask it
+        about marking. The binary applies every layer itself, so there is
+        nothing to do here — re-running them would stack a second manifest and
+        watermark. Mirrors ``CrispasrTTSBackend.apply_provenance``.
+        """
+        if self.kwargs.get("accept_marking_responsibility"):
+            return {
+                "spoken": False,
+                "watermark": False,
+                "marker": False,
+                "c2pa": False,
+                "opted_out": True,
+            }
+        no_watermark = self.kwargs.get("no_watermark", False)
+        return {
+            "spoken": bool(self.kwargs.get("voice"))
+            and not self.kwargs.get("no_spoken_disclaimer", False),
+            "watermark": not no_watermark,
+            "marker": not no_watermark,
+            "c2pa": not self.kwargs.get("no_c2pa", False),
+            "opted_out": False,
+        }
+
     def _build_base_cmd(self):
         """Build the base command with the crispasr binary and model."""
         from utils.crispasr_utils import find_crispasr
