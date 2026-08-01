@@ -23,11 +23,19 @@ gpu = [
     "torchaudio>=0.9.0",
 ]
 tts = [
-    "edge-tts>=6.1.0",
+    # <7.2 computes the Sec-MS-GEC auth token with a scheme Microsoft has
+    # retired, so every request fails the websocket handshake with 403.
+    # Measured on one machine minutes apart: 7.0.2 fails, 7.2.8 succeeds.
+    "edge-tts>=7.2.0",
     "piper-tts>=1.2.0",
     "kokoro-onnx>=0.4.0",
     "chatterbox-tts>=0.1.2",
     "soundfile>=0.12.0",
+    # utils/spread_spectrum.py imports numpy directly. soundfile already
+    # requires it, so this changes nothing at install time — but the
+    # dependency-free watermark tier is only "always available" if the
+    # things it is built from are actually declared.
+    "numpy>=1.21",
     # EU AI Act Art. 50(2) marking travels with the ability to synthesize.
     # Without these the only marking a TTS install can apply is strippable
     # metadata, which is a thin reading of "robust and reliable as far as
@@ -65,9 +73,12 @@ c2pa = [
     "cryptography>=41.0",
 ]
 watermark = [
-    # Neural AI-content watermarking (EU AI Act Art. 50(2)). Optional: it is
-    # the only layer that survives re-encoding, but it pulls torch + model
-    # weights, so it stays opt-in while the declarative and C2PA layers ship.
+    # Neural AI-content watermarking (EU AI Act Art. 50(2)). Optional because
+    # it pulls torch plus model weights. It is no longer the only layer that
+    # survives re-encoding — utils/spread_spectrum.py ships in the base TTS
+    # install and survives ordinary transcoding — but AudioSeal is learned
+    # rather than a fixed-key comb, so it is the one that resists deliberate
+    # removal by someone who knows the scheme.
     "audioseal>=0.1.4",
 ]
 all = [
