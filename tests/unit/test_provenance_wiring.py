@@ -53,17 +53,17 @@ class RecordingBackend(TTSBackend):
 
     def apply_provenance(self, output_path, model=None, voice=None, locale=None):
         self.provenance_calls.append(output_path)
-        return {
-            "spoken": False,
-            "watermark": True,
-            "marker": True,
-            "c2pa": True,
-            "opted_out": False,
-        }
+        from utils.provenance import new_result
+
+        return new_result(watermark=True, marker=True, c2pa=True)
 
 
 class TestCliCallsProvenance(unittest.TestCase):
     """The CLI must mark synthesized audio on both routing branches."""
+
+    def setUp(self):
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
 
     def _args(self, **over):
         base = dict(
@@ -79,6 +79,8 @@ class TestCliCallsProvenance(unittest.TestCase):
             list_voices=False,
             i_have_rights=False,
             no_c2pa=False,
+            no_watermark=False,
+            no_spoken_disclaimer=False,
             accept_marking_responsibility=False,
             c2pa_cert=None,
             c2pa_key=None,
@@ -114,6 +116,8 @@ class TestCliCallsProvenance(unittest.TestCase):
                 self._args(
                     i_have_rights=True,
                     no_c2pa=True,
+                    no_watermark=True,
+                    accept_marking_responsibility=True,
                     c2pa_cert="/certs/my.pem",
                     c2pa_key="/certs/my.key",
                 )
@@ -121,6 +125,11 @@ class TestCliCallsProvenance(unittest.TestCase):
 
         self.assertTrue(captured["i_have_rights"])
         self.assertTrue(captured["no_c2pa"])
+        self.assertTrue(
+            captured["no_watermark"],
+            "--no-watermark was dropped before reaching Python backends",
+        )
+        self.assertIn("no_spoken_disclaimer", captured)
         self.assertEqual(captured["c2pa_cert"], "/certs/my.pem")
         self.assertEqual(captured["c2pa_key"], "/certs/my.key")
 
@@ -158,21 +167,35 @@ class TestCliCallsProvenance(unittest.TestCase):
         self.assertTrue(hasattr(backend_class, "apply_provenance"))
 
         backend = backend_class(model_id="auto", device="cpu")
-        result = backend.apply_provenance("out.wav")
-        self.assertTrue(result["c2pa"])
-        self.assertTrue(result["marker"])
-        self.assertTrue(result["watermark"])
+
+        # Marking must be read off the file, not inferred from the flags: a
+        # binary built without C2PA support, or an engine that cannot
+        # watermark, previously still produced a confident "marked" report.
+        path = os.path.join(self._dir.name, "out.wav")
+        _write_wav(path)
+        result = backend.apply_provenance(path)
         self.assertFalse(result["opted_out"])
+        self.assertTrue(result["marker"], "unmarked binary output needs a marker floor")
+
+        from utils.ai_marking import read_ai_marker
+
+        self.assertIsNotNone(read_ai_marker(path))
 
     def test_crispasr_opt_out_is_self_consistent(self):
         """Opting out must clear every layer, not just set the flag."""
         backend = self._crispasr_backend_class()(
             model_id="auto", device="cpu", accept_marking_responsibility=True
         )
-        result = backend.apply_provenance("out.wav")
+        path = os.path.join(self._dir.name, "optout.wav")
+        _write_wav(path)
+        result = backend.apply_provenance(path)
         self.assertTrue(result["opted_out"])
         self.assertFalse(result["c2pa"])
         self.assertFalse(result["marker"])
+
+        from utils.ai_marking import read_ai_marker
+
+        self.assertIsNone(read_ai_marker(path), "opt-out must not mark the file")
 
     def test_clone_without_consent_exits_nonzero(self):
         import cli
@@ -224,6 +247,8 @@ class TestTTSThreadCallsProvenance(unittest.TestCase):
             {
                 "i_have_rights": True,
                 "no_c2pa": True,
+                "no_watermark": True,
+                "no_spoken_disclaimer": True,
                 "accept_marking_responsibility": True,
                 "c2pa_cert": "/certs/my.pem",
                 "c2pa_key": "/certs/my.key",
@@ -232,6 +257,11 @@ class TestTTSThreadCallsProvenance(unittest.TestCase):
         )
         self.assertTrue(captured["i_have_rights"])
         self.assertTrue(captured["no_c2pa"])
+        self.assertTrue(
+            captured["no_watermark"],
+            "--no-watermark was dropped before reaching Python backends",
+        )
+        self.assertTrue(captured["no_spoken_disclaimer"])
         self.assertTrue(captured["accept_marking_responsibility"])
         self.assertEqual(captured["c2pa_cert"], "/certs/my.pem")
         self.assertEqual(captured["c2pa_key"], "/certs/my.key")
@@ -257,6 +287,7 @@ class TestTTSThreadCallsProvenance(unittest.TestCase):
                     "output_path": "out.wav",
                     "no_watermark": True,
                     "no_c2pa": True,
+                    "accept_marking_responsibility": True,
                     "c2pa_cert": "/certs/my.pem",
                     "ref_text": "reference sentence",
                 }
@@ -354,7 +385,7 @@ class TestProvenanceLayering(unittest.TestCase):
     def test_marker_applied_when_c2pa_missing(self):
         from utils.ai_marking import is_ai_marked
 
-        with mock.patch("utils.c2pa_signing.sign_wav_file", return_value=False):
+        with mock.patch("utils.c2pa_signing.sign_audio_file", return_value=False):
             result = self.Dummy().apply_provenance(self.path)
 
         self.assertFalse(result["c2pa"])
@@ -362,14 +393,14 @@ class TestProvenanceLayering(unittest.TestCase):
         self.assertTrue(is_ai_marked(self.path))
 
     def test_c2pa_receives_cert_and_key(self):
-        with mock.patch("utils.c2pa_signing.sign_wav_file", return_value=True) as signer:
+        with mock.patch("utils.c2pa_signing.sign_audio_file", return_value=True) as signer:
             self.Dummy(c2pa_cert="/c.pem", c2pa_key="/k.pem").apply_provenance(self.path)
-        signer.assert_called_once_with(self.path, cert_pem="/c.pem", key_pem="/k.pem")
+        signer.assert_called_once_with(self.path, cert_pem="/c.pem", key_pem="/k.pem", model=None)
 
     def test_no_c2pa_skips_signing_but_still_marks(self):
         from utils.ai_marking import is_ai_marked
 
-        with mock.patch("utils.c2pa_signing.sign_wav_file") as signer:
+        with mock.patch("utils.c2pa_signing.sign_audio_file") as signer:
             result = self.Dummy(no_c2pa=True).apply_provenance(self.path)
         signer.assert_not_called()
         self.assertTrue(result["marker"])
@@ -384,9 +415,38 @@ class TestProvenanceLayering(unittest.TestCase):
         self.assertFalse(result["marker"])
         self.assertFalse(is_ai_marked(self.path))
 
-    def test_non_wav_output_is_not_marked(self):
-        result = self.Dummy().apply_provenance("out.mp3")
-        self.assertFalse(any(result.values()))
+    def test_mp3_output_is_marked(self):
+        """MP3 is not a hypothetical: edge-tts synthesizes it natively."""
+        import os
+        import shutil
+        import subprocess
+
+        from utils.ai_marking import read_ai_marker
+
+        if shutil.which("ffmpeg") is None:
+            self.skipTest("ffmpeg not available to build an MP3 fixture")
+
+        mp3 = os.path.join(self._dir.name, "out.mp3")
+        subprocess.run(
+            ["ffmpeg", "-y", "-v", "error", "-i", self.path, "-codec:a", "libmp3lame", mp3],
+            check=True,
+        )
+        result = self.Dummy().apply_provenance(mp3)
+        self.assertTrue(result["marker"])
+        self.assertFalse(result["unsupported_format"])
+        self.assertIsNotNone(read_ai_marker(mp3))
+
+    def test_unmarkable_container_reports_rather_than_claims(self):
+        """No marker for this container must surface, not pass as success."""
+        import os
+        import shutil
+
+        target = os.path.join(self._dir.name, "out.opus")
+        shutil.copyfile(self.path, target)
+
+        result = self.Dummy().apply_provenance(target)
+        self.assertTrue(result["unsupported_format"])
+        self.assertFalse(result["marker"])
 
 
 if __name__ == "__main__":

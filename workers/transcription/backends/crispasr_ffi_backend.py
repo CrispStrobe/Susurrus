@@ -380,7 +380,51 @@ class CrispasrFFIBackend(TranscriptionBackend):
             seg.text = self._punc_model.process(seg.text)
         return segments
 
-    def synthesize(self, text, output_path="tts_output.wav"):
+    def resolve_reference_audio(self, voice=None):
+        """Return the reference audio this synthesis clones from, or None.
+
+        Mirrors ``TTSBackend.resolve_reference_audio``. This class is a
+        *transcription* backend that also synthesizes, so it inherits none of
+        the TTS provenance machinery and has to state the same contract.
+        """
+        if getattr(self, "_synthesizing_disclosure", False):
+            return None
+        for candidate in (voice, self.extra_kwargs.get("tts_voice")):
+            if candidate and os.path.isfile(candidate):
+                return candidate
+        return None
+
+    def require_clone_consent(self, reference_audio):
+        """Refuse to clone a voice without an explicit rights attestation."""
+        if not reference_audio:
+            return
+        if self.extra_kwargs.get("i_have_rights"):
+            return
+        from workers.tts.backends.base import CLONE_CONSENT_ERROR
+
+        raise PermissionError(CLONE_CONSENT_ERROR)
+
+    def apply_provenance(self, output_path, model=None, voice=None, locale=None):
+        """Apply the EU AI Act Art. 50 layers to FFI-synthesized audio.
+
+        The FFI path writes PCM straight to a WAV in this process — it never
+        runs the binary, so none of the binary's in-built marking, watermark
+        or spoken disclosure applies. Without this the route emitted unmarked
+        synthetic audio and then raised AttributeError when the caller asked
+        for a marking report, leaving the unmarked file on disk.
+        """
+        from utils.provenance import apply_provenance as _apply
+
+        return _apply(
+            output_path,
+            options=self.extra_kwargs,
+            model=model or self.model_id,
+            backend=self,
+            is_cloning=self.resolve_reference_audio(voice) is not None,
+            locale=locale,
+        )
+
+    def synthesize(self, text, output_path="tts_output.wav", voice=None):
         """Synthesize text to audio via FFI.
 
         Returns the path to the output audio file.
@@ -388,6 +432,10 @@ class CrispasrFFIBackend(TranscriptionBackend):
         import numpy as np
 
         logger.info("=== Starting CrispASR FFI TTS ===")
+
+        # Gate cloning before the session opens, as every other route does.
+        self.require_clone_consent(self.resolve_reference_audio(voice))
+
         self._ensure_session()
 
         pcm = self._session.synthesize(text)
@@ -424,6 +472,11 @@ class CrispasrFFIBackend(TranscriptionBackend):
         import numpy as np
 
         logger.info("=== Starting CrispASR FFI S2S ===")
+
+        # Speech-to-speech re-voices a real recording, which is squarely what
+        # Art. 50(4) means by a deepfake — gate it like any other clone.
+        self.require_clone_consent(self.resolve_reference_audio(None) or audio_path)
+
         self._ensure_session()
 
         pcm_in = self._load_audio(audio_path)
@@ -456,6 +509,10 @@ class CrispasrFFIBackend(TranscriptionBackend):
             wf.setsampwidth(2)
             wf.setframerate(sr)
             wf.writeframes(pcm_int16.tobytes())
+
+        # S2S output is synthetic audio derived from a real speaker: mark it
+        # before handing the path back, so no caller can forget to.
+        self.apply_provenance(output_path, model=self.model_id, voice=audio_path)
 
         logger.info("S2S output: %s (%d samples, %d Hz)", output_path, len(pcm_out), sr)
         return output_path, transcript

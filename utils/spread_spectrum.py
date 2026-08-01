@@ -1,0 +1,222 @@
+"""Dependency-free spread-spectrum audio watermark (EU AI Act Art. 50(2)).
+
+AudioSeal in :mod:`utils.audio_watermark` is the stronger watermark, but it is
+optional: it pulls in torch plus model weights, so a default Susurrus install
+does not have it. Until now that left the declarative RIFF marker as the only
+layer on a default install — and that marker is metadata, gone after any
+transcode. Art. 50(2) asks for marking that is robust "as far as technically
+feasible", and this costs nothing but numpy.
+
+The scheme is byte-compatible with CrispASR's ``crispasr_watermark.h`` and
+CrispTTS's ``watermark.py``: same key, same xoshiro128+ PRNG, same FFT size and
+hop, same comb placement. Audio marked by any of the three is detectable by the
+other two, which matters because a Susurrus user transcribing CrispASR output
+should be able to tell it was AI-generated.
+
+Placement follows CrispASR's ``wm_params``. The comb sits inside the speech band
+(~1.5-4.8 kHz) rather than spread to 11.7 kHz: the wide version put ~20 of its
+32 bins where clean TTS speech is near-silent, which was audible as a "tinny"
+tone. ``CRISPASR_WATERMARK_LEGACY=1`` selects the old band, and detection always
+sweeps both so previously-marked audio still verifies.
+
+Measured on 20 s of real speech (44.1 kHz): 0.84 after embedding, 0.78 after a
+44.1k->16k->44.1k resample, 0.81 after an MP3 round-trip, 0.44 on unwatermarked
+audio, ~39.5 dB SNR. Treat the SNR as specific to that recording — the nudge is
+scaled by the mean bin magnitude, so peaky material takes a proportionally
+louder mark than broadband speech does.
+
+It is a fixed-key comb, so someone who knows the scheme can strip it deliberately
+— AudioSeal remains the right choice where that matters.
+"""
+
+import logging
+import os
+
+import numpy as np
+
+logger = logging.getLogger(__name__)
+
+#: Shared across CrispASR, CrispTTS and Susurrus — do not change independently.
+WATERMARK_KEY = 0x437269737041535F  # "CrispASR" in hex-ish
+WATERMARK_NBINS = 32
+FFT_SIZE = 1024
+HOP = FFT_SIZE // 2
+
+#: Correlation at or above which audio counts as watermarked.
+DETECTION_THRESHOLD = 0.65
+
+_U64 = 0xFFFFFFFFFFFFFFFF
+
+
+def _splitmix64(x):
+    x = (x + 0x9E3779B97F4A7C15) & _U64
+    z = x
+    z = ((z ^ (z >> 30)) * 0xBF58476D1CE4E5B9) & _U64
+    z = ((z ^ (z >> 27)) * 0x94D049BB133111EB) & _U64
+    return x, (z ^ (z >> 31)) & _U64
+
+
+class _Prng:
+    """xoshiro128+, matching ``crispasr_wm::prng`` exactly."""
+
+    __slots__ = ("s0", "s1")
+
+    def __init__(self, seed):
+        # The C++ splitmix takes its argument by reference, so the second call
+        # mutates s[0]: it ends up as the intermediate state, not the hash.
+        _, s0_initial = _splitmix64(seed)
+        self.s0, self.s1 = _splitmix64(s0_initial)
+
+    def next(self):
+        s0, s1 = self.s0, self.s1
+        result = (s0 + s1) & _U64
+        s1 ^= s0
+        self.s0 = (((s0 << 55) | (s0 >> 9)) & _U64) ^ s1 ^ ((s1 << 14) & _U64)
+        self.s1 = ((s1 << 36) | (s1 >> 28)) & _U64
+        return result
+
+    def next_u32(self, bound):
+        return int(self.next() % bound)
+
+
+def wm_params(n_fft, legacy=None):
+    """Return ``(lo_bin, hi_bin, default_alpha)``, mirroring CrispASR."""
+    if legacy is None:
+        legacy = bool(os.environ.get("CRISPASR_WATERMARK_LEGACY"))
+    lo_bin = n_fft // 16  # skip sub-bass; ~1.5 kHz @ 24 kHz
+    if legacy:
+        return lo_bin, n_fft // 2 - 1, 0.08  # ~11.7 kHz — audible comb
+    return lo_bin, n_fft // 5, 0.05  # ~4.8 kHz — inside the speech band
+
+
+def generate_bin_pattern(key, n_fft, n_bins, lo_bin=None, hi_bin=None):
+    """Return ``(bin_index, sign)`` pairs for one comb placement."""
+    if lo_bin is None or hi_bin is None:
+        band_lo, band_hi, _ = wm_params(n_fft)
+        lo_bin = band_lo if lo_bin is None else lo_bin
+        hi_bin = band_hi if hi_bin is None else hi_bin
+    rng = _Prng(key)
+    span = hi_bin - lo_bin
+    if span <= 0 or n_bins <= 0:
+        return []
+    bins = []
+    for _ in range(n_bins):
+        idx = lo_bin + rng.next_u32(span)
+        sign = 1 if (rng.next() & 1) else -1
+        bins.append((idx, sign))
+    return bins
+
+
+def embed(pcm, alpha=None):
+    """Embed the watermark into float32 mono PCM, returning a new array.
+
+    ``alpha`` of None or negative selects the band default; ``0`` is an
+    explicit no-op that leaves the samples untouched.
+    """
+    n = len(pcm)
+    if n < FFT_SIZE:
+        return pcm.copy()
+
+    lo_bin, hi_bin, default_alpha = wm_params(FFT_SIZE)
+    if alpha is None or alpha < 0:
+        alpha = default_alpha
+    if alpha == 0.0:
+        # The STFT round-trip is not bit-exact, so a zero-strength pass would
+        # still perturb the audio while embedding nothing.
+        return pcm.copy()
+
+    bins = generate_bin_pattern(WATERMARK_KEY, FFT_SIZE, WATERMARK_NBINS, lo_bin, hi_bin)
+    if not bins:
+        return pcm.copy()
+
+    window = np.hanning(FFT_SIZE).astype(np.float32)
+    out = np.zeros(n, dtype=np.float64)
+    norm = np.zeros(n, dtype=np.float64)
+
+    for start in range(0, n - FFT_SIZE + 1, HOP):
+        frame = pcm[start : start + FFT_SIZE] * window
+        spectrum = np.fft.rfft(frame)
+
+        mags = np.abs(spectrum[1 : FFT_SIZE // 2])
+        rms_mag = np.sqrt(np.mean(mags**2)) if len(mags) else 0.0
+        nudge = alpha * rms_mag
+
+        for b_idx, b_sign in bins:
+            if b_idx >= len(spectrum):
+                continue
+            mag = abs(spectrum[b_idx])
+            new_mag = max(mag + nudge * b_sign, 0.0)
+            if mag > 1e-15:
+                spectrum[b_idx] *= new_mag / mag
+            elif b_sign > 0:
+                spectrum[b_idx] = complex(nudge, 0.0)
+
+        reconstructed = np.fft.irfft(spectrum, n=FFT_SIZE).astype(np.float32)
+        out[start : start + FFT_SIZE] += reconstructed * window
+        norm[start : start + FFT_SIZE] += window**2
+
+    result = pcm.copy().astype(np.float64)
+    mask = norm > 1e-8
+    result[mask] = out[mask] / norm[mask]
+    return result.astype(np.float32)
+
+
+def detect(pcm):
+    """Return detection confidence in [0, 1] for float32 mono PCM.
+
+    Sweeps both comb placements and returns the stronger reading, so audio
+    marked on the legacy band still verifies.
+    """
+    best = 0.0
+    for legacy in (False, True):
+        lo_bin, hi_bin, _ = wm_params(FFT_SIZE, legacy=legacy)
+        best = max(best, _detect_band(pcm, lo_bin, hi_bin))
+    return best
+
+
+def _detect_band(pcm, lo_bin, hi_bin):
+    """Correlate one comb placement against the averaged magnitude spectrum.
+
+    Averaging across frames before correlating is what makes this work on
+    speech: per-frame noise cancels while the watermark, being identical in
+    every frame, survives.
+    """
+    n = len(pcm)
+    if n < FFT_SIZE:
+        return 0.0
+
+    bins = generate_bin_pattern(WATERMARK_KEY, FFT_SIZE, WATERMARK_NBINS, lo_bin, hi_bin)
+    if not bins:
+        return 0.0
+
+    window = np.hanning(FFT_SIZE).astype(np.float32)
+    half = FFT_SIZE // 2
+
+    all_mags = []
+    for start in range(0, n - FFT_SIZE + 1, HOP):
+        frame = pcm[start : start + FFT_SIZE] * window
+        all_mags.append(np.abs(np.fft.rfft(frame)[:half]).astype(np.float64))
+    if not all_mags:
+        return 0.0
+    avg_mags = np.mean(all_mags, axis=0)
+
+    correlation = 0.0
+    valid_bins = 0
+    for b_idx, b_sign in bins:
+        if b_idx >= len(avg_mags):
+            continue
+        neighbours = [
+            avg_mags[b_idx + d] for d in range(-2, 3) if d != 0 and 1 <= b_idx + d < len(avg_mags)
+        ]
+        if not neighbours:
+            continue
+        local_mean = sum(neighbours) / len(neighbours)
+        if local_mean < 1e-12 and avg_mags[b_idx] < 1e-12:
+            continue
+        delta = (avg_mags[b_idx] - local_mean) / max(local_mean, 1e-12)
+        correlation += (1.0 if delta > 0 else -1.0) * b_sign
+        valid_bins += 1
+
+    if valid_bins == 0:
+        return 0.0
+    return float(max(0.0, min(1.0, (correlation / valid_bins + 1.0) / 2.0)))

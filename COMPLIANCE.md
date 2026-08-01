@@ -48,24 +48,57 @@ disabled by accident.
 > shall ensure the outputs are marked in a machine-readable format and
 > detectable as artificially generated or manipulated.
 
-Susurrus applies marking on **every** TTS path. Two layers:
+Susurrus applies marking on every TTS path that writes a WAV or an MP3.
+Three kinds of layer, one of which has two tiers:
 
 | Layer | Mechanism | Availability | Survives re-encoding |
 | --- | --- | --- | --- |
-| Neural watermark | AudioSeal | CrispASR binary, or `pip install audioseal` | Yes |
-| Cryptographic | C2PA Content Credentials | CrispASR binary, or `pip install c2pa-audio` | No (manifest is stripped) |
-| Declarative | RIFF `LIST/INFO` chunk (`utils/ai_marking.py`) | Always — no dependencies | No |
+| In-sample watermark (tier 1) | AudioSeal, learned | CrispASR binary, or `pip install 'susurrus[watermark]'` | Yes, incl. deliberate removal |
+| In-sample watermark (tier 2) | Spread-spectrum comb — `utils/spread_spectrum.py` | Always — numpy only | Yes, for ordinary transcoding |
+| Cryptographic | C2PA Content Credentials | CrispASR binary, or `pip install 'susurrus[c2pa]'` — included in `[tts]` | No (manifest is stripped) |
+| Declarative | RIFF `LIST/INFO` (WAV) or ID3v2.4 (MP3) — `utils/ai_marking.py` | Always — no dependencies | No |
 
 The layers are applied in a fixed order, and the order matters: the spoken
-disclosure and the neural watermark change the samples, the declarative marker
-adds metadata, and C2PA hashes the finished file — so C2PA must run last or its
+disclosure and the watermark change the samples, the declarative marker adds
+metadata, and C2PA hashes the finished file — so C2PA must run last or its
 manifest describes audio that no longer exists.
 
-The declarative layer exists because C2PA signing degrades to a no-op when the
-optional `c2pa-audio` library is absent. Art. 50(2) has no "unless a dependency
-is missing" clause, so a default install still emits marked audio. The marker
-is a standard RIFF chunk: any parser can read it, parsers that don't care skip
-it, and the audio samples are untouched.
+Art. 50(2) requires marking that is "effective, interoperable, robust and
+reliable as far as technically feasible", and it has no "unless a dependency
+is missing" clause. So neither layer that survives re-encoding is allowed to
+be optional: when AudioSeal is absent, the spread-spectrum comb is embedded
+instead, needing nothing beyond numpy. A default install therefore ships two
+marks in the samples and one in the metadata, not metadata alone.
+
+The declarative marker uses each container's own metadata format: any ordinary
+parser reads it, parsers that don't care skip it, and the audio samples are
+untouched by that layer.
+
+Watermarking preserves the file's channel count and sample format. A marking
+step that quietly downmixed stereo to mono, or requantised 24-bit to 16-bit,
+would be damaging the audio it is supposed to be annotating.
+
+**Containers other than WAV and MP3** (FLAC, M4A, Opus …) get C2PA if the
+library is installed, but have no dependency-free fallback. Susurrus says so
+rather than reporting success: the CLI prints a warning naming the container,
+and the GUI shows the same. Prefer `.wav` or `.mp3` if marking matters to you.
+
+**Marking is verified, not assumed.** On the CrispASR routes the binary
+applies the layers itself, and its support depends on build options, engine
+capability and version. Susurrus reads the finished file back — declarative
+marker, C2PA manifest, and AudioSeal detection where available — and reports
+what is actually there. If nothing is detectable it applies the declarative
+marker as a floor. Earlier versions reported marking straight from the command
+line flags, which meant a build without C2PA support still produced a
+confident "Marked as AI-generated" over unmarked audio.
+
+C2PA signing needs an X.509 credential. Pass `--c2pa-cert` / `--c2pa-key` to
+use your own; otherwise Susurrus generates a local CA + end-entity chain once
+and caches it under `~/.local/share/susurrus/c2pa/`. That identity is
+self-issued: it makes the output tamper-evident, and it asserts nothing about
+who you are. For a credential that carries identity, supply a CA-issued
+certificate. Signing is offline by default; set `SUSURRUS_C2PA_TSA` to an
+RFC 3161 timestamp authority URL to add a trusted timestamp.
 
 Verify marking on a file — this reports **both** layers and exits 0 if the
 file is marked by either:
@@ -101,14 +134,31 @@ TAG:encoded_by=EU-AI-Act-Art50-2
 The declarative marker is metadata: it is trivially strippable and is not
 robust to re-encoding. It establishes that Susurrus marked the output, not
 that an arbitrary file you received is authentic. For tamper-evidence use
-C2PA (install `c2pa-audio`), and for survival through re-encoding use a
-CrispASR backend, which adds an AudioSeal neural watermark.
+C2PA (`pip install 'susurrus[c2pa]'`, and included in the `tts` extra). For
+survival through re-encoding the spread-spectrum watermark is always applied;
+`pip install 'susurrus[watermark]'` upgrades that to AudioSeal, which also
+resists deliberate removal.
+
+Which layers your install can actually apply is reported per synthesis, and
+`susurrus --verify-c2pa FILE` shows what a given file carries. Do not assume
+a layer is active because it is documented — check.
 
 **Opting out.** `--accept-marking-responsibility` produces completely unmarked
-audio. This is deliberately a single explicit flag, not a side effect of any
-other option: using it transfers the Art. 50 marking obligation to you as the
-operator. `--no-c2pa` skips only the cryptographic layer and `--no-watermark`
-only the neural one; the declarative marker still applies in both cases.
+audio. `--no-c2pa` skips only the cryptographic layer, `--no-watermark` only
+the neural one, `--no-spoken-disclaimer` only the audible prefix.
+
+None of the three narrower flags takes effect on its own: each one requires
+`--accept-marking-responsibility` alongside it, and Susurrus exits 2 if you
+pass one without it. This matches what the CrispASR binary already enforced,
+and replaces an inconsistency where the same flag meant different things
+depending on which backend you chose.
+
+Be precise about what the attestation does. Art. 50(2) binds the *provider* of
+the system that generates the content, and no command-line flag can move a
+statutory obligation from one party to another. What the flag records is that
+you are shipping output this software did not mark, and are therefore acting
+as the provider of that output — with the marking and disclosure duties that
+follow. It is an attestation about your role, not a waiver.
 
 ## Art. 50(4) — deepfake disclosure
 
@@ -121,6 +171,13 @@ before any model is loaded — unless you pass `--i-have-rights` (CLI) or tick
 the consent box (GUI). The attestation is yours to make: the application will
 never set it on your behalf, including from the Voice Clone Wizard.
 
+The gate is in Susurrus, on every route: the Python-native backends, both
+CrispASR routes, the in-process FFI route, and speech-to-speech. The CrispASR
+binary enforces `--i-have-rights` too, but relying on that alone put the only
+check for those routes outside this codebase, where a version or build without
+it would clone silently. A path-like `--voice` is treated as reference audio;
+a preset voice name is not, so stock voices need no attestation.
+
 What the attestation means: *this is my own voice, or the speaker consented to
 having their voice cloned.*
 
@@ -129,7 +186,13 @@ that, **every** backend prepends an audible spoken disclaimer to cloned audio �
 CrispASR does it in-binary, and the Python-native backends synthesize the
 phrase with the same model and concatenate it (`utils/spoken_disclosure.py`).
 The phrase is localized, so a German user gets a German disclosure. Suppress it
-with `--no-spoken-disclaimer`; machine-readable marking still applies.
+with `--no-spoken-disclaimer` (which requires the attestation above);
+machine-readable marking still applies.
+
+The disclosure is spoken in the backend's **own** voice, never in the cloned
+one. While it is being synthesized the cloning reference is withheld from the
+backend, so a disclaimer cannot be delivered by the impersonated speaker —
+which would produce exactly the confusion the disclosure exists to prevent.
 
 The disclosure is added only when cloning from reference audio. Synthesis in a
 stock voice is not a deepfake, so Art. 50(4) is not engaged — though Art. 50(2)
@@ -166,6 +229,12 @@ event type, speaker, database, whether consent was attested, and the embedding
 model. Identification is logged as well as enrollment, because Art. 12 covers
 use of the system and not only its setup.
 
+The entry is written **after** the run completes, not when the flags are
+parsed. A record derived from the command line alone documents an intention
+rather than an event — it would assert that people were identified even when
+the backend failed to start or the audio was unreadable. An audit trail that
+overstates what happened is worse than a sparse one.
+
 Entries are SHA-256 hash-chained, so modification, deletion, reordering and
 truncation are all detectable:
 
@@ -192,11 +261,35 @@ Susurrus ships no emotion-recognition capability, so the Art. 5(1)(f)
 prohibition on inferring emotions in the workplace or in education is not
 engaged by the software as distributed. Do not bolt one on for those contexts.
 
+## Synthetic text — translation output
+
+Art. 50(2) names synthetic *text* alongside audio, image and video. Susurrus
+translates text with machine-translation models, and does **not** mark
+translation output.
+
+The reasoning: Art. 50(2) exempts systems performing "an assistive function
+for standard editing" or not substantially altering the input. Translation
+transforms text a user supplied rather than generating new content, and the
+Art. 50(4) text-disclosure duty is scoped to text "published with the purpose
+of informing the public on matters of public interest" — a judgement about
+your publication, not about the tool.
+
+This is a grey area, and it is stated here rather than left silent because a
+compliance document that only lists the settled parts is not much use. If you
+publish machine-translated text to inform the public, the disclosure duty is
+yours and Susurrus does nothing toward it.
+
+Transcription is not covered: it is a transformation of a real recording, not
+synthetic content. But see the AI-literacy note below on what a transcript is
+and is not.
+
 ## Art. 4 — AI literacy
 
 Providers and deployers must ensure a sufficient level of AI literacy among
-staff operating these systems. Practically, whoever runs Susurrus should
-understand:
+staff operating these systems. The GUI carries this as **Help → About AI in
+Susurrus**: what the system is, its intended purpose, its known failure modes,
+and what it is not validated for. It is localized along with the rest of the
+interface. Practically, whoever runs Susurrus should understand:
 
 - Transcription output is a **model prediction, not a record**. It contains
   errors, and error rates vary sharply by accent, audio quality, background

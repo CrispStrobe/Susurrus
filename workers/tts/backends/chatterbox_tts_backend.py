@@ -6,7 +6,6 @@ Some handler patterns adapted from CrispTTS (EUPL v1.2).
 """
 
 import logging
-import os
 
 from .base import TTSBackend
 
@@ -24,12 +23,14 @@ class ChatterboxTTSBackend(TTSBackend):
 
     def synthesize(self, text, output_path="tts_output.wav", voice=None):
         # Resolve the reference first and gate on it before importing torch or
-        # fetching a model: a refusal should cost nothing. Both cloning routes
-        # (`voice=` and the `reference_audio` kwarg) converge here, so this is
-        # the single choke point. Raises PermissionError without consent.
-        reference_audio = voice or self.kwargs.get("reference_audio")
-        if reference_audio and os.path.isfile(reference_audio):
-            self.require_clone_consent(reference_audio)
+        # fetching a model: a refusal should cost nothing. Every cloning route
+        # (`voice=`, the `voice` kwarg, the `reference_audio` kwarg) converges
+        # in resolve_reference_audio(), so this is the single choke point.
+        # Raises PermissionError without consent. Returns None while the
+        # spoken disclosure is being synthesized, so the disclosure is spoken
+        # in the stock voice rather than the cloned one.
+        reference_audio = self.resolve_reference_audio(voice)
+        self.require_clone_consent(reference_audio)
 
         try:
             from chatterbox.tts import ChatterboxTTS
@@ -59,7 +60,7 @@ class ChatterboxTTSBackend(TTSBackend):
         if cfg_weight is not None:
             generate_kwargs["cfg_weight"] = float(cfg_weight)
 
-        if reference_audio and os.path.isfile(reference_audio):
+        if reference_audio:
             wav = model.generate(text, audio_prompt_path=reference_audio, **generate_kwargs)
         else:
             wav = model.generate(text, **generate_kwargs)

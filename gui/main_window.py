@@ -4,6 +4,7 @@
 import logging
 import os
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QFileDialog,
@@ -686,6 +687,13 @@ class MainWindow(QWidget):
         # Help menu
         help_menu = menu_bar.addMenu("&Help")
 
+        # EU AI Act Art. 4: the intended purpose and the model's limitations
+        # have to be reachable by whoever operates the system, not only by
+        # whoever reads COMPLIANCE.md in the repository.
+        ai_notice_action = QAction(t("action.ai_notice"), self)
+        ai_notice_action.triggered.connect(self.show_ai_notice)
+        help_menu.addAction(ai_notice_action)
+
         about_action = QAction(t("action.about"), self)
         about_action.triggered.connect(self.show_about_dialog)
         help_menu.addAction(about_action)
@@ -943,9 +951,9 @@ class MainWindow(QWidget):
                     QMessageBox.warning(
                         self,
                         t("msg.backend_unavailable.title"),
-                        f"The '{sub}' backend is not compiled into the CrispASR binary.\n\n"
-                        f"Available backends: {', '.join(available)}\n\n"
-                        "Rebuild CrispASR with the required backend enabled.",
+                        t("msg.backend_unavailable.body").format(
+                            backend=sub, available=", ".join(available)
+                        ),
                     )
                     self.transcribe_button.setEnabled(True)
                     return False
@@ -990,16 +998,7 @@ class MainWindow(QWidget):
                     QMessageBox.information(
                         self,
                         t("msg.voxtral_instructions.title"),
-                        "<h3>Installing Voxtral Dependencies</h3>"
-                        "<p>Run these commands:</p>"
-                        "<p><b>Windows:</b></p>"
-                        "<pre>install_voxtral.bat</pre>"
-                        "<p><b>Linux/Mac:</b></p>"
-                        "<pre>./install_voxtral.sh</pre>"
-                        "<p><b>Or manually:</b></p>"
-                        "<pre>pip uninstall transformers -y\n"
-                        "pip install git+https://github.com/huggingface/transformers.git\n"
-                        "pip install mistral-common[audio] soundfile</pre>",
+                        t("help.voxtral_install"),
                     )
 
                 self.transcribe_button.setEnabled(True)
@@ -1010,10 +1009,7 @@ class MainWindow(QWidget):
                 QMessageBox.critical(
                     self,
                     t("msg.diarization_unavailable.title"),
-                    "Speaker diarization is not available. Please ensure you have:\n\n"
-                    "1. Installed pyannote.audio\n"
-                    "2. Set a valid Hugging Face token in the HF_TOKEN environment variable\n\n"
-                    "If you still see this message, there may be a version conflict between packages.",
+                    t("help.diarization_unavailable"),
                 )
                 self.progress_bar.setVisible(False)
                 self.transcribe_button.setEnabled(True)
@@ -1034,12 +1030,7 @@ class MainWindow(QWidget):
                 reply = QMessageBox.information(
                     self,
                     t("msg.diarization_info.title"),
-                    "You are using speaker diarization for the first time.\n\n"
-                    "Important notes:\n"
-                    "- The first run will download the diarization model (approx. 1GB)\n"
-                    "- Processing may take longer than standard transcription\n"
-                    "- For language-specific content, consider using the matching language model\n\n"
-                    "Do you want to continue?",
+                    t("msg.diarization_info.body"),
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 )
 
@@ -1060,7 +1051,7 @@ class MainWindow(QWidget):
         self.transcribe_button.setEnabled(True)
         self.abort_button.setEnabled(False)
         self.progress_bar.setVisible(False)
-        self.metrics_output.appendPlainText("Transcription aborted by user.")
+        self.metrics_output.appendPlainText(t("status.transcription_aborted"))
         logging.info("Transcription aborted by user.")
 
     def on_transcription_finished(self):
@@ -1199,7 +1190,7 @@ class MainWindow(QWidget):
         }
 
         self.tts_widget.status_output.clear()
-        self.tts_widget.status_output.appendPlainText("Starting synthesis...")
+        self.tts_widget.status_output.appendPlainText(t("status.starting_synthesis"))
         self.tts_widget.synthesize_btn.setEnabled(False)
 
         self.tts_thread = TTSThread(args)
@@ -1213,12 +1204,12 @@ class MainWindow(QWidget):
     def _on_tts_finished(self, output_path):
         self.tts_widget.synthesize_btn.setEnabled(True)
         self.tts_widget.play_btn.setEnabled(True)
-        self.tts_widget.status_output.appendPlainText(f"Done! Audio saved to: {output_path}")
+        self.tts_widget.status_output.appendPlainText(t("status.tts_done").format(path=output_path))
         self._tts_output_path = output_path
 
     def _on_tts_error(self, error_msg):
         self.tts_widget.synthesize_btn.setEnabled(True)
-        self.tts_widget.status_output.appendPlainText(f"Error: {error_msg}")
+        self.tts_widget.status_output.appendPlainText(t("error.generic").format(error=error_msg))
         QMessageBox.critical(self, t("msg.tts_error.title"), error_msg)
 
     def _play_tts_output(self):
@@ -1238,7 +1229,7 @@ class MainWindow(QWidget):
             QMessageBox.warning(
                 self,
                 t("msg.playback_error.title"),
-                f"Could not play audio: {e}\n\nThe file is saved at: {path}",
+                t("msg.play_failed.body").format(error=e, path=path),
             )
 
     # ---- Translation ----
@@ -1277,7 +1268,7 @@ class MainWindow(QWidget):
 
     def _on_translation_error(self, error_msg):
         self.translation_widget.translate_btn.setEnabled(True)
-        self.translation_widget.status_label.setText(f"Error: {error_msg}")
+        self.translation_widget.status_label.setText(t("error.generic").format(error=error_msg))
         QMessageBox.critical(self, t("msg.translation_error.title"), error_msg)
 
     # ---- History ----
@@ -1322,7 +1313,7 @@ class MainWindow(QWidget):
             self._server_process.terminate()
             self._server_process.wait(timeout=5)
             self._server_process = None
-            self.metrics_output.appendPlainText("Server stopped.")
+            self.metrics_output.appendPlainText(t("status.server_stopped"))
             logging.info("CrispASR server stopped")
             return
 
@@ -1352,7 +1343,9 @@ class MainWindow(QWidget):
         self._server_process = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
-        self.metrics_output.appendPlainText(f"Server started on 127.0.0.1:{port}")
+        self.metrics_output.appendPlainText(
+            t("status.server_started").format(host="127.0.0.1", port=port)
+        )
         logging.info("CrispASR server started on port %d", port)
 
     # ---- Voice clone wizard ----
@@ -1483,7 +1476,11 @@ class MainWindow(QWidget):
         except subprocess.TimeoutExpired:
             QMessageBox.warning(self, t("msg.timeout.title"), t("msg.watermark_timeout.body"))
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Watermark detection failed: {e}")
+            QMessageBox.critical(
+                self,
+                t("msg.error.title"),
+                t("error.watermark_detection_failed").format(error=e),
+            )
 
     # ---- Batch callbacks ----
 
@@ -1559,9 +1556,11 @@ class MainWindow(QWidget):
 
             with open(save_path, "w", encoding="utf-8", errors="replace") as dst:
                 dst.write(content)
-            QMessageBox.information(self, "Success", f"Saved to: {save_path}")
+            QMessageBox.information(
+                self, t("msg.success.title"), t("msg.saved_to").format(path=save_path)
+            )
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to save: {str(e)}")
+            QMessageBox.critical(self, t("msg.error.title"), t("error.save_failed").format(error=e))
 
     # Menu actions
     def show_cuda_diagnostics(self):
@@ -1576,7 +1575,7 @@ class MainWindow(QWidget):
             QMessageBox.warning(
                 self,
                 t("msg.dependency_check_error.title"),
-                f"There was an error checking dependencies: {str(e)}",
+                t("error.dependency_check").format(error=e),
             )
             dependencies = self.dependencies
 
@@ -1595,54 +1594,27 @@ class MainWindow(QWidget):
         dialog = InstallerDialog(self)
         dialog.install_voxtral()
 
+    def show_ai_notice(self):
+        """Show the AI-literacy notice (EU AI Act Art. 4)."""
+        box = QMessageBox(self)
+        box.setWindowTitle(t("msg.ai_notice.title"))
+        box.setTextFormat(Qt.TextFormat.RichText)
+        box.setText(t("msg.ai_notice.body"))
+        box.setIcon(QMessageBox.Icon.Information)
+        box.exec()
+
     def show_about_dialog(self):
         QMessageBox.about(
             self,
-            "About Susurrus",
-            f"<h1>{APP_NAME}</h1>"
-            f"<p>Audio Transcription, TTS, Translation & S2S Suite</p>"
-            f"<p>Version {APP_VERSION}</p>"
-            "<p>Features:</p>"
-            "<ul>"
-            "<li>38+ ASR backends via CrispASR (v0.8.7)</li>"
-            "<li>27+ TTS engines (local and cloud)</li>"
-            "<li>Multi-language translation (m2m100, MadLad, Gemma4)</li>"
-            "<li>Speech-to-speech (lfm2-audio, mini-omni2)</li>"
-            "<li>Speaker diarization (PyAnnote + CrispASR methods)</li>"
-            "<li>Export: SRT, VTT, JSON, CSV, TXT</li>"
-            "<li>Transcription history with search</li>"
-            "<li>Batch processing queue</li>"
-            "<li>Light/dark themes</li>"
-            "<li>Waveform display, real-time progress</li>"
-            "<li>Standalone alignment (--align-only)</li>"
-            "</ul>"
-            "<p>Shortcuts: F5=Transcribe, Ctrl+S=Save, Ctrl+T=Theme, Ctrl+H=History</p>",
+            t("msg.about.title"),
+            t("msg.about.body").format(name=APP_NAME, version=APP_VERSION),
         )
 
     def show_diarization_help(self):
         QMessageBox.information(
             self,
             t("msg.diarization_help.title"),
-            "<h2>Speaker Diarization in Susurrus</h2>"
-            "<p>Speaker diarization identifies different speakers in your audio recordings "
-            "and creates transcriptions with speaker labels.</p>"
-            "<h3>Methods</h3>"
-            "<ul>"
-            "<li><b>PyAnnote</b> — Neural model (requires HF token)</li>"
-            "<li><b>CrispASR methods</b> — energy, xcorr, vad-turns, sherpa, ecapa</li>"
-            "</ul>"
-            "<h3>Requirements (PyAnnote)</h3>"
-            "<ul>"
-            "<li>A Hugging Face account and API token</li>"
-            "<li>The pyannote.audio library installed</li>"
-            "<li>Acceptance of the model license agreements</li>"
-            "</ul>"
-            "<h3>Tips for best results</h3>"
-            "<ul>"
-            "<li>Use clean audio with minimal background noise</li>"
-            "<li>Choose language-specific models for non-English content</li>"
-            "<li>Set min/max speakers if you know how many speakers to expect</li>"
-            "</ul>",
+            t("help.diarization"),
         )
 
     # Model management

@@ -169,14 +169,41 @@ class TestGuiIsMigrated(unittest.TestCase):
     next widget someone adds quietly reintroduces English-only text.
     """
 
+    #: Widget constructors and text setters whose string arguments are shown.
+    #:
+    #: This list started as the seven entries that end at ``setWindowTitle``,
+    #: which let the About dialog, the diarization help and every TTS status
+    #: line stay hardcoded English while the suite reported the GUI fully
+    #: migrated. Text setters are where long-form user-facing prose lives.
     UI_CALLS = {
         "QLabel",
         "QPushButton",
         "QCheckBox",
         "QAction",
+        "QGroupBox",
+        "QRadioButton",
         "setPlaceholderText",
         "setToolTip",
         "setWindowTitle",
+        "setText",
+        "setInformativeText",
+        "setDetailedText",
+        "appendPlainText",
+    }
+
+    #: Dialog methods, matched only on a ``QMessageBox``/``QInputDialog``
+    #: receiver. Matching the bare attribute name would sweep up every
+    #: ``logging.warning()`` and ``logger.critical()`` in the GUI layer —
+    #: log lines are not user-visible strings, and drowning the report in
+    #: them is how a scan stops being read.
+    DIALOG_RECEIVERS = {"QMessageBox", "QInputDialog", "QFileDialog"}
+    DIALOG_CALLS = {
+        "about",
+        "information",
+        "warning",
+        "critical",
+        "question",
+        "getText",
     }
 
     #: Strings that are deliberately not translated (identifiers, filenames,
@@ -212,6 +239,10 @@ class TestGuiIsMigrated(unittest.TestCase):
                 name = getattr(node.func, "attr", None) or getattr(node.func, "id", None)
                 if name in self.UI_CALLS:
                     yield rel, node, name
+                elif name in self.DIALOG_CALLS and isinstance(node.func, ast.Attribute):
+                    receiver = getattr(node.func.value, "id", None)
+                    if receiver in self.DIALOG_RECEIVERS:
+                        yield rel, node, f"{receiver}.{name}"
 
     def test_no_hardcoded_ui_strings(self):
         offenders = []

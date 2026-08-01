@@ -306,31 +306,88 @@ class CrispasrBackend(TranscriptionBackend):
         self.extra_kwargs = kwargs
         self.temp_files = []
 
-    def apply_provenance(self, output_path, model=None, voice=None, locale=None):
-        """Report Art. 50 marking status for ``synthesize()`` output.
+    def resolve_reference_audio(self, voice=None):
+        """Return the reference audio this synthesis clones from, or None.
 
-        This class also drives ``--tts``, so callers of ``synthesize()`` ask it
-        about marking. The binary applies every layer itself, so there is
-        nothing to do here — re-running them would stack a second manifest and
-        watermark. Mirrors ``CrispasrTTSBackend.apply_provenance``.
+        A path-like ``--voice`` is reference audio for cloning; a preset name
+        is not. Mirrors ``TTSBackend.resolve_reference_audio``.
         """
-        if self.kwargs.get("accept_marking_responsibility"):
-            return {
-                "spoken": False,
-                "watermark": False,
-                "marker": False,
-                "c2pa": False,
-                "opted_out": True,
-            }
-        no_watermark = self.kwargs.get("no_watermark", False)
-        return {
-            "spoken": bool(self.kwargs.get("voice"))
-            and not self.kwargs.get("no_spoken_disclaimer", False),
-            "watermark": not no_watermark,
-            "marker": not no_watermark,
-            "c2pa": not self.kwargs.get("no_c2pa", False),
-            "opted_out": False,
+        if getattr(self, "_synthesizing_disclosure", False):
+            return None
+        # The CLI maps --voice onto the ``tts_voice`` kwarg for this backend;
+        # ``voice`` is what the GUI and direct callers use.
+        for candidate in (voice, self.kwargs.get("tts_voice"), self.kwargs.get("voice")):
+            if candidate and os.path.isfile(candidate):
+                return candidate
+        return None
+
+    def require_clone_consent(self, reference_audio):
+        """Refuse to clone a voice without an explicit rights attestation."""
+        if not reference_audio:
+            return
+        if self.kwargs.get("i_have_rights"):
+            return
+        from workers.tts.backends.base import CLONE_CONSENT_ERROR
+
+        raise PermissionError(CLONE_CONSENT_ERROR)
+
+    def apply_provenance(self, output_path, model=None, voice=None, locale=None):
+        """Verify the binary's marking of ``synthesize()`` output.
+
+        This class also drives ``--tts``, so it is the CLI's CrispASR TTS
+        route. The binary applies the layers itself and re-running them would
+        stack a second manifest and watermark — but reporting success from the
+        flags alone, as this used to, claimed marking that nothing had checked.
+        A build without C2PA support or an engine that cannot watermark
+        produced a confident "Marked as AI-generated" over unmarked audio.
+
+        Inspect the file instead, and fall back to the dependency-free
+        declarative marker when nothing verifiable is present. Mirrors
+        ``CrispasrTTSBackend.apply_provenance``.
+        """
+        from utils.provenance import new_result, verify_marking
+
+        found = verify_marking(output_path)
+        layers = {
+            "watermark": bool(found.get("watermark")),
+            "marker": bool(found.get("marker")),
+            "c2pa": bool(found.get("c2pa")),
         }
+
+        if self.kwargs.get("accept_marking_responsibility"):
+            # Report what is on the file: the binary force-keeps the watermark
+            # on the CLI even when the operator opts out, so "unmarked" would
+            # be its own false claim.
+            return new_result(opted_out=True, **layers)
+
+        result = new_result(
+            spoken=self.resolve_reference_audio(voice) is not None
+            and not self.kwargs.get("no_spoken_disclaimer", False),
+            **layers,
+        )
+
+        if not any(layers.values()):
+            try:
+                from utils.ai_marking import embed_ai_marker
+
+                result["marker"] = embed_ai_marker(output_path, model=model or self.model_id)
+                if result["marker"]:
+                    logging.info(
+                        "CrispASR output carried no detectable AI marking; "
+                        "applied the declarative marker as a floor."
+                    )
+            except ImportError:
+                pass
+
+        if not (result["marker"] or result["watermark"] or result["c2pa"]):
+            logging.warning(
+                "Could not verify or apply AI-content marking for %s. EU AI "
+                "Act Art. 50(2) requires machine-readable marking of "
+                "synthetic audio.",
+                output_path,
+            )
+
+        return result
 
     def _build_base_cmd(self):
         """Build the base command with the crispasr binary and model."""
@@ -499,12 +556,17 @@ class CrispasrBackend(TranscriptionBackend):
         except Exception:
             return 0
 
-    def synthesize(self, text, output_path="tts_output.wav"):
+    def synthesize(self, text, output_path="tts_output.wav", voice=None):
         """Synthesize text to audio using CrispASR's TTS capabilities.
 
         Returns the path to the output audio file.
         """
         logging.info("=== Starting CrispASR TTS ===")
+
+        # Gate cloning in-app, before the binary is located. The binary
+        # enforces --i-have-rights too; relying on that alone left the check
+        # entirely outside Susurrus on this route.
+        self.require_clone_consent(self.resolve_reference_audio(voice))
 
         cmd, exe = self._build_base_cmd()
         logging.info(f"Using crispasr: {exe}")

@@ -234,6 +234,23 @@ STRINGS = {
         "maschinenlesbare Kennzeichnung synthetischer Audioinhalte."
     ),
     "status.marked": "Als KI-generiert gekennzeichnet ({layers}).",
+    "warn.marking_unsupported_format": (
+        "WARNUNG: Dieses Audioformat trägt keine deklarative "
+        "KI-Kennzeichnung, die Ausgabe ist daher möglicherweise ungekenn"
+        "zeichnet. EU AI Act Art. 50(2) verlangt eine maschinenlesbare "
+        "Kennzeichnung synthetischer Audioinhalte — verwenden Sie .wav "
+        "oder .mp3."
+    ),
+    "error.marking_opt_out_needs_attestation": (
+        "Das Deaktivieren von Wasserzeichen, C2PA-Signatur oder gesprochenem "
+        "Hinweis verringert die Herkunftskennzeichnung nach EU AI Act "
+        "Art. 50. Bestätigen Sie mit „Kennzeichnungsverantwortung "
+        "übernehmen“, dass die Pflicht zur Kennzeichnung und Offenlegung "
+        "dieser Ausgabe bei Ihnen als Betreiber liegt."
+    ),
+    "status.tts_initializing": "TTS-Backend wird initialisiert: {backend}",
+    "status.tts_synthesizing": "Synthese mit {backend} …",
+    "status.audio_saved": "Audio gespeichert unter: {path}",
     "warn.speaker_db_consent": (
         "Die Sprecherregistrierung speichert biometrische Stimmdaten mit "
         "Personenbezug. Stellen Sie sicher, dass eine Rechtsgrundlage und "
@@ -241,6 +258,206 @@ STRINGS = {
         "Sie dies mit --speaker-db-consent."
     ),
     "disclosure.spoken": ("Die folgende Aufnahme wurde von künstlicher Intelligenz erzeugt."),
+    # --- KI-Kompetenz (Art. 4) / Zweckbestimmung ---------------------------
+    "action.ai_notice": "Über KI in Susurrus",
+    "msg.about.title": "Über Susurrus",
+    # --- Ausführliche Hilfe und Status --------------------------------------
+    "help.hf_token": (
+        "Für die Sprechertrennung wird ein Hugging-Face-API-Token benötigt.\n\n"
+        "1. Kostenloses Konto auf https://huggingface.co anlegen\n"
+        "2. https://huggingface.co/settings/tokens öffnen\n"
+        "3. Neues Token mit Leserechten („read“) erstellen\n"
+        "4. Token hier einfügen\n\n"
+        "Hinweis: Die Nutzungsbedingungen der Diarisierungsmodelle müssen "
+        "unter https://huggingface.co/pyannote/speaker-diarization "
+        "akzeptiert werden."
+    ),
+    "help.diarization_model": (
+        "Wählen Sie das passende Diarisierungsmodell für Ihre Aufnahme:\n\n"
+        "• Standard: Allgemeines Diarisierungsmodell\n"
+        "• Englisch: Optimiert für englische Gespräche\n"
+        "• Chinesisch: Optimiert für Mandarin-Gespräche\n"
+        "• Deutsch: Optimiert für deutsche Gespräche\n"
+        "• Spanisch: Optimiert für spanische Gespräche\n"
+        "• Japanisch: Optimiert für japanische Gespräche\n\n"
+        "Sprachspezifische Modelle liefern für die jeweilige Sprache oft "
+        "bessere Ergebnisse, besonders bei Telefonaten und natürlichen "
+        "Gesprächen."
+    ),
+    "help.mistral_key": (
+        "<h3>Mistral-AI-API-Schlüssel</h3>"
+        "<p>Der Mistral-API-Schlüssel wird für das Backend "
+        "<b>voxtral-api</b> benötigt.</p>"
+        "<h4>So erhalten Sie Ihren Schlüssel:</h4>"
+        "<ol>"
+        "<li>Kostenloses Konto auf "
+        "<a href='https://console.mistral.ai/'>console.mistral.ai</a> anlegen</li>"
+        "<li>Zum Bereich „API Keys“ wechseln</li>"
+        "<li>Neuen API-Schlüssel erstellen</li>"
+        "<li>Schlüssel hier einfügen</li>"
+        "</ol>"
+        "<h4>Alternativ:</h4>"
+        "<p>Sie können die Umgebungsvariable <code>MISTRAL_API_KEY</code> "
+        "setzen:</p>"
+        "<p><b>PowerShell:</b> <code>$env:MISTRAL_API_KEY = 'ihr-schlüssel'</code></p>"
+        "<p><b>CMD:</b> <code>set MISTRAL_API_KEY=ihr-schlüssel</code></p>"
+        "<p><b>Linux/Mac:</b> <code>export MISTRAL_API_KEY='ihr-schlüssel'</code></p>"
+    ),
+    "help.diarization_unavailable": (
+        "Sprechertrennung ist nicht verfügbar. Bitte stellen Sie sicher:\n\n"
+        "1. pyannote.audio ist installiert\n"
+        "2. Ein gültiges Hugging-Face-Token liegt in der Umgebungsvariablen "
+        "HF_TOKEN\n\n"
+        "Falls diese Meldung weiterhin erscheint, liegt möglicherweise ein "
+        "Versionskonflikt zwischen Paketen vor."
+    ),
+    "label.history_entries": "{count} Einträge",
+    "msg.delete_entry.body": "„{title}“ löschen?",
+    "error.delete_failed": "Löschen fehlgeschlagen: {error}",
+    "error.clear_failed": "Leeren fehlgeschlagen: {error}",
+    "error.read_file": "Fehler beim Lesen der Datei: {error}",
+    "error.generic": "Fehler: {error}",
+    "error.watermark_detection_failed": "Wasserzeichenerkennung fehlgeschlagen: {error}",
+    "error.save_failed": "Speichern fehlgeschlagen: {error}",
+    "error.dependency_check": "Fehler bei der Abhängigkeitsprüfung: {error}",
+    "msg.backend_unavailable.body": (
+        "Das Backend „{backend}“ ist nicht in die CrispASR-Binärdatei "
+        "einkompiliert.\n\n"
+        "Verfügbare Backends: {available}\n\n"
+        "Bauen Sie CrispASR mit dem benötigten Backend neu."
+    ),
+    "msg.play_failed.body": (
+        "Audio konnte nicht abgespielt werden: {error}\n\n"
+        "Die Datei ist gespeichert unter: {path}"
+    ),
+    "msg.saved.title": "Gespeichert",
+    "msg.saved_to": "Gespeichert unter: {path}",
+    "status.transcription_aborted": "Transkription vom Benutzer abgebrochen.",
+    "status.starting_synthesis": "Synthese wird gestartet …",
+    "status.server_stopped": "Server gestoppt.",
+    "status.server_started": "Server gestartet auf {host}:{port}",
+    "status.tts_done": "Fertig! Audio gespeichert unter: {path}",
+    "status.install_issues": "Installation mit Problemen abgeschlossen: {detail}",
+    "msg.install_voxtral.body": (
+        "Dies installiert die Entwicklungsversion von transformers.\n\n"
+        "Folgende Pakete werden installiert:\n"
+        "• transformers (von GitHub)\n"
+        "• mistral-common[audio]\n"
+        "• soundfile\n\n"
+        "Dies kann einige Minuten dauern. Fortfahren?"
+    ),
+    "msg.diarization_info.body": (
+        "Sie verwenden die Sprechertrennung zum ersten Mal.\n\n"
+        "Wichtige Hinweise:\n"
+        "- Beim ersten Lauf wird das Diarisierungsmodell geladen (ca. 1 GB)\n"
+        "- Die Verarbeitung kann länger dauern als eine normale Transkription\n"
+        "- Für anderssprachige Inhalte empfiehlt sich das passende "
+        "Sprachmodell\n\n"
+        "Möchten Sie fortfahren?"
+    ),
+    "help.ffmpeg_install": (
+        "1. Laden Sie den „essentials“-Build herunter\n"
+        "2. Entpacken Sie das ZIP-Archiv nach C:\\ffmpeg\n"
+        "3. Fügen Sie C:\\ffmpeg\\bin zum System-PATH hinzu:\n"
+        "   - Systemsteuerung > System > Erweiterte Systemeinstellungen\n"
+        "   - Auf „Umgebungsvariablen“ klicken\n"
+        "   - Variable „Path“ bearbeiten und C:\\ffmpeg\\bin ergänzen\n"
+        "   - Mit OK bestätigen und das Terminal neu starten"
+    ),
+    "help.voxtral_install": (
+        "<h3>Voxtral-Abhängigkeiten installieren</h3>"
+        "<p>Führen Sie diese Befehle aus:</p>"
+        "<p><b>Windows:</b></p>"
+        "<pre>install_voxtral.bat</pre>"
+        "<p><b>Linux/Mac:</b></p>"
+        "<pre>./install_voxtral.sh</pre>"
+        "<p><b>Oder manuell:</b></p>"
+        "<pre>pip uninstall transformers -y\n"
+        "pip install git+https://github.com/huggingface/transformers.git\n"
+        "pip install mistral-common[audio] soundfile</pre>"
+    ),
+    "help.diarization": (
+        "<h2>Sprechertrennung in Susurrus</h2>"
+        "<p>Die Sprechertrennung erkennt verschiedene Sprecher in Ihren "
+        "Aufnahmen und erzeugt Transkripte mit Sprecherkennzeichnung.</p>"
+        "<h3>Verfahren</h3>"
+        "<ul>"
+        "<li><b>PyAnnote</b> — neuronales Modell (HF-Token erforderlich)</li>"
+        "<li><b>CrispASR-Verfahren</b> — energy, xcorr, vad-turns, sherpa, ecapa</li>"
+        "</ul>"
+        "<h3>Voraussetzungen (PyAnnote)</h3>"
+        "<ul>"
+        "<li>Hugging-Face-Konto und API-Token</li>"
+        "<li>Installierte Bibliothek pyannote.audio</li>"
+        "<li>Zustimmung zu den Modelllizenzen</li>"
+        "</ul>"
+        "<h3>Tipps für gute Ergebnisse</h3>"
+        "<ul>"
+        "<li>Saubere Aufnahmen mit wenig Störgeräuschen verwenden</li>"
+        "<li>Für nicht-englische Inhalte sprachspezifische Modelle wählen</li>"
+        "<li>Min./max. Sprecherzahl angeben, wenn sie bekannt ist</li>"
+        "</ul>"
+    ),
+    "msg.about.body": (
+        "<h1>{name}</h1>"
+        "<p>Suite für Transkription, Sprachsynthese, Übersetzung und S2S</p>"
+        "<p>Version {version}</p>"
+        "<p>Funktionen:</p>"
+        "<ul>"
+        "<li>38+ ASR-Backends über CrispASR</li>"
+        "<li>27+ TTS-Engines (lokal und Cloud)</li>"
+        "<li>Mehrsprachige Übersetzung (m2m100, MadLad, Gemma4)</li>"
+        "<li>Sprache-zu-Sprache (lfm2-audio, mini-omni2)</li>"
+        "<li>Sprechertrennung (PyAnnote + CrispASR-Verfahren)</li>"
+        "<li>Export: SRT, VTT, JSON, CSV, TXT</li>"
+        "<li>Transkriptionsverlauf mit Suche</li>"
+        "<li>Stapelverarbeitung</li>"
+        "<li>Helles und dunkles Design</li>"
+        "<li>Wellenformanzeige, Fortschritt in Echtzeit</li>"
+        "<li>Eigenständige Alignierung (--align-only)</li>"
+        "</ul>"
+        "<p>Tastenkürzel: F5=Transkribieren, Strg+S=Speichern, "
+        "Strg+T=Design, Strg+H=Verlauf</p>"
+        "<p>Synthetische Audioinhalte werden als KI-generiert gekennzeichnet "
+        "— siehe <i>Hilfe &gt; Über KI in Susurrus</i>.</p>"
+    ),
+    "msg.ai_notice.title": "Über KI in Susurrus",
+    "msg.ai_notice.body": (
+        "<h3>Dies ist ein KI-System</h3>"
+        "<p>Susurrus transkribiert, synthetisiert und übersetzt Sprache und "
+        "trennt Sprecher mithilfe von Modellen des maschinellen Lernens. "
+        "Alle Ergebnisse sind eine <b>Vorhersage des Modells, kein "
+        "Protokoll</b>.</p>"
+        "<h4>Zweckbestimmung</h4>"
+        "<p>Ein lokal arbeitendes Werkzeug für eigenes oder einwilligungs"
+        "basiertes Material, dessen Ausgabe vor der Verwendung von einem "
+        "Menschen geprüft wird.</p>"
+        "<h4>Bekannte Grenzen</h4>"
+        "<ul>"
+        "<li><b>Transkription</b> enthält Fehler. Die Genauigkeit hängt stark "
+        "von Akzent, Aufnahmequalität, Störgeräuschen, Fachvokabular und "
+        "Sprache ab; nicht-muttersprachliche Akzente und Sprachen mit wenig "
+        "Trainingsmaterial schneiden meist schlechter ab.</li>"
+        "<li><b>Sprechertrennung</b> schätzt Sprecherwechsel und -anzahl. "
+        "Überlappende Rede, ähnliche Stimmen und kurze Beiträge scheitern "
+        "häufig.</li>"
+        "<li><b>Übersetzung</b> verliert Nuancen und kann die Bedeutung "
+        "umkehren, besonders bei Verneinung, Redewendungen und mehrdeutigen "
+        "Pronomen.</li>"
+        "<li><b>Synthetische Sprache</b> ist kein Beleg dafür, dass eine "
+        "reale Person etwas gesagt hat.</li>"
+        "</ul>"
+        "<h4>Nicht validiert für</h4>"
+        "<p>Jede Verwendung, bei der ein Fehler ohne menschliche Prüfung "
+        "rechtliche oder sicherheitsrelevante Folgen hat: Beweismittel"
+        "protokolle, medizinische Dokumentation, Entscheidungen über "
+        "Beschäftigung oder Bildung, Kredit- oder Leistungsansprüche, "
+        "Strafverfolgung, Migration und Grenzkontrolle.</p>"
+        "<h4>Ihre Pflichten</h4>"
+        "<p>Synthetische Audioinhalte werden automatisch als KI-generiert "
+        "gekennzeichnet. Die Offenlegung gegenüber den Personen, die die "
+        "Ausgabe sehen oder hören, bleibt Ihre Aufgabe. Siehe COMPLIANCE.md.</p>"
+    ),
     "warn.no_transcription": "Keine Transkription zum Speichern vorhanden.",
     # --- Wizard -------------------------------------------------------------
     "wizard.title": "Stimmklon-Assistent",

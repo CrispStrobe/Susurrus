@@ -23,8 +23,24 @@ def _describe_marking(marking):
         return t("warn.marking_opted_out")
     layers = [label for key, label in _LAYER_NAMES if marking.get(key)]
     if not layers:
+        if marking.get("unsupported_format"):
+            return t("warn.marking_unsupported_format")
         return t("warn.marking_failed")
     return t("status.marked").format(layers=" + ".join(layers))
+
+
+#: Provenance opt-outs that require the responsibility attestation, mirroring
+#: the CLI's ``_MARKING_OPT_OUTS`` and the CrispASR binary's own rule.
+_OPT_OUT_KEYS = ("no_watermark", "no_c2pa", "no_spoken_disclaimer")
+
+
+def _refuse_unattested_opt_out(args):
+    """Return an error string if provenance is reduced without attestation."""
+    if args.get("accept_marking_responsibility"):
+        return None
+    if not any(args.get(key) for key in _OPT_OUT_KEYS):
+        return None
+    return t("error.marking_opt_out_needs_attestation")
 
 
 class TTSThread(QThread):
@@ -58,7 +74,12 @@ class TTSThread(QThread):
             device = self.args.get("device", "cpu")
             language = self.args.get("language")
 
-            self.progress_signal.emit(f"Initializing TTS backend: {backend_name}")
+            refusal = _refuse_unattested_opt_out(self.args)
+            if refusal:
+                self.error_signal.emit(refusal)
+                return
+
+            self.progress_signal.emit(t("status.tts_initializing").format(backend=backend_name))
 
             # Provenance / EU AI Act kwargs apply to *both* branches: the
             # CrispASR binary consumes them as flags, the Python-native
@@ -118,12 +139,15 @@ class TTSThread(QThread):
             if self._stopped:
                 return
 
-            self.progress_signal.emit(f"Synthesizing with {backend_name}...")
+            self.progress_signal.emit(t("status.tts_synthesizing").format(backend=backend_name))
             result = backend.synthesize(text, output_path, voice=voice)
 
             # EU AI Act Art. 50(2): mark synthetic audio as machine-readable.
-            # No-op for CrispASR backends, which mark inside the binary.
-            marking = backend.apply_provenance(result, model=model_id, voice=voice)
+            # CrispASR backends verify the binary's own marking instead.
+            # `language` drives the spoken disclosure so a German UI discloses
+            # in German — it was previously dropped, defaulting every
+            # disclosure to the process locale.
+            marking = backend.apply_provenance(result, model=model_id, voice=voice, locale=language)
             self.progress_signal.emit(_describe_marking(marking))
 
             backend.cleanup()
@@ -131,7 +155,7 @@ class TTSThread(QThread):
             if self._stopped:
                 return
 
-            self.progress_signal.emit(f"Audio saved to: {result}")
+            self.progress_signal.emit(t("status.audio_saved").format(path=result))
             self.finished_signal.emit(result)
 
         except PermissionError as e:

@@ -74,6 +74,13 @@ class CrispasrTTSBackend(TTSBackend):
     def synthesize(self, text, output_path="tts_output.wav", voice=None):
         from utils.crispasr_utils import find_crispasr
 
+        # Gate cloning before the binary is even located. The binary enforces
+        # --i-have-rights itself, but that made this the one cloning route
+        # whose consent check lived entirely outside Susurrus: a build or
+        # version without the check would clone silently. A path-like voice is
+        # reference audio; a preset name is not.
+        self.require_clone_consent(self.resolve_reference_audio(voice))
+
         exe = find_crispasr()
         if not exe:
             raise FileNotFoundError(
@@ -178,27 +185,79 @@ class CrispasrTTSBackend(TTSBackend):
         raise FileNotFoundError(f"TTS output not created: {output_path}")
 
     def apply_provenance(self, output_path, model=None, voice=None, locale=None):
-        """No-op — the CrispASR binary applies every layer itself.
+        """Verify the binary's marking, and supply a floor if it is missing.
 
-        Re-running them here would stack a second C2PA manifest and a second
-        watermark on top of the binary's. This only reports what the binary
-        was asked to do.
+        The binary applies the layers itself, so re-running them here would
+        stack a second C2PA manifest and a second watermark on the first.
+        But the previous implementation went to the other extreme: it
+        *reported* success straight from the flags without ever looking at the
+        file, so a build without C2PA support, an engine that cannot
+        watermark, or a version that ignores a flag all produced
+        "Marked as AI-generated (watermark + AI marker + C2PA)" over
+        unmarked audio.
+
+        The flags are not a reliable proxy in either direction. The binary
+        requires ``--accept-marking-responsibility`` before it honours
+        ``--no-watermark`` or ``--no-c2pa``, and on the CLI it force-keeps the
+        watermark regardless — so a flags-only report is wrong when the user
+        opts out *and* wrong when the binary silently declines to mark.
+
+        So: inspect the file. If nothing verifiable is there and the operator
+        has not taken responsibility, apply the dependency-free declarative
+        marker, which is idempotent and leaves the samples untouched.
         """
+        from utils.provenance import new_result, verify_marking
+
         if self.accept_marking_responsibility:
-            return {
-                "spoken": False,
-                "watermark": False,
-                "marker": False,
-                "c2pa": False,
-                "opted_out": True,
-            }
-        return {
-            "spoken": bool(self.voice) and not self.no_spoken_disclaimer,
-            "watermark": not self.no_watermark,
-            "marker": not self.no_watermark,
-            "c2pa": not self.no_c2pa,
-            "opted_out": False,
-        }
+            # Report what is actually on the file — the binary may still have
+            # marked it, and claiming "unmarked" would be its own falsehood.
+            found = verify_marking(output_path)
+            return new_result(
+                opted_out=True,
+                watermark=bool(found.get("watermark")),
+                marker=bool(found.get("marker")),
+                c2pa=bool(found.get("c2pa")),
+            )
+
+        found = verify_marking(output_path)
+        result = new_result(
+            spoken=bool(self.voice) and not self.no_spoken_disclaimer,
+            watermark=bool(found.get("watermark")),
+            marker=bool(found.get("marker")),
+            c2pa=bool(found.get("c2pa")),
+        )
+
+        # "Cannot tell" is not "absent": if no detector is installed for the
+        # robust layers, only the declarative marker is a reliable signal.
+        undetectable = found.get("watermark") is None and found.get("c2pa") is None
+        if not result["marker"] and not result["watermark"] and not result["c2pa"]:
+            try:
+                from utils.ai_marking import embed_ai_marker
+
+                result["marker"] = embed_ai_marker(output_path, model=model or self.model_id)
+                if result["marker"]:
+                    logging.info(
+                        "CrispASR output carried no detectable AI marking; "
+                        "applied the declarative marker as a floor."
+                    )
+            except ImportError:
+                pass
+
+        if not (result["marker"] or result["watermark"] or result["c2pa"]):
+            logging.warning(
+                "Could not verify or apply AI-content marking for %s. EU AI "
+                "Act Art. 50(2) requires machine-readable marking of "
+                "synthetic audio.%s",
+                output_path,
+                (
+                    " No watermark/C2PA detector is installed, so robust layers "
+                    "could not be checked."
+                    if undetectable
+                    else ""
+                ),
+            )
+
+        return result
 
     def list_voices(self):
         from config import TTS_BACKEND_MAP

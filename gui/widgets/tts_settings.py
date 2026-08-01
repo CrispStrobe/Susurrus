@@ -280,5 +280,5 @@ class TTSSettingsWidget(QWidget):
 
                 return extract_text(file_path)
             except Exception as e:
-                self.status_output.appendPlainText(f"Error reading file: {e}")
+                self.status_output.appendPlainText(t("error.read_file").format(error=e))
         return None

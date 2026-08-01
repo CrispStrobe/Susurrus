@@ -75,33 +75,47 @@ Susurrus is a professional, modular audio suite providing transcription, text-to
 See **[COMPLIANCE.md](COMPLIANCE.md)** for the full obligations map — what the
 software does for you, and what remains yours to do as provider or deployer.
 
-- **Marking ON by default, on every TTS path**: no backend emits unmarked audio
-- **Watermark ON by default**: AudioSeal neural watermark (CrispASR backends)
-- **C2PA signing ON by default**: Content Credentials signed with bundled cert
-- **Dependency-free fallback marker**: a RIFF `LIST/INFO` chunk declaring AI
-  generation is embedded even when the optional `c2pa-audio` library is absent,
-  so a default install still satisfies Art. 50(2)
-- **Voice cloning gated everywhere**: an explicit rights attestation is required
-  before cloning on *both* the CrispASR and Python-native paths — refused before
-  any model loads. Susurrus never sets the attestation on your behalf
+- **Marking ON by default, on every TTS path**: no backend emits unmarked WAV
+  or MP3. Other containers have no dependency-free marker and say so rather
+  than reporting success
+- **Marking is verified, not assumed**: on the CrispASR routes the binary does
+  the marking, so Susurrus reads the finished file back and reports what is
+  actually present — applying the declarative marker as a floor if nothing is
+- **C2PA signing**: Content Credentials via
+  [c2pa-python](https://pypi.org/project/c2pa-python/), included in the `tts`
+  extra (`pip install 'susurrus[c2pa]'` on its own). A local signing identity
+  is generated on first use; pass `--c2pa-cert`/`--c2pa-key` for your own
+- **Dependency-free fallback marker**: a RIFF `LIST/INFO` chunk (WAV) or an
+  ID3v2.4 tag (MP3) declaring AI generation is embedded even when every
+  optional library is absent, so a default install still satisfies Art. 50(2)
+- **Voice cloning gated everywhere**: an explicit rights attestation is
+  required before cloning on *every* route — Python-native backends, both
+  CrispASR routes, the in-process FFI route and speech-to-speech — refused
+  before any model loads. Susurrus never sets the attestation on your behalf
 - **Spoken disclosure on every backend**: cloned audio gets an audible,
   localized AI-disclosure prefix — CrispASR in-binary, Python-native backends
-  by synthesizing the phrase with the same model (`--no-spoken-disclaimer` opts out)
-- **Neural watermark**: AudioSeal survives re-encoding where metadata does not.
-  `pip install 'susurrus[watermark]'` for the Python backends
+  by synthesizing the phrase with the same model, in the backend's own voice
+  rather than the cloned one
+- **In-sample watermark, always on**: a numpy-only spread-spectrum comb
+  survives re-encoding where metadata does not, so no install is left with
+  metadata as its only durable mark. `pip install 'susurrus[watermark]'`
+  upgrades it to AudioSeal, which also resists deliberate removal
 - **Art. 12 audit log**: every speaker enrollment *and* identification is
   recorded to a hash-chained append-only log. `susurrus --audit-log` prints it
   and verifies the chain; Tools → Biometric Audit Log in the GUI
-- **`--accept-marking-responsibility`**: the single explicit opt-out that
-  produces unmarked audio and shifts the Art. 50 obligation to the operator
+- **`--accept-marking-responsibility`**: the explicit opt-out that produces
+  unmarked audio. The narrower flags (`--no-watermark`, `--no-c2pa`,
+  `--no-spoken-disclaimer`) each require it too, so reducing provenance is
+  always a deliberate, attested act
 - **`--detect-watermark`**: Standalone AI-content detection (confidence + verdict)
 - **`--verify-c2pa`**: Check whether a file is marked as AI-generated —
   reports both the C2PA credentials and the declarative marker, exits 0 if
   either is present
 - **Biometric warning**: using the speaker database without `--speaker-db-consent`
   warns about GDPR Art. 9 and possible Annex III(1)(a) high-risk classification
-- **c2pa-audio integration**: Python-native C2PA signing for non-CrispASR TTS
-  backends via [c2pa-audio](https://github.com/CrispStrobe/c2pa-audio)
+- **AI-literacy notice**: Help → About AI in Susurrus states the intended
+  purpose, the known failure modes and what the system is not validated for
+  (Art. 4), localized like the rest of the interface
 
 ### Intended Purpose & Limitations
 
@@ -312,7 +326,7 @@ susurrus/
     ├── history_service.py          # JSON-based transcription history
     ├── progress_parser.py          # CrispASR stderr progress parsing
     ├── segment_model.py            # Segment class with speaker names, editing
-    ├── c2pa_signing.py             # C2PA Content Credentials (via c2pa-audio)
+    ├── c2pa_signing.py             # C2PA Content Credentials (c2pa-python)
     ├── i18n.py                     # English + German translations
     ├── semantic_search.py          # CrispEmbed semantic search (with fallback)
     ├── text_extraction.py          # PDF/EPUB/HTML/MD extraction

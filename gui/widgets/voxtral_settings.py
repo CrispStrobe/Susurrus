@@ -74,18 +74,5 @@ class VoxtralSettingsBox(CollapsibleBox):
         QMessageBox.information(
             self,
             t("msg.mistral_key_help.title"),
-            "<h3>Mistral AI API Key</h3>"
-            "<p>The Mistral API key is required for the <b>voxtral-api</b> backend.</p>"
-            "<h4>How to get your API key:</h4>"
-            "<ol>"
-            "<li>Create a free account at <a href='https://console.mistral.ai/'>console.mistral.ai</a></li>"
-            "<li>Navigate to API Keys section</li>"
-            "<li>Create a new API key</li>"
-            "<li>Copy and paste it here</li>"
-            "</ol>"
-            "<h4>Alternatively:</h4>"
-            "<p>You can set the <code>MISTRAL_API_KEY</code> environment variable:</p>"
-            "<p><b>PowerShell:</b> <code>$env:MISTRAL_API_KEY = 'your-key'</code></p>"
-            "<p><b>CMD:</b> <code>set MISTRAL_API_KEY=your-key</code></p>"
-            "<p><b>Linux/Mac:</b> <code>export MISTRAL_API_KEY='your-key'</code></p>",
+            t("help.mistral_key"),
         )

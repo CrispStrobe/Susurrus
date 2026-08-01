@@ -28,6 +28,11 @@ tts = [
     "kokoro-onnx>=0.4.0",
     "chatterbox-tts>=0.1.2",
     "soundfile>=0.12.0",
+    # EU AI Act Art. 50(2) marking travels with the ability to synthesize.
+    # Without these the only marking a TTS install can apply is strippable
+    # metadata, which is a thin reading of "robust and reliable as far as
+    # technically feasible". Both are small next to what TTS already pulls in.
+    "susurrus[c2pa]",
 ]
 text-extraction = [
     "pypdfium2>=4.0.0",
@@ -49,14 +54,24 @@ dev = [
     "pytest-cov>=4.1.0",
     "pytest-mock>=3.12.0",
 ]
+c2pa = [
+    # C2PA Content Credentials (EU AI Act Art. 50(2)): cryptographically
+    # verifiable, tamper-evident provenance. utils/c2pa_signing.py previously
+    # imported only `c2pa_audio`, which is not published on any index — so the
+    # whole layer was dead on every Python-native TTS path regardless of what
+    # the user installed. c2pa-python is the PyPI-installable implementation;
+    # cryptography generates the local signing identity it needs.
+    "c2pa-python>=0.37.0",
+    "cryptography>=41.0",
+]
 watermark = [
-    # Neural AI-content watermarking (EU AI Act Art. 50(2)). Optional: the
-    # declarative RIFF marker carries the obligation without it, but a neural
-    # watermark also survives re-encoding. Pulls torch + model weights.
+    # Neural AI-content watermarking (EU AI Act Art. 50(2)). Optional: it is
+    # the only layer that survives re-encoding, but it pulls torch + model
+    # weights, so it stays opt-in while the declarative and C2PA layers ship.
     "audioseal>=0.1.4",
 ]
 all = [
-    "susurrus[gui,gpu,tts,text-extraction,watermark]",
+    "susurrus[gui,gpu,tts,text-extraction,c2pa,watermark]",
 ]
 
 [project.scripts]

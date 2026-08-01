@@ -114,7 +114,7 @@ class HistoryPanel(QWidget):
             item.setData(256, entry.id)  # Qt.UserRole = 256
             self.list_widget.addItem(item)
 
-        self.info_label.setText(f"{len(self._entries)} entries")
+        self.info_label.setText(t("label.history_entries").format(count=len(self._entries)))
 
     def _selected_entry(self):
         item = self.list_widget.currentItem()
@@ -141,7 +141,7 @@ class HistoryPanel(QWidget):
         reply = QMessageBox.question(
             self,
             t("msg.delete_entry.title"),
-            f"Delete '{entry.title}'?",
+            t("msg.delete_entry.body").format(title=entry.title),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
@@ -151,7 +151,9 @@ class HistoryPanel(QWidget):
                 HistoryService().delete(entry.id)
                 self.refresh()
             except Exception as e:
-                QMessageBox.warning(self, t("msg.error.title"), f"Failed to delete: {e}")
+                QMessageBox.warning(
+                    self, t("msg.error.title"), t("error.delete_failed").format(error=e)
+                )
 
     def _on_clear_all(self):
         reply = QMessageBox.question(
@@ -167,4 +169,6 @@ class HistoryPanel(QWidget):
                 HistoryService().clear_all()
                 self.refresh()
             except Exception as e:
-                QMessageBox.warning(self, t("msg.error.title"), f"Failed to clear: {e}")
+                QMessageBox.warning(
+                    self, t("msg.error.title"), t("error.clear_failed").format(error=e)
+                )

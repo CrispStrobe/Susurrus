@@ -90,13 +90,7 @@ class DiarizationSettingsBox(CollapsibleBox):
         QMessageBox.information(
             self,
             t("msg.hf_token_help.title"),
-            "A Hugging Face API token is required for speaker diarization.\n\n"
-            "1. Create a free account at https://huggingface.co\n"
-            "2. Go to https://huggingface.co/settings/tokens\n"
-            "3. Create a new token with 'read' access\n"
-            "4. Copy and paste the token here\n\n"
-            "Note: You need to accept the user agreement for the diarization models at "
-            "https://huggingface.co/pyannote/speaker-diarization",
+            t("help.hf_token"),
         )
 
     def show_model_help(self):
@@ -104,13 +98,5 @@ class DiarizationSettingsBox(CollapsibleBox):
         QMessageBox.information(
             self,
             t("msg.diarization_model_help.title"),
-            "Choose the appropriate diarization model for your audio:\n\n"
-            "• Default: General purpose diarization model\n"
-            "• English: Optimized for English conversations\n"
-            "• Chinese: Optimized for Mandarin Chinese conversations\n"
-            "• German: Optimized for German conversations\n"
-            "• Spanish: Optimized for Spanish conversations\n"
-            "• Japanese: Optimized for Japanese conversations\n\n"
-            "Language-specific models may provide better results for their respective languages, "
-            "especially for phone calls and naturalistic conversations.",
+            t("help.diarization_model"),
         )

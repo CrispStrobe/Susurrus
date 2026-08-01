@@ -244,7 +244,7 @@ class InstallerDialog(QDialog):
                 status_label.setText(t("msg.install_complete"))
                 QMessageBox.information(progress_dialog, t("msg.success.title"), message)
             else:
-                status_label.setText(f"Installation completed with issues: {message}")
+                status_label.setText(t("status.install_issues").format(detail=message))
                 QMessageBox.warning(progress_dialog, t("msg.warning.title"), message)
 
             progress_dialog.close()
@@ -264,13 +264,7 @@ class InstallerDialog(QDialog):
         QMessageBox.information(
             self,
             t("msg.ffmpeg_instructions.title"),
-            "1. Download the 'essentials' build\n"
-            "2. Extract the zip file to C:\\ffmpeg\n"
-            "3. Add C:\\ffmpeg\\bin to your system PATH:\n"
-            "   - Open Control Panel > System > Advanced System Settings\n"
-            "   - Click 'Environment Variables'\n"
-            "   - Edit the 'Path' variable and add C:\\ffmpeg\\bin\n"
-            "   - Click OK and restart your terminal",
+            t("help.ffmpeg_install"),
         )
 
     def install_pytorch_cuda(self):
@@ -317,12 +311,7 @@ class InstallerDialog(QDialog):
         reply = QMessageBox.question(
             self,
             t("msg.install_voxtral.title"),
-            "This will install the development version of transformers.\n\n"
-            "The following packages will be installed:\n"
-            "• transformers (from GitHub)\n"
-            "• mistral-common[audio]\n"
-            "• soundfile\n\n"
-            "This may take several minutes. Continue?",
+            t("msg.install_voxtral.body"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
 

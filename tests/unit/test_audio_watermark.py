@@ -38,7 +38,13 @@ class Dummy(TTSBackend):
 
 
 class TestGracefulDegradation(unittest.TestCase):
-    """Absent audioseal, watermarking is a no-op — never a crash."""
+    """Absent audioseal, watermarking falls back — it never crashes.
+
+    These assertions used to require that an install without ``audioseal``
+    produced *no* in-sample watermark. That is the gap the spread-spectrum
+    tier closes: the fallback is dependency-free, so the contract is now
+    "something is always embedded", not "nothing is".
+    """
 
     def setUp(self):
         audio_watermark._reset_cache_for_tests()
@@ -50,29 +56,72 @@ class TestGracefulDegradation(unittest.TestCase):
         audio_watermark._reset_cache_for_tests()
         self._dir.cleanup()
 
-    def test_embed_returns_false_without_library(self):
+    def test_embed_falls_back_without_library(self):
         with mock.patch.dict("sys.modules", {"audioseal": None}):
-            self.assertFalse(audio_watermark.embed_watermark(self.path))
+            self.assertTrue(audio_watermark.embed_watermark(self.path))
 
-    def test_detect_returns_none_without_library(self):
+    def test_detect_reports_the_fallback_without_library(self):
         with mock.patch.dict("sys.modules", {"audioseal": None}):
-            self.assertIsNone(audio_watermark.detect_watermark(self.path))
+            audio_watermark.embed_watermark(self.path)
+            result = audio_watermark.detect_watermark(self.path)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["backend"], "spread-spectrum")
+        self.assertTrue(result["watermarked"])
+
+    def test_is_available_does_not_require_audioseal(self):
+        """The dependency-free tier makes watermarking available regardless."""
+        with mock.patch.dict("sys.modules", {"audioseal": None}):
+            self.assertTrue(audio_watermark.is_available())
 
     def test_is_available_reports_honestly(self):
         self.assertIsInstance(audio_watermark.is_available(), bool)
 
-    def test_audio_untouched_when_unavailable(self):
+    def test_audio_is_marked_when_neural_is_unavailable(self):
+        """The fallback changes samples — that is the point of it."""
         before = open(self.path, "rb").read()
         with mock.patch.dict("sys.modules", {"audioseal": None}):
-            audio_watermark.embed_watermark(self.path)
-        self.assertEqual(open(self.path, "rb").read(), before)
+            self.assertTrue(audio_watermark.embed_watermark(self.path))
+        self.assertNotEqual(open(self.path, "rb").read(), before)
+
+    def test_unmarked_audio_is_not_falsely_detected(self):
+        """The fallback must not report a watermark it never embedded."""
+        with mock.patch.dict("sys.modules", {"audioseal": None}):
+            result = audio_watermark.detect_watermark(self.path)
+        self.assertIsNotNone(result)
+        self.assertFalse(result["watermarked"])
+
+    def test_fallback_preserves_channels_and_bit_depth(self):
+        """Marking must not silently downmix or requantise the audio."""
+        import struct
+
+        for channels, width in ((2, 2), (1, 2), (2, 3)):
+            with self.subTest(channels=channels, width=width):
+                path = os.path.join(self._dir.name, f"fmt_{channels}_{width}.wav")
+                with wave.open(path, "wb") as w:
+                    w.setnchannels(channels)
+                    w.setsampwidth(width)
+                    w.setframerate(44100)
+                    sample = struct.pack("<i", 1 << (8 * width - 4))[:width]
+                    w.writeframes(sample * channels * 22050)
+
+                with wave.open(path, "rb") as w:
+                    before = (w.getnchannels(), w.getsampwidth(), w.getnframes())
+
+                audio_watermark._reset_cache_for_tests()
+                with mock.patch.dict("sys.modules", {"audioseal": None}):
+                    self.assertTrue(audio_watermark.embed_watermark(path))
+
+                with wave.open(path, "rb") as w:
+                    after = (w.getnchannels(), w.getsampwidth(), w.getnframes())
+
+                self.assertEqual(before, after, "watermarking altered the audio format")
 
     def test_model_load_failure_degrades(self):
         """A failed model download must not break synthesis."""
         fake = mock.MagicMock()
         fake.AudioSeal.load_generator.side_effect = RuntimeError("no network")
         with mock.patch.dict("sys.modules", {"audioseal": fake}):
-            self.assertFalse(audio_watermark.embed_watermark(self.path))
+            self.assertTrue(audio_watermark.embed_watermark(self.path))
 
     def test_load_failure_is_not_retried(self):
         """Repeated failures shouldn't re-attempt a download per synthesis."""
@@ -102,12 +151,12 @@ class TestProvenanceLayerOrdering(unittest.TestCase):
             calls.append("watermark")
             return True
 
-        def fake_sign(path, cert_pem=None, key_pem=None):
+        def fake_sign(path, cert_pem=None, key_pem=None, model=None):
             calls.append("c2pa")
             return True
 
         with mock.patch("utils.audio_watermark.embed_watermark", fake_watermark):
-            with mock.patch("utils.c2pa_signing.sign_wav_file", fake_sign):
+            with mock.patch("utils.c2pa_signing.sign_audio_file", fake_sign):
                 Dummy().apply_provenance(self.path)
 
         self.assertEqual(calls, ["watermark", "c2pa"])
@@ -115,12 +164,13 @@ class TestProvenanceLayerOrdering(unittest.TestCase):
     def test_marker_runs_before_c2pa_signing(self):
         calls = []
         with mock.patch(
-            "utils.ai_marking.embed_wav_ai_marker",
-            side_effect=lambda p, model=None: calls.append("marker") or True,
+            "utils.ai_marking.embed_ai_marker",
+            side_effect=lambda p, model=None, software="Susurrus": calls.append("marker") or True,
         ):
             with mock.patch(
-                "utils.c2pa_signing.sign_wav_file",
-                side_effect=lambda p, cert_pem=None, key_pem=None: calls.append("c2pa") or True,
+                "utils.c2pa_signing.sign_audio_file",
+                side_effect=lambda p, cert_pem=None, key_pem=None, model=None: calls.append("c2pa")
+                or True,
             ):
                 Dummy().apply_provenance(self.path)
         self.assertEqual(calls, ["marker", "c2pa"])
@@ -144,7 +194,10 @@ class TestProvenanceLayerOrdering(unittest.TestCase):
 
     def test_result_exposes_all_four_layers(self):
         result = Dummy().apply_provenance(self.path)
-        self.assertEqual(set(result), {"spoken", "watermark", "marker", "c2pa", "opted_out"})
+        self.assertEqual(
+            set(result),
+            {"spoken", "watermark", "marker", "c2pa", "opted_out", "unsupported_format"},
+        )
 
 
 class TestDetectWatermarkVerb(unittest.TestCase):

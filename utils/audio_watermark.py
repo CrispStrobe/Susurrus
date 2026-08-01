@@ -1,14 +1,20 @@
-"""Neural audio watermarking via AudioSeal (EU AI Act Art. 50(2)).
+"""Audio watermarking for synthetic speech (EU AI Act Art. 50(2)).
+
+Two in-sample watermarks, tried strongest first:
+
+  1. AudioSeal (Meta, MIT) — learned, robust to deliberate removal. Optional:
+     it pulls in torch plus model weights.
+  2. A spread-spectrum comb in :mod:`utils.spread_spectrum` — pure numpy, so
+     it is always available, and byte-compatible with CrispASR and CrispTTS.
+
+Tier 2 exists because tier 1 being absent used to mean no in-sample mark at
+all, leaving only the declarative RIFF chunk — which any transcode removes.
+Art. 50(2) has no "unless an optional dependency is missing" clause.
 
 The declarative RIFF marker in ``utils.ai_marking`` makes synthetic audio
 machine-readable, but it is metadata: strip the chunk, or transcode to MP3,
 and it is gone. A neural watermark is embedded in the samples themselves and
 survives re-encoding, resampling and clipping.
-
-AudioSeal (Meta, MIT-licensed) is an optional dependency because it pulls in
-model weights on top of torch. When it is absent this module degrades to a
-no-op and the declarative marker still carries the Art. 50(2) obligation —
-Susurrus never emits unmarked audio, it just emits less robustly marked audio.
 
     pip install audioseal          # or: pip install 'susurrus[watermark]'
 
@@ -65,9 +71,32 @@ def _load(kind):
         return None
 
 
-def is_available():
-    """Return True if neural watermarking can run."""
+def neural_available():
+    """Return True if the AudioSeal (neural) watermark can run.
+
+    Loads the model, so this is the expensive question. Ask it only when the
+    distinction between the two tiers actually matters.
+    """
     return _load("generator") is not None
+
+
+def is_available():
+    """Return True if *any* in-sample watermark can be applied or detected.
+
+    Checks the dependency-free tier first: it is a plain numpy/soundfile
+    import, whereas the neural check loads torch and may download weights.
+    Callers use this to decide whether watermarking is worth attempting at
+    all, and since the spread-spectrum tier needs neither, the answer is
+    usually yes without touching torch.
+    """
+    try:
+        import numpy  # noqa: F401
+        import soundfile  # noqa: F401
+
+        return True
+    except ImportError:
+        pass
+    return neural_available()
 
 
 def _read_wav(path):
@@ -83,14 +112,14 @@ def _read_wav(path):
 
 
 def embed_watermark(wav_path):
-    """Embed an AudioSeal watermark into a WAV file in place.
+    """Embed an in-sample watermark into a WAV file in place.
 
-    Returns True if the watermark was applied, False if AudioSeal is
-    unavailable or the file could not be processed.
+    Uses AudioSeal when available and falls back to the spread-spectrum comb,
+    which needs only numpy. Returns True if either applied.
     """
     generator = _load("generator")
     if generator is None:
-        return False
+        return _embed_spread_spectrum(wav_path)
 
     try:
         import torchaudio
@@ -100,11 +129,72 @@ def embed_watermark(wav_path):
         # Drop the batch dimension torchaudio.save does not expect.
         torchaudio.save(wav_path, watermarked.squeeze(0).detach().cpu(), sample_rate)
     except Exception as e:
-        logger.warning("Neural watermarking failed for %s: %s", wav_path, e)
-        return False
+        logger.warning(
+            "Neural watermarking failed for %s: %s — "
+            "falling back to the spread-spectrum watermark.",
+            wav_path,
+            e,
+        )
+        return _embed_spread_spectrum(wav_path)
 
     logger.info("AudioSeal watermark embedded: %s", wav_path)
     return True
+
+
+def _embed_spread_spectrum(wav_path):
+    """Embed the dependency-free watermark. Returns True on success.
+
+    Every channel is marked, and the file's channel count and sample format
+    are preserved. Watermarking channel 0 and writing the result back as mono
+    would silently discard the other channels — a marking step must not
+    destroy part of the audio it is marking.
+    """
+    try:
+        import numpy as np
+        import soundfile as sf
+
+        from utils import spread_spectrum
+
+        info = sf.info(wav_path)
+        data, rate = sf.read(wav_path, dtype="float32", always_2d=True)
+
+        marked = np.empty_like(data)
+        for channel in range(data.shape[1]):
+            marked[:, channel] = spread_spectrum.embed(data[:, channel])
+
+        if info.channels == 1:
+            marked = marked[:, 0]
+
+        # Keep the original subtype: forcing PCM_16 would quantise 24-bit or
+        # float output on its way through the watermarker.
+        subtype = info.subtype if info.subtype else "PCM_16"
+        sf.write(wav_path, marked, rate, subtype=subtype)
+    except Exception as e:
+        logger.warning("Spread-spectrum watermarking failed for %s: %s", wav_path, e)
+        return False
+    logger.info("Spread-spectrum watermark embedded: %s", wav_path)
+    return True
+
+
+def _detect_spread_spectrum(wav_path):
+    """Detect the dependency-free watermark. Returns a result dict or None."""
+    try:
+        import soundfile as sf
+
+        from utils import spread_spectrum
+
+        data, _rate = sf.read(wav_path, dtype="float32")
+        mono = data[:, 0] if data.ndim > 1 else data
+        confidence = spread_spectrum.detect(mono)
+    except Exception as e:
+        logger.warning("Spread-spectrum detection failed for %s: %s", wav_path, e)
+        return None
+    return {
+        "watermarked": confidence >= spread_spectrum.DETECTION_THRESHOLD,
+        "confidence": confidence,
+        "threshold": spread_spectrum.DETECTION_THRESHOLD,
+        "backend": "spread-spectrum",
+    }
 
 
 def detect_watermark(wav_path):
@@ -116,7 +206,7 @@ def detect_watermark(wav_path):
     """
     detector = _load("detector")
     if detector is None:
-        return None
+        return _detect_spread_spectrum(wav_path)
 
     try:
         wav, sample_rate = _read_wav(wav_path)
@@ -124,12 +214,25 @@ def detect_watermark(wav_path):
         confidence = float(result)
     except Exception as e:
         logger.warning("Watermark detection failed for %s: %s", wav_path, e)
-        return None
+        return _detect_spread_spectrum(wav_path)
 
+    if confidence >= DETECTION_THRESHOLD:
+        return {
+            "watermarked": True,
+            "confidence": confidence,
+            "threshold": DETECTION_THRESHOLD,
+            "backend": "audioseal",
+        }
+    # AudioSeal says no — the file may still carry a spread-spectrum mark from
+    # a build without torch, or from CrispASR/CrispTTS.
+    fallback = _detect_spread_spectrum(wav_path)
+    if fallback and fallback["watermarked"]:
+        return fallback
     return {
-        "watermarked": confidence >= DETECTION_THRESHOLD,
+        "watermarked": False,
         "confidence": confidence,
         "threshold": DETECTION_THRESHOLD,
+        "backend": "audioseal",
     }
 
 

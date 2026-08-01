@@ -532,8 +532,12 @@ def main():
             "responsibility rests with the operator per EU AI Act Art. 50."
         )
 
+    # The warning is advisory and belongs up front, before any work starts.
+    # The Art. 12 *record* is written after the run instead — see
+    # _audit_speaker_biometrics — because a log entry made here would assert
+    # that people were enrolled or identified even when the run then failed,
+    # or never processed audio at all.
     _warn_speaker_biometrics(args)
-    _audit_speaker_biometrics(args)
 
     # --audit-log is a standalone verb: read and verify the Art. 12 record
     if getattr(args, "audit_log", False):
@@ -817,6 +821,10 @@ def _run_transcribe(args):
         audio_path = backend.preprocess_audio(args.file)
         segments = list(backend.transcribe(audio_path))
 
+        # Art. 12: record the biometric event now that it has actually
+        # happened, rather than when the flags were parsed.
+        _audit_speaker_biometrics(args)
+
         output_format = getattr(args, "output_format", None)
         if output_format:
             from utils.export_formats import EXPORT_FORMATS
@@ -870,6 +878,12 @@ def _audit_speaker_biometrics(args):
     Enrollment and identification are logged separately: Art. 12 covers use of
     the system, not only its setup, so a deployer must be able to show when
     people were *matched* against the database as well as added to it.
+
+    Call this **after** the run, not while parsing arguments. A record written
+    from the flags alone documents an intention rather than an event: it
+    claims an identification happened even when the backend failed to start,
+    the audio was unreadable, or the user aborted. An audit trail that
+    overstates what occurred is worse than a sparse one.
 
     Returns the list of entries written.
     """
@@ -986,12 +1000,57 @@ def _run_detect_watermark(args):
     return 0 if report["detected_as_ai_generated"] else 1
 
 
+#: Provenance opt-outs that require an explicit attestation to take effect.
+_MARKING_OPT_OUTS = (
+    ("no_watermark", "--no-watermark"),
+    ("no_c2pa", "--no-c2pa"),
+    ("no_spoken_disclaimer", "--no-spoken-disclaimer"),
+)
+
+
+def _require_marking_attestation(args):
+    """Refuse a provenance opt-out that is not backed by an attestation.
+
+    The CrispASR binary requires ``--accept-marking-responsibility`` before it
+    honours any of these, and force-keeps the watermark on the CLI otherwise.
+    Susurrus used to honour them unconditionally on the Python-native path, so
+    the same flag meant different things depending on the backend. Refusing
+    early makes one rule, and makes the operator state that they are taking
+    the Art. 50 obligation on.
+    """
+    if getattr(args, "accept_marking_responsibility", False):
+        return
+
+    used = [flag for attr, flag in _MARKING_OPT_OUTS if getattr(args, attr, False)]
+    if not used:
+        return
+
+    print(
+        f"Refused: {', '.join(used)} reduces EU AI Act Art. 50 provenance and "
+        "requires --accept-marking-responsibility, which attests that "
+        "responsibility for marking and disclosing this output rests with you "
+        "as the operator.",
+        file=sys.stderr,
+    )
+    sys.exit(2)
+
+
 def _report_marking(marking):
     """Print the EU AI Act Art. 50(2) marking status for synthesized audio."""
     if marking.get("opted_out"):
+        layers = [
+            label
+            for key, label in (
+                ("watermark", "watermark"),
+                ("marker", "AI marker"),
+                ("c2pa", "C2PA"),
+            )
+            if marking.get(key)
+        ]
+        detail = f" The backend still applied: {' + '.join(layers)}." if layers else ""
         print(
             "AI-content marking skipped. Responsibility for marking this "
-            "output rests with the operator per EU AI Act Art. 50.",
+            f"output rests with the operator per EU AI Act Art. 50.{detail}",
             file=sys.stderr,
         )
         return
@@ -1008,9 +1067,15 @@ def _report_marking(marking):
     if layers:
         print(f"Marked as AI-generated ({' + '.join(layers)}).")
     else:
+        hint = ""
+        if marking.get("unsupported_format"):
+            hint = (
+                " This output container has no declarative marker; use .wav "
+                "or .mp3 for marking that needs no optional dependency."
+            )
         print(
             "WARNING: could not mark this audio as AI-generated. EU AI Act "
-            "Art. 50(2) requires machine-readable marking of synthetic audio.",
+            f"Art. 50(2) requires machine-readable marking of synthetic audio.{hint}",
             file=sys.stderr,
         )
 
@@ -1025,6 +1090,8 @@ def _run_tts(args):
     tts_backend = args.tts_backend or args.backend
     output_path = args.tts_output
 
+    _require_marking_attestation(args)
+
     # Route to CrispASR TTS or Python TTS backend
     if tts_backend.startswith("crispasr"):
         model = args.model or "auto"
@@ -1032,21 +1099,29 @@ def _run_tts(args):
         BackendClass = get_backend_class(tts_backend)
         backend = BackendClass(model_id=model, device=args.device, language=args.language, **kwargs)
         try:
-            result = backend.synthesize(text, output_path)
-            _report_marking(backend.apply_provenance(result, model=model))
+            result = backend.synthesize(text, output_path, voice=args.voice)
+            _report_marking(backend.apply_provenance(result, model=model, voice=args.voice))
             print(f"Audio saved to: {result}")
+        except PermissionError as e:
+            # Voice-cloning consent gate — a refusal, not a crash.
+            print(f"Refused: {e}", file=sys.stderr)
+            sys.exit(2)
         finally:
             backend.cleanup()
     else:
         TTSClass = get_tts_backend_class(tts_backend)
         # Provenance kwargs must reach the Python-native backends too — they
         # gate cloning and mark output via TTSBackend, not via binary flags.
+        # no_watermark and no_spoken_disclaimer were missing here, so both
+        # documented flags silently did nothing on every Python backend.
         tts_kwargs = {
-            "i_have_rights": args.i_have_rights,
-            "no_c2pa": args.no_c2pa,
-            "accept_marking_responsibility": args.accept_marking_responsibility,
-            "c2pa_cert": args.c2pa_cert,
-            "c2pa_key": args.c2pa_key,
+            "i_have_rights": getattr(args, "i_have_rights", False),
+            "no_watermark": getattr(args, "no_watermark", False),
+            "no_spoken_disclaimer": getattr(args, "no_spoken_disclaimer", False),
+            "no_c2pa": getattr(args, "no_c2pa", False),
+            "accept_marking_responsibility": getattr(args, "accept_marking_responsibility", False),
+            "c2pa_cert": getattr(args, "c2pa_cert", None),
+            "c2pa_key": getattr(args, "c2pa_key", None),
         }
         if args.voice:
             tts_kwargs["voice"] = args.voice

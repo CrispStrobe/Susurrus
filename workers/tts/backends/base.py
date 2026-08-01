@@ -61,29 +61,48 @@ class TTSBackend(ABC):
             return
         raise PermissionError(CLONE_CONSENT_ERROR)
 
-    def is_cloning(self, voice=None):
-        """Return True if this synthesis clones a voice from reference audio."""
+    def resolve_reference_audio(self, voice=None):
+        """Return the reference audio this synthesis would clone from, or None.
+
+        Every candidate is checked, not just the first truthy one. The earlier
+        ``voice or kwargs["voice"] or kwargs["reference_audio"]`` short-circuit
+        meant a voice *name* (``"af_sarah"``) masked a real reference-audio
+        path, so cloning went undetected and the Art. 50(4) audible disclosure
+        was silently skipped.
+
+        Returns None while a spoken disclosure is being synthesized: the
+        disclosure must be spoken in the backend's own voice, never in the
+        cloned one — announcing "this audio is AI-generated" *as* the person
+        being impersonated is the confusion the disclosure exists to prevent.
+        """
         import os
 
-        reference = voice or self.kwargs.get("voice") or self.kwargs.get("reference_audio")
-        return bool(reference and os.path.isfile(reference))
+        if getattr(self, "_synthesizing_disclosure", False):
+            return None
+
+        for candidate in (
+            voice,
+            self.kwargs.get("voice"),
+            self.kwargs.get("reference_audio"),
+        ):
+            if candidate and os.path.isfile(candidate):
+                return candidate
+        return None
+
+    def is_cloning(self, voice=None):
+        """Return True if this synthesis clones a voice from reference audio."""
+        return self.resolve_reference_audio(voice) is not None
 
     def apply_provenance(self, output_path, model=None, voice=None, locale=None):
         """Apply the EU AI Act Art. 50 obligations to synthesized audio.
 
-        Four layers, applied in this order — **the order is load-bearing**:
+        Delegates to :func:`utils.provenance.apply_provenance`, which is the
+        single implementation shared with the routes that are not
+        ``TTSBackend`` subclasses. See that module for the layer ordering and
+        why it matters.
 
-        1. **Spoken disclosure** (Art. 50(4)) — prepends audible speech, so it
-           must run before anything that depends on the sample data.
-        2. **Neural watermark** (AudioSeal) — mutates samples; survives
-           re-encoding. Optional dependency.
-        3. **RIFF INFO marker** — declarative metadata, dependency-free, so a
-           default install still emits marked audio.
-        4. **C2PA Content Credentials** — hashes the finished file, so it must
-           be last or the manifest describes audio that no longer exists.
-
-        CrispASR-based backends do all of this inside the binary and override
-        this method to a no-op.
+        CrispASR-based backends mark inside the binary and override this to
+        *verify* the result rather than re-apply it.
 
         Args:
             output_path: Path to the synthesized audio.
@@ -92,76 +111,19 @@ class TTSBackend(ABC):
             locale: Language for the spoken disclosure.
 
         Returns:
-            dict with keys ``spoken``, ``watermark``, ``marker``, ``c2pa``
-            (all bool) and ``opted_out`` (bool).
+            dict with keys ``spoken``, ``watermark``, ``marker``, ``c2pa``,
+            ``opted_out`` and ``unsupported_format`` (all bool).
         """
-        result = {
-            "spoken": False,
-            "watermark": False,
-            "marker": False,
-            "c2pa": False,
-            "opted_out": False,
-        }
+        from utils.provenance import apply_provenance as _apply
 
-        if not output_path or not output_path.lower().endswith(".wav"):
-            return result
-
-        if self.kwargs.get("accept_marking_responsibility"):
-            logger.warning(
-                "AI-content marking skipped (--accept-marking-responsibility). "
-                "Responsibility for marking this output rests with the "
-                "operator per EU AI Act Art. 50."
-            )
-            result["opted_out"] = True
-            return result
-
-        # 1. Spoken disclosure — cloning only, matching CrispASR's behaviour.
-        if self.is_cloning(voice) and not self.kwargs.get("no_spoken_disclaimer"):
-            try:
-                from utils.spoken_disclosure import prepend_spoken_disclosure
-
-                result["spoken"] = prepend_spoken_disclosure(self, output_path, locale=locale)
-            except ImportError:
-                pass
-
-        # 2. Neural watermark — robust to re-encoding, optional dependency.
-        if not self.kwargs.get("no_watermark"):
-            try:
-                from utils.audio_watermark import embed_watermark
-
-                result["watermark"] = embed_watermark(output_path)
-            except ImportError:
-                pass
-
-        # 3. Declarative marker — the layer that is always available.
-        try:
-            from utils.ai_marking import embed_wav_ai_marker
-
-            result["marker"] = embed_wav_ai_marker(output_path, model=model or self.model_id)
-        except ImportError:
-            pass
-
-        # 4. C2PA last: it hashes the final bytes.
-        if not self.kwargs.get("no_c2pa"):
-            try:
-                from utils.c2pa_signing import sign_wav_file
-
-                result["c2pa"] = sign_wav_file(
-                    output_path,
-                    cert_pem=self.kwargs.get("c2pa_cert"),
-                    key_pem=self.kwargs.get("c2pa_key"),
-                )
-            except ImportError:
-                pass
-
-        if not result["c2pa"] and not result["marker"] and not result["watermark"]:
-            logger.warning(
-                "Could not mark %s as AI-generated. EU AI Act Art. 50(2) "
-                "requires machine-readable marking of synthetic audio.",
-                output_path,
-            )
-
-        return result
+        return _apply(
+            output_path,
+            options=self.kwargs,
+            model=model or self.model_id,
+            backend=self,
+            is_cloning=self.is_cloning(voice),
+            locale=locale,
+        )
 
     def list_voices(self):
         """Return a list of available voice IDs for this backend."""
