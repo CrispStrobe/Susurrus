@@ -28,9 +28,7 @@ try:
 except ImportError:  # pragma: no cover - minimal installs only
     _HAVE_AUDIO_STACK = False
 
-requires_audio_stack = unittest.skipUnless(
-    _HAVE_AUDIO_STACK, "numpy/soundfile not installed"
-)
+requires_audio_stack = unittest.skipUnless(_HAVE_AUDIO_STACK, "numpy/soundfile not installed")
 
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))

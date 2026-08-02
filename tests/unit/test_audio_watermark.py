@@ -26,10 +26,7 @@ try:
 except ImportError:  # pragma: no cover - minimal installs only
     _HAVE_AUDIO_STACK = False
 
-requires_audio_stack = unittest.skipUnless(
-    _HAVE_AUDIO_STACK, "numpy/soundfile not installed"
-)
-
+requires_audio_stack = unittest.skipUnless(_HAVE_AUDIO_STACK, "numpy/soundfile not installed")
 
 
 def _audioseal_installed():
