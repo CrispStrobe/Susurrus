@@ -270,6 +270,18 @@ STRINGS = {
         "die Einwilligung der Person vorliegen (DSGVO Art. 9); bestätigen "
         "Sie dies mit --speaker-db-consent."
     ),
+    "label.speaker_identity": "Voreingestellte Stimme ist:",
+    "opt.speaker_identity_default": "(mitgelieferte Einstufung)",
+    "opt.speaker_identity_real": "eine reale Person",
+    "opt.speaker_identity_synthetic": "synthetisch",
+    "opt.speaker_identity_unknown": "unbekannt",
+    "tip.speaker_identity": (
+        "Ob die voreingestellte Stimme dieses Backends einer identifizierbaren "
+        "Person gehört. Wenn ja, ist die Ausgabe ein Deepfake nach Art. 3(60) "
+        "der KI-Verordnung, und ein hörbarer Hinweis wird auch ohne "
+        "Stimmklonen vorangestellt. Belassen Sie die mitgelieferte Einstufung, "
+        "sofern Sie es nicht besser wissen."
+    ),
     "disclosure.spoken": ("Die folgende Aufnahme wurde von künstlicher Intelligenz erzeugt."),
     "notice.synthetic_text": (
         "Dieser Text wurde von einem maschinellen Übersetzungsmodell erzeugt. "

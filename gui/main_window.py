@@ -1173,6 +1173,7 @@ class MainWindow(QWidget):
             "language": self.tts_widget.language.text().strip() or None,
             "reference_audio": self.tts_widget.reference_audio.text().strip() or None,
             "ref_text": self.tts_widget.ref_text.text().strip() or None,
+            "speaker_identity": self.tts_widget.speaker_identity.currentData(),
             "i_have_rights": self.tts_widget.i_have_rights.isChecked(),
             "no_spoken_disclaimer": self.tts_widget.no_spoken_disclaimer.isChecked(),
             "no_watermark": self.tts_widget.no_watermark.isChecked(),

@@ -352,10 +352,23 @@ voice, and assuming "synthetic" would silently drop the duty for voices that
 turn out to be people. The warning names the backend and says what to pass.
 
 Override the shipped classification with `--speaker-identity`
-(`real_person` | `synthetic` | `unknown`) when you know better than the table —
-for a voice pack you added, or a multi-voice backend where one voice differs
-from the rest. The classifications are backend-level and come from
-`utils/speaker_identity.py`.
+(`real_person` | `synthetic` | `unknown`), or the **Preset voice is:** control
+in the GUI's TTS settings, when you know better than the table — for a voice
+pack you added, or a multi-voice backend where one voice differs from the rest.
+
+**Coverage is partial, and the gap is loud rather than silent.** Susurrus
+exposes 59 TTS backends; 20 are classified from provider documentation and the
+other 39 resolve to `unknown` and warn once each. That is the honest state: a
+classification nobody researched is not a classification, and the warning names
+the backend so the answer can be supplied rather than assumed. Do not read an
+unclassified backend as safe.
+
+Where a single backend mixes real and designed voices — SauerkrautTTS ships two
+studio-recorded people and two synthetic voices — a per-voice entry overrides
+the backend-level answer. None of the backends Susurrus currently exposes is
+mixed in that way, so that table is empty; it exists because the alternative
+for a mixed model is classifying it by its riskiest voice and prepending a
+disclosure to the rest.
 
 Art. 50(2) marking applies to all of these regardless, and does.
 

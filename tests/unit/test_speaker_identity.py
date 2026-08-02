@@ -46,6 +46,146 @@ class TestResolution(unittest.TestCase):
         )
 
 
+class TestClassificationTable(unittest.TestCase):
+    """The table is evidence, so it has to stay answerable."""
+
+    def test_every_value_is_legal(self):
+        for key, value in si.BACKEND_SPEAKER_IDENTITY.items():
+            self.assertIn(value, si.SPEAKER_IDENTITY_VALUES, f"{key} -> {value!r}")
+
+    def test_keys_are_lowercase(self):
+        """resolve() lowercases its input, so an uppercase key never matches."""
+        for key in si.BACKEND_SPEAKER_IDENTITY:
+            self.assertEqual(key, key.lower(), f"unreachable table entry: {key!r}")
+
+    def test_entries_name_real_backends(self):
+        """A typo'd key is a silent no-op that reads like a classification."""
+        from config import TTS_BACKEND_MAP
+
+        known = {name.lower() for name in TTS_BACKEND_MAP}
+        # 'speecht5'/'piper' etc. are Python-native backend ids that are not
+        # keys of TTS_BACKEND_MAP; only check the crispasr: ones, which are.
+        for key in si.BACKEND_SPEAKER_IDENTITY:
+            if key.startswith("crispasr:"):
+                self.assertIn(key, known, f"table classifies a backend that does not exist: {key}")
+
+    def test_unlisted_backends_warn_rather_than_pass_silently(self):
+        """Susurrus exposes far more backends than are classified.
+
+        That is acceptable — 'unknown' is an honest answer — but it must be a
+        *loud* one, or an unclassified real-person voice ships undisclosed and
+        nothing says so.
+        """
+        from config import TTS_BACKEND_MAP
+
+        unlisted = [n for n in TTS_BACKEND_MAP if n.lower() not in si.BACKEND_SPEAKER_IDENTITY]
+        self.assertTrue(unlisted, "fixture assumption: some backends are unclassified")
+
+        si._reset_warnings_for_tests()
+        with mock.patch.object(si.logger, "warning") as warn:
+            identity = si.resolve_speaker_identity(backend=unlisted[0])
+            si.requires_spoken_disclosure(False, identity, unlisted[0])
+        self.assertEqual(identity, "unknown")
+        self.assertEqual(warn.call_count, 1)
+
+
+class TestPerVoiceOverrides(unittest.TestCase):
+    """A backend-level answer is wrong for a model with mixed voices.
+
+    SauerkrautTTS is the known case — Tom and Anna are studio recordings of
+    people, Max and Lena are not. Susurrus has no mixed backend today, so the
+    table is empty; the lookup exists so the alternative isn't classifying a
+    mixed model by its riskiest voice and disclosing over the rest.
+    """
+
+    def setUp(self):
+        si._reset_warnings_for_tests()
+        self._saved = dict(si.VOICE_SPEAKER_IDENTITY)
+
+    def tearDown(self):
+        si.VOICE_SPEAKER_IDENTITY.clear()
+        si.VOICE_SPEAKER_IDENTITY.update(self._saved)
+
+    def test_per_voice_entry_beats_the_backend(self):
+        si.VOICE_SPEAKER_IDENTITY[("kokoro-onnx", "tom")] = "real_person"
+        self.assertEqual(
+            si.resolve_speaker_identity(backend="kokoro-onnx", voice="Tom"), "real_person"
+        )
+        self.assertEqual(si.resolve_speaker_identity(backend="kokoro-onnx"), "synthetic")
+
+    def test_override_still_beats_per_voice(self):
+        si.VOICE_SPEAKER_IDENTITY[("kokoro-onnx", "tom")] = "real_person"
+        self.assertEqual(
+            si.resolve_speaker_identity(backend="kokoro-onnx", voice="tom", override="synthetic"),
+            "synthetic",
+        )
+
+    def test_voice_reaches_the_pipeline(self):
+        import os
+        import tempfile
+        import wave
+
+        from utils.provenance import apply_provenance
+
+        si.VOICE_SPEAKER_IDENTITY[("kokoro-onnx", "tom")] = "real_person"
+        tmpdir = tempfile.mkdtemp()
+        path = os.path.join(tmpdir, "o.wav")
+        with wave.open(path, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(24000)
+            w.writeframes(b"\x00\x01" * 12000)
+
+        class Speaking:
+            def synthesize(self, text, output_path, voice=None):
+                import shutil
+
+                shutil.copy(path, output_path)
+                return output_path
+
+        result = apply_provenance(
+            path,
+            options={"voice": "tom"},
+            backend=Speaking(),
+            speaker_backend="kokoro-onnx",
+        )
+        self.assertEqual(result["speaker_identity"], "real_person")
+        self.assertTrue(result["spoken_required"])
+
+
+class TestGuiControl(unittest.TestCase):
+    """The CLI could answer the question; the GUI could not."""
+
+    def test_widget_offers_the_three_values_plus_the_default(self):
+        source = open(
+            __file__.replace("tests/unit/test_speaker_identity.py", "gui/widgets/tts_settings.py"),
+            encoding="utf-8",
+        ).read()
+        self.assertIn("speaker_identity", source)
+        for value in ("real_person", "synthetic", "unknown"):
+            self.assertIn(f'"{value}"', source)
+
+    def test_main_window_forwards_the_selection(self):
+        source = open(
+            __file__.replace("tests/unit/test_speaker_identity.py", "gui/main_window.py"),
+            encoding="utf-8",
+        ).read()
+        handler = source.split("def start_synthesis")[1].split("\n    def ")[0]
+        self.assertIn("speaker_identity", handler)
+
+    def test_labels_exist_in_both_languages(self):
+        from utils.i18n import t
+
+        for locale in ("en", "de"):
+            for key in (
+                "label.speaker_identity",
+                "opt.speaker_identity_default",
+                "opt.speaker_identity_real",
+                "tip.speaker_identity",
+            ):
+                self.assertTrue(t(key, locale=locale), f"{key} missing for {locale}")
+
+
 class TestDisclosureRule(unittest.TestCase):
     def setUp(self):
         si._reset_warnings_for_tests()

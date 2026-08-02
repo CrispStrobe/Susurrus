@@ -124,6 +124,23 @@ class TTSSettingsWidget(QWidget):
         prov_row.addWidget(self.g2p_dict)
         layout.addLayout(prov_row)
 
+        # Whose voice a *preset* is. The CLI has --speaker-identity; without
+        # this the GUI could not answer the question at all, which left the
+        # warning about it unactionable for anyone not on a terminal.
+        # "(shipped default)" means "use the researched classification", not
+        # "unknown" — overriding to unknown is a separate, explicit choice.
+        ident_row = QHBoxLayout()
+        ident_row.addWidget(QLabel(t("label.speaker_identity")))
+        self.speaker_identity = QComboBox()
+        self.speaker_identity.addItem(t("opt.speaker_identity_default"), None)
+        self.speaker_identity.addItem(t("opt.speaker_identity_real"), "real_person")
+        self.speaker_identity.addItem(t("opt.speaker_identity_synthetic"), "synthetic")
+        self.speaker_identity.addItem(t("opt.speaker_identity_unknown"), "unknown")
+        self.speaker_identity.setToolTip(t("tip.speaker_identity"))
+        ident_row.addWidget(self.speaker_identity)
+        ident_row.addStretch()
+        layout.addLayout(ident_row)
+
         # Provenance row 2: watermark + C2PA
         prov_row2 = QHBoxLayout()
         self.no_watermark = QCheckBox(t("chk.disable_watermark"))
