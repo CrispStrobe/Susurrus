@@ -334,6 +334,60 @@ class TestLiveRoundTrip(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertTrue(result["watermarked"])
 
+    def test_the_neural_tier_actually_applies(self):
+        """Assert *which* layer marked it, not merely that something did.
+
+        This is how the AudioSeal path stayed broken: embed_watermark() called
+        ``generator.get_watermarked_audio()``, which does not exist in audioseal
+        0.2 (nor, as far as the package shows, ever). The AttributeError was
+        caught by the fallback, the spread-spectrum comb marked the file, and a
+        test asserting only ``watermarked is True`` passed — over audio the
+        neural tier had never touched, while README and COMPLIANCE.md described
+        it as the layer that resists deliberate removal.
+        """
+        self.assertTrue(audio_watermark.embed_watermark(self.path))
+        result = audio_watermark.detect_watermark(self.path)
+        self.assertEqual(
+            result["backend"],
+            "audioseal",
+            "audioseal is installed but the neural watermark did not apply — "
+            "embed_watermark() fell back, which the fallback makes invisible",
+        )
+
+    def test_the_neural_tier_preserves_the_sample_format(self):
+        """torchaudio.save defaults to float32; the file must keep its own.
+
+        Not cosmetic: the stdlib ``wave`` module cannot read format 3 (IEEE
+        float) at all, so the Art. 50(4) disclosure concatenation — which uses
+        ``wave`` for the dependency-free WAV path — failed with "unknown
+        format: 3" on every file the neural watermarker had touched. Four
+        spoken-disclosure tests caught it. COMPLIANCE.md promises watermarking
+        preserves channel count and sample format, and it has to mean it.
+        """
+        import wave as wave_module
+
+        with wave_module.open(self.path) as handle:
+            before = (handle.getnchannels(), handle.getsampwidth(), handle.getframerate())
+
+        self.assertTrue(audio_watermark.embed_watermark(self.path))
+
+        with wave_module.open(self.path) as handle:
+            after = (handle.getnchannels(), handle.getsampwidth(), handle.getframerate())
+
+        self.assertEqual(before, after, "watermarking changed the file's encoding")
+
+    def test_generator_is_called_not_asked_for_a_helper(self):
+        """Pin the API shape, since the wrong one fails silently.
+
+        Matches the *call* form rather than the bare name: the comment
+        explaining this bug necessarily mentions the method that never existed.
+        """
+        import inspect
+
+        source = inspect.getsource(audio_watermark.embed_watermark)
+        self.assertNotIn("generator.get_watermarked_audio(", source)
+        self.assertIn("generator(wav", source)
+
     def test_clean_audio_is_not_detected(self):
         clean = os.path.join(self._dir.name, "clean.wav")
         _write_wav(clean, frames=16000)

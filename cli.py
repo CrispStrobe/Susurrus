@@ -1495,7 +1495,14 @@ def _start_marking_proxy(backend, host, port, args):
 
     proc = backend.start_server(host=upstream_host, port=upstream_port)
 
-    if not wait_for_upstream(upstream_host, upstream_port):
+    def _still_waiting(elapsed):
+        print(
+            f"Waiting for the CrispASR backend to start ({elapsed:.0f}s) — "
+            "a first run downloads the model.",
+            file=sys.stderr,
+        )
+
+    if not wait_for_upstream(upstream_host, upstream_port, process=proc, on_wait=_still_waiting):
         proc.terminate()
         _refuse_unproxied_server(
             f"the CrispASR server did not come up on {upstream_host}:{upstream_port}"

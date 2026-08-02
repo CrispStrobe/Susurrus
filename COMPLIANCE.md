@@ -58,6 +58,16 @@ Three kinds of layer, one of which has two tiers:
 | Cryptographic | C2PA Content Credentials | CrispASR binary, or `pip install 'susurrus[c2pa]'` — included in `[tts]` | No (manifest is stripped) |
 | Declarative | RIFF `LIST/INFO` (WAV) or ID3v2.4 (MP3) — `utils/ai_marking.py` | Always — no dependencies | No |
 
+**Tier 1 was inert until v2.13.** `embed_watermark()` called
+`generator.get_watermarked_audio()`, which does not exist in the `audioseal`
+package — so on every install that actually had AudioSeal, the call raised,
+the fallback caught it, and the spread-spectrum comb marked the file instead.
+Output was never unmarked, so this is not a marking failure; but the layer
+this document described as the one that "resists deliberate removal" had never
+once applied. It went unnoticed because the live test asserted only that the
+audio came back watermarked, which the fallback satisfied. The test now asserts
+*which* layer did it.
+
 Two limits of tier 2 are worth stating plainly, because earlier versions of
 this document overstated both.
 

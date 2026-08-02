@@ -1368,7 +1368,7 @@ class MainWindow(QWidget):
 
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
-        if not wait_for_upstream("127.0.0.1", upstream_port):
+        if not wait_for_upstream("127.0.0.1", upstream_port, process=process):
             process.terminate()
             QMessageBox.warning(
                 self,

@@ -111,17 +111,54 @@ def find_free_port(host="127.0.0.1"):
         return s.getsockname()[1]
 
 
-def wait_for_upstream(host, port, timeout=60.0, interval=0.2):
-    """Block until *host:port* accepts a connection. True if it came up."""
+def wait_for_upstream(host, port, timeout=3600.0, interval=0.2, process=None, on_wait=None):
+    """Block until *host:port* accepts a connection. True if it came up.
+
+    The timeout is generous because the backend's first start is not just a
+    process launch: ``--auto-download`` fetches the model, and a 0.6B TTS
+    checkpoint is hundreds of megabytes — observed here still downloading at
+    12 minutes. A 60-second limit meant every cold start refused with "the
+    server did not come up" while the download was in fact running: a
+    fail-closed gate firing on a healthy system, which is the kind of false
+    refusal that gets a safety control disabled.
+
+    The cap can afford to be an hour because it is no longer the thing that
+    catches failure — *process death* is, and that is noticed within a poll
+    interval. What remains is a backstop against a backend that is alive and
+    genuinely wedged, and the caller reports progress meanwhile so an hour of
+    waiting never looks like a hang.
+
+    Args:
+        process: The backend's Popen, if available. Waiting stops as soon as it
+            exits, so a backend that dies fails in seconds rather than after
+            the full timeout.
+        on_wait: Called with the elapsed seconds every few seconds, so a caller
+            can say "still starting" rather than appearing hung.
+    """
     import time
 
     deadline = time.monotonic() + timeout
+    started = time.monotonic()
+    announced = 0.0
+
     while time.monotonic() < deadline:
         try:
             with socket.create_connection((host, port), timeout=1.0):
                 return True
         except OSError:
-            time.sleep(interval)
+            pass
+
+        if process is not None and process.poll() is not None:
+            logger.warning("Backend exited with code %s before it began listening", process.poll())
+            return False
+
+        elapsed = time.monotonic() - started
+        if on_wait is not None and elapsed - announced >= 10.0:
+            announced = elapsed
+            on_wait(elapsed)
+
+        time.sleep(interval)
+
     return False
 
 

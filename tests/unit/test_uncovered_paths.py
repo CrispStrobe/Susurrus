@@ -219,6 +219,53 @@ class TestMarkingProxy(unittest.TestCase):
         self.assertEqual(caught.exception.code, 404)
 
 
+class TestUpstreamWait(unittest.TestCase):
+    """A cold start downloads the model; a dead backend must still fail fast.
+
+    The original 60s cap refused every first run with "the server did not come
+    up" while the download was in fact running — a fail-closed gate firing on a
+    healthy system, which is how a safety control gets switched off. Observed
+    here still downloading a 0.6B checkpoint at 12 minutes.
+    """
+
+    def test_process_death_short_circuits_the_long_timeout(self):
+        import subprocess
+        import sys
+        import time
+
+        from utils.marking_proxy import find_free_port, wait_for_upstream
+
+        dead = subprocess.Popen([sys.executable, "-c", "raise SystemExit(3)"])
+        start = time.time()
+        result = wait_for_upstream(
+            "127.0.0.1", find_free_port(), timeout=3600, process=dead, interval=0.05
+        )
+        elapsed = time.time() - start
+
+        self.assertFalse(result)
+        self.assertLess(elapsed, 15, "waited on a process that had already exited")
+
+    def test_it_waits_long_enough_for_a_model_download(self):
+        import inspect
+
+        from utils import marking_proxy
+
+        signature = inspect.signature(marking_proxy.wait_for_upstream)
+        self.assertGreaterEqual(
+            signature.parameters["timeout"].default,
+            900,
+            "too short for a first run that downloads a model",
+        )
+
+    def test_callers_report_progress(self):
+        """An hour of waiting must not look like a hang."""
+        import inspect
+
+        import cli
+
+        self.assertIn("on_wait", inspect.getsource(cli._start_marking_proxy))
+
+
 class TestServerModeRefusesWithoutTheProxy(unittest.TestCase):
     """The CLI must not silently degrade to serving unproxied."""
 
@@ -335,7 +382,14 @@ class TestCompleteMarkingDoesNotRestack(unittest.TestCase):
         self.assertIsNotNone(read_ai_marker(self.path))
 
     def test_missing_watermark_is_added(self):
-        """Gaps are still filled; only what is present is left alone."""
+        """Gaps are still filled; only what is present is left alone.
+
+        Asserts through detect_watermark(), which tries both tiers, rather than
+        through the spread-spectrum detector directly: whether the neural tier
+        or the comb applies depends on whether audioseal is installed, and the
+        guarantee under test is "a watermark was added", not which one.
+        """
+        from utils import audio_watermark
         from utils import spread_spectrum as ss
         from utils.provenance import complete_marking
 
@@ -350,7 +404,9 @@ class TestCompleteMarkingDoesNotRestack(unittest.TestCase):
 
         complete_marking(self.path, model="test")
 
-        self.assertGreaterEqual(ss.detect(self._samples()), ss.DETECTION_THRESHOLD)
+        report = audio_watermark.detect_watermark(self.path)
+        self.assertIsNotNone(report)
+        self.assertTrue(report["watermarked"], f"no watermark detected: {report}")
 
     def test_it_still_fails_closed(self):
         """An unmarkable container is refused and deleted, as everywhere else."""

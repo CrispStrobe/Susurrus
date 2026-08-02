@@ -104,13 +104,32 @@ software does for you, and what remains yours to do as provider or deployer.
   rather than the cloned one, in whatever container the output uses. If it
   cannot be delivered, the cloned audio is refused and deleted: Art. 50(4) is
   enforced separately from Art. 50(2), since a listener hears no metadata
-- **In-sample watermark, always on**: a numpy-only spread-spectrum comb
-  survives re-encoding where metadata does not, so no install is left with
-  metadata as its only durable mark. `pip install 'susurrus[watermark]'`
-  upgrades it to AudioSeal, which also resists deliberate removal
+- **A preset voice can be a deep fake too**: Art. 3(60) turns on the output
+  *resembling* an existing person, not on how the resemblance was obtained, so
+  a fixed-speaker model trained on one person's corpus owes the same audible
+  disclosure a cloned voice does — `piper` and `speecht5` do, `kokoro` does
+  not, and a backend nobody has researched says so rather than assuming.
+  `--speaker-identity` (CLI) or **Preset voice is:** (GUI) overrides the
+  shipped classification
+- **In-sample watermark**: a spread-spectrum comb (numpy + soundfile, both in
+  the `tts` extra) survives transcoding where metadata does not. It is tied to
+  its sample rate — resampling loses it — so `pip install 'susurrus[watermark]'`
+  upgrades it to AudioSeal, which survives resampling and resists deliberate
+  removal. (That upgrade silently did nothing before v2.13: the generator was
+  called through a method the `audioseal` package does not have, so every
+  install fell back to the comb. Fixed and pinned by a test that asserts which
+  layer applied, not merely that one did)
+- **Server mode marks in transit**: `--mode server` puts Susurrus in the
+  response path — the binary runs on loopback, audio responses are marked
+  before they leave the process, and audio that cannot be marked is refused
+  with a 502 rather than served. If the proxy cannot be established the server
+  does not start
 - **Art. 12 audit log**: every speaker enrollment *and* identification is
-  recorded to a hash-chained append-only log. `susurrus --audit-log` prints it
-  and verifies the chain; Tools → Biometric Audit Log in the GUI
+  recorded to a hash-chained append-only log, anchored by a sibling file
+  holding the entry count and head hash — so deleting entries from the *end*,
+  which no hash chain can detect on its own, is caught too.
+  `susurrus --audit-log` prints it and verifies both; Tools → Biometric Audit
+  Log in the GUI
 - **`--accept-marking-responsibility`**: the explicit opt-out that produces
   unmarked audio, and the only thing that disarms the fail-closed gate. The
   narrower flags (`--no-watermark`, `--no-c2pa`, `--no-spoken-disclaimer`)
@@ -122,9 +141,14 @@ software does for you, and what remains yours to do as provider or deployer.
   either is present
 - **Biometric warning**: using the speaker database without `--speaker-db-consent`
   warns about GDPR Art. 9 and possible Annex III(1)(a) high-risk classification
-- **AI-literacy notice**: Help → About AI in Susurrus states the intended
-  purpose, the known failure modes and what the system is not validated for
-  (Art. 4), localized like the rest of the interface
+- **AI-literacy notice**: `susurrus --about-ai` on the command line and Help →
+  About AI in Susurrus in the GUI state the intended purpose, the known failure
+  modes and what the system is not validated for (Art. 4). Both render the same
+  localized source, so a CLI-only deployment is not the one that gets nothing
+- **Machine-translated text is disclosed**, not marked: the CLI prints the
+  notice on stderr and the GUI shows it beside the result box, so the payload
+  stays pipeable. Art. 50(2) marking of text is not applied — see
+  [COMPLIANCE.md](COMPLIANCE.md) for the reasoning and its limits
 
 ### Intended Purpose & Limitations
 

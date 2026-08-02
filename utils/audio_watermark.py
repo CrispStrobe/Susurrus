@@ -122,12 +122,19 @@ def embed_watermark(wav_path):
         return _embed_spread_spectrum(wav_path)
 
     try:
-        import torchaudio
-
         wav, sample_rate = _read_wav(wav_path)
-        watermarked = generator.get_watermarked_audio(wav, sample_rate=sample_rate)
-        # Drop the batch dimension torchaudio.save does not expect.
-        torchaudio.save(wav_path, watermarked.squeeze(0).detach().cpu(), sample_rate)
+        # AudioSeal's generator is called, not asked for a named helper.
+        # ``get_watermarked_audio`` does not exist in audioseal 0.2 (nor, as far
+        # as the package shows, in 0.1) — so this raised AttributeError on every
+        # run and the except below quietly took the spread-spectrum path. The
+        # neural tier was advertised in README and COMPLIANCE.md as the layer
+        # that resists deliberate removal, and it had never once applied.
+        # ``forward(x, sample_rate=..., alpha=1.0)`` returns the watermarked
+        # audio directly; ``get_watermark()`` returns the residual to add.
+        watermarked = generator(wav, sample_rate=sample_rate, alpha=1.0)
+        # Drop the batch dimension, and write back in the file's *own* encoding.
+        samples = watermarked.squeeze(0).detach().cpu()
+        _write_preserving_format(wav_path, samples, sample_rate)
     except Exception as e:
         logger.warning(
             "Neural watermarking failed for %s: %s — "
@@ -139,6 +146,57 @@ def embed_watermark(wav_path):
 
     logger.info("AudioSeal watermark embedded: %s", wav_path)
     return True
+
+
+def _write_preserving_format(wav_path, samples, sample_rate):
+    """Write *samples* back to *wav_path* in the encoding it already had.
+
+    ``torchaudio.save`` defaults to 32-bit float, so writing a PCM-16 file
+    through it silently changes the container's sample format. That is not a
+    cosmetic difference: the stdlib ``wave`` module cannot read format 3
+    (IEEE float) at all, so the Art. 50(4) spoken-disclosure concatenation —
+    which uses ``wave`` for the dependency-free WAV path — started failing with
+    "unknown format: 3" on every file the neural watermarker touched.
+
+    COMPLIANCE.md promises watermarking preserves channel count and sample
+    format, on the grounds that a marking step must not damage the audio it is
+    annotating. Requantising 16-bit to float is exactly that, so the original
+    subtype is read first and restored.
+    """
+    import numpy as np
+
+    array = samples.numpy() if hasattr(samples, "numpy") else np.asarray(samples)
+    if array.ndim == 1:
+        array = array[:, np.newaxis]
+    else:
+        array = array.T  # torch gives (channels, samples); soundfile wants the transpose
+
+    try:
+        import soundfile as sf
+
+        subtype = None
+        try:
+            subtype = sf.info(wav_path).subtype
+        except Exception:  # pragma: no cover — unreadable header
+            subtype = None
+        if array.shape[1] == 1:
+            array = array[:, 0]
+        sf.write(wav_path, array, sample_rate, subtype=subtype or "PCM_16")
+        return
+    except ImportError:
+        pass
+
+    # No soundfile: fall back to torchaudio, but ask for 16-bit PCM rather than
+    # accepting its float default.
+    import torchaudio
+
+    torchaudio.save(
+        wav_path,
+        samples,
+        sample_rate,
+        encoding="PCM_S",
+        bits_per_sample=16,
+    )
 
 
 def _embed_spread_spectrum(wav_path):

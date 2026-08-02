@@ -577,15 +577,140 @@ Not planned; recorded because each was a real defect the work surfaced.
       keys, which broke four v2.11.0 tests. Fixed — noting it here because the
       signature is now implemented by four classes and two call sites
 
+# Susurrus v2.13 — Audits C1–C6
+
+Six audit rounds, each triggered by "is it done?" rather than by a plan. Every
+one found real defects, and three of them found defects in code the previous
+round had just written. Recorded in that order because the pattern is the
+finding: reading the source of truth beats reasoning about it, and running the
+thing beats reading it.
+
+## C1 — Marking that did not depend on a guess
+
+- [x] The declarative floor on the CrispASR routes was applied only when the
+      detectors came up empty, which made an Art. 50(2) guarantee conditional
+      on the in-sample detector being right. It was not: measured over 1500
+      clips of unwatermarked speech, tones and noise it read ~12% of them as
+      watermarked, and one false positive suppressed the floor and shipped
+      unmarked audio under a printed "Marked as AI-generated". The floor is now
+      unconditional — idempotent, dependency-free, does not touch the samples
+- [x] Fixed the detector separately, because "we no longer depend on it" is not
+      a reason to leave it wrong: weighted correlation instead of bare sign
+      agreement, legacy band gated behind a stricter bar. FP 12% → 1.2%, TP
+      93% → 98%, threshold 0.65 → 0.78
+- [x] `--s2s` produced synthetic audio with no consent gate and no marking
+      check — the last route whose only check lived in the binary
+- [x] `susurrus --about-ai` renders the Art. 4 notice from the same localized
+      source as the GUI dialog
+
+## C2 — The three routes documented as uncovered
+
+- [x] **Server mode is in the response path.** `utils/marking_proxy.py` binds
+      the requested port, starts the binary on loopback, marks audio responses
+      and refuses what it cannot mark. Non-audio streams through untouched
+- [x] **The audit log is anchored.** Entry count and head hash mirrored to a
+      sibling file, so tail truncation — which no hash chain can see — is
+      caught. Still evidence, not proof: a test asserts that removing the
+      anchor makes the truncated log verify again
+- [x] **Translated text carries a disclosure**, on stderr and beside the GUI
+      result box, never in the payload
+
+## C3 — What testing against the real binary found
+
+The proxy had been tested against a mock upstream only.
+
+- [x] `--port` was emitted twice — once by `start_server` for the loopback
+      port, once by `_append_params` from the operator's flag. Last one won, so
+      the binary bound the **public** port unproxied while the proxy waited for
+      an upstream that never came. Harmless while both sources agreed
+- [x] The proxy stacked marks: it ran the full pipeline over audio the binary
+      had already watermarked, ~41 dB SNR for a mark that already verified.
+      `complete_marking()` verifies first and fills only gaps
+- [x] The first cut of that fix marked *before* watermarking, and the
+      watermarker's soundfile round-trip dropped the marker it had just
+      written. Layer order restored; a test forces the embed path
+
+## C4 — Every response format, not just the convenient one
+
+- [x] `response_format: "f32"` returns `application/octet-stream`, which is not
+      `audio/*`, so raw float32 synthetic audio walked straight out unmarked.
+      Classification is now by **endpoint**, not Content-Type: a synthesis path
+      returns synthetic audio whatever it labels it
+- [x] Raw formats are marked rather than refused — no container, but the
+      watermark rides on the samples and needs no header to detect
+- [x] Concurrency measured: parity with direct access (the binary serialises on
+      its model mutex; the proxy costs ~4%)
+
+## C5 — Whose voice is a preset voice?
+
+- [x] The Art. 50(4) disclosure keyed on "was reference audio supplied", and
+      COMPLIANCE.md said outright that a stock voice is not a deepfake. Art.
+      3(60) turns on the output *resembling* a person, not on how. Every
+      stock-voice run on a real-person backend was an undisclosed deep fake
+- [x] `utils/speaker_identity.py`: three values, `unknown` warns rather than
+      assuming. GUI control added — the CLI could answer the question and the
+      GUI could not
+
+## C6 — What CrispASR's own table corrected
+
+Reading `crispasr_speaker_identity_models.h` corrected four of C5's verdicts,
+all of them mine, all from reasoning about a name instead of a model card.
+
+- [x] `kartoffel-orpheus-de-synthetic` classified from the word "synthetic" in
+      the filename. Not researched → `unknown`. Guessing synthetic is the error
+      that silently *removes* a disclosure
+- [x] `crispasr:fastpitch` inherited a sibling project's verdict for different
+      weights (German NeMo vs NVIDIA English)
+- [x] `crispasr:speecht5` takes its x-vector from the operator, so no
+      backend-level verdict can be right. The Python-native backend is
+      genuinely different: CMU ARCTIC speaker 7306 baked in as default
+- [x] `crispasr:kokoro` was a blanket `synthetic`, wrong for the German HUI
+      fine-tune. Resolution is now checkpoint-aware, as CrispASR's is
+- [x] Streaming synthesis (`"stream": true`) would have been silently buffered
+      by the proxy, turning a streaming endpoint into a non-streaming one.
+      Refused with a 502 that names the fix
+- [x] `wait_for_upstream` had a 60s limit, so any cold start needing a model
+      download refused with "the server did not come up" while the download was
+      running — a fail-closed gate firing on a healthy system, which is how a
+      safety control gets switched off. Now waits while the process lives, with
+      progress output. Found by trying to download a model to test something
+      else, which is the only way this was ever going to surface
+- [x] **The AudioSeal watermark had never applied.** `embed_watermark()` called
+      `generator.get_watermarked_audio()`, which does not exist in the package;
+      the AttributeError hit the fallback and the spread-spectrum comb marked
+      the file instead. Output was never unmarked, so no Art. 50(2) hole — but
+      the layer README and COMPLIANCE.md both called "resists deliberate
+      removal" was inert on every install that actually had AudioSeal. The live
+      test asserted only that the audio came back watermarked, which the
+      fallback satisfied; it now asserts *which* layer did it, and pins the
+      call shape. Round-trip verified: confidence 1.0, backend `audioseal`,
+      20.8 dB SNR
+
 ## Remaining limitations
 
-Down from four to one, and this one is environmental rather than structural:
+Structural first, environmental second.
 
-- **The AudioSeal round-trip is wired but unexecuted here.** `audioseal` is not
-  installed in this environment, so `tests/unit/test_audio_watermark.py`
-  skips its two live tests. Everything around them — layer ordering, opt-outs,
-  degradation, caching — is tested. Install `susurrus[watermark]` and re-run to
-  execute the round-trip.
+- **39 of 59 TTS backends are unclassified for speaker identity.** They resolve
+  to `unknown` and warn once each, which is honest rather than safe: a
+  classification nobody researched is not a classification. CrispASR's own
+  table has the same backlog (`bark`, `csm`, `parler-tts`, "and the rest"), so
+  this is a shared research debt, not a Susurrus oversight. Do not read an
+  unclassified backend as synthetic.
+- **The German Kokoro verdict is an open conflict, not an answer.** CrispTTS
+  says `synthetic` and is right for the English voicepacks; the German backbone
+  is trained on the named-narrator corpus both projects cite when marking
+  FastPitch German `real_person`. Held at `unknown` rather than inheriting
+  either neighbour. `kokoro-de-hui-base` is in the local model cache, so this
+  is live rather than hypothetical.
+- **ASR streaming (SSE) cannot be exercised.** Only `qwen3_tts` declares
+  `CAP_STREAMING` in the whole CrispASR codebase, so `/v1/audio/transcriptions`
+  with `stream=true` always falls back to JSON. The proxy's passthrough relay
+  is verified against a controlled upstream with timing assertions instead.
+- **The AudioSeal live tests are slow, not skipped.** They were skipped when
+  `audioseal` was absent, which is how the broken API call survived. With it
+  installed the round-trip runs — and loading the detector costs ~25 s the
+  first time in a process, which the marking proxy pays on its first audio
+  response and the test suite pays once. Worth knowing before blaming a hang.
 
 Organisational obligations (lawful basis, conformity assessment, disclosure to
 your audience, registration) remain the provider's or deployer's and cannot be
