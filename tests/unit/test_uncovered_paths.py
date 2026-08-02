@@ -245,22 +245,29 @@ class TestServerBindsWhereItWasTold(unittest.TestCase):
         return CrispasrBackend(model_id="auto", device="cpu", **kwargs)
 
     def _server_cmd(self, backend, host, port):
+        """Return the command start_server would launch, without launching it.
+
+        The binary is stubbed as well as the launch: this asserts on how the
+        command line is *assembled*, which is knowable without a build of
+        CrispASR present. Letting it call the real find_crispasr() made these
+        tests pass wherever a binary happened to be installed and fail on the
+        Windows CI runners, which is a property of the runner rather than of
+        the code under test.
+        """
+        from unittest import mock
+
         captured = {}
 
         def fake_popen(cmd, *args, **kwargs):
             captured["cmd"] = cmd
             raise RuntimeError("stop before launching")
 
-        import subprocess
-
-        real = subprocess.Popen
-        subprocess.Popen = fake_popen
-        try:
-            backend.start_server(host=host, port=port)
-        except RuntimeError:
-            pass
-        finally:
-            subprocess.Popen = real
+        with mock.patch("utils.crispasr_utils.find_crispasr", return_value="/fake/crispasr"):
+            with mock.patch("subprocess.Popen", side_effect=fake_popen):
+                try:
+                    backend.start_server(host=host, port=port)
+                except RuntimeError:
+                    pass
         return captured.get("cmd", [])
 
     def test_port_appears_once_and_is_the_one_requested(self):
