@@ -228,6 +228,152 @@ class TestServerModeRefusesWithoutTheProxy(unittest.TestCase):
         self.assertIn("find_free_port", toggle)
 
 
+class TestCompleteMarkingDoesNotRestack(unittest.TestCase):
+    """Audio the binary already marked must not be marked over the top.
+
+    Found by pointing the proxy at a real TTS server: the binary applies the
+    in-sample watermark itself (measured 0.815 on Piper output, above the 0.78
+    threshold), and the proxy was running the full apply_provenance pipeline
+    over it — a second comb on the first, ~37-41 dB SNR for a mark that already
+    verified, plus a second C2PA manifest. The local CrispASR routes have
+    avoided this since they were written; the proxy had to learn it.
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.path = os.path.join(self.tmpdir, "audio.wav")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _write(self, data, rate=22050):
+        import soundfile as sf
+
+        sf.write(self.path, data, rate, subtype="PCM_16")
+
+    def _samples(self):
+        import soundfile as sf
+
+        data, _ = sf.read(self.path, dtype="float32")
+        return data
+
+    def _speechish(self, seconds=3.0, rate=22050):
+        import numpy as np
+
+        rng = __import__("numpy").random.default_rng(3)
+        n = int(seconds * rate)
+        x = np.convolve(rng.standard_normal(n), np.ones(24) / 24, mode="same")
+        return (x / max(abs(x).max(), 1e-9) * 0.3).astype("float32")
+
+    def test_existing_watermark_is_not_re_embedded(self):
+        """The samples must come out byte-identical."""
+        import numpy as np
+
+        from utils import spread_spectrum as ss
+        from utils.provenance import complete_marking
+
+        try:
+            import soundfile  # noqa: F401
+        except ImportError:
+            self.skipTest("soundfile not installed")
+
+        marked = ss.embed(self._speechish())
+        self._write(marked)
+        before = self._samples()
+
+        complete_marking(self.path, model="test")
+
+        after = self._samples()
+        self.assertEqual(len(before), len(after))
+        self.assertTrue(
+            np.array_equal(before, after),
+            "samples were modified — a second watermark was stacked on the first",
+        )
+
+    def test_the_declarative_marker_is_still_applied(self):
+        """Not re-watermarking must not mean not marking."""
+        from utils import spread_spectrum as ss
+        from utils.ai_marking import read_ai_marker
+        from utils.provenance import complete_marking
+
+        try:
+            import soundfile  # noqa: F401
+        except ImportError:
+            self.skipTest("soundfile not installed")
+
+        self._write(ss.embed(self._speechish()))
+        complete_marking(self.path, model="test")
+        self.assertIsNotNone(read_ai_marker(self.path))
+
+    def test_missing_watermark_is_added(self):
+        """Gaps are still filled; only what is present is left alone."""
+        from utils import spread_spectrum as ss
+        from utils.provenance import complete_marking
+
+        try:
+            import soundfile  # noqa: F401
+        except ImportError:
+            self.skipTest("soundfile not installed")
+
+        plain = self._speechish()
+        self._write(plain)
+        self.assertLess(ss.detect(plain), ss.DETECTION_THRESHOLD)
+
+        complete_marking(self.path, model="test")
+
+        self.assertGreaterEqual(ss.detect(self._samples()), ss.DETECTION_THRESHOLD)
+
+    def test_it_still_fails_closed(self):
+        """An unmarkable container is refused and deleted, as everywhere else."""
+        from utils.provenance import ProvenanceError, complete_marking
+
+        exotic = os.path.join(self.tmpdir, "audio.au")
+        with open(exotic, "wb") as f:
+            f.write(b"\x2esnd" + b"\x00" * 64)
+
+        with self.assertRaises(ProvenanceError):
+            complete_marking(exotic, options={"no_c2pa": True, "no_watermark": True})
+        self.assertFalse(os.path.exists(exotic))
+
+    def test_marker_survives_the_watermark_step(self):
+        """Layer order: the watermarker rewrites the file, so it must go first.
+
+        Marking before watermarking loses the marker — soundfile rebuilds the
+        file from its samples and the appended RIFF chunk goes with it. The
+        result dict still said ``marker: True`` while the disk said otherwise,
+        which is the failure mode the whole verify-the-file discipline exists
+        to catch. Only reproducible on audio that needs a watermark added, so
+        it hid behind every fixture that already had one.
+        """
+        from utils.ai_marking import read_ai_marker
+        from utils.provenance import complete_marking
+
+        try:
+            import soundfile  # noqa: F401
+        except ImportError:
+            self.skipTest("soundfile not installed")
+
+        self._write(self._speechish())  # no watermark: forces the embed path
+        result = complete_marking(self.path, model="test")
+
+        self.assertTrue(result["watermark"], "watermark was not applied")
+        self.assertTrue(result["marker"], "result claims no marker")
+        self.assertIsNotNone(
+            read_ai_marker(self.path),
+            "result claimed a marker the file does not carry — the watermark "
+            "step rewrote the file and dropped it",
+        )
+
+    def test_the_proxy_uses_it(self):
+        import inspect
+
+        from utils import marking_proxy
+
+        source = inspect.getsource(marking_proxy.MarkingProxy.mark_audio)
+        self.assertIn("complete_marking(path", source)
+        self.assertNotIn("apply_provenance(", source)
+
+
 class TestServerBindsWhereItWasTold(unittest.TestCase):
     """The binary must listen where start_server says, not where kwargs say.
 

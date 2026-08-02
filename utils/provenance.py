@@ -341,6 +341,84 @@ def apply_provenance(
     return enforce_marking(result, output_path)
 
 
+def complete_marking(output_path, options=None, model=None):
+    """Mark audio that something else produced: verify first, fill only gaps.
+
+    For audio Susurrus did not synthesize itself — the marking proxy's
+    responses from the CrispASR server, for instance. :func:`apply_provenance`
+    is the wrong entry point there: it applies every layer unconditionally,
+    which is correct for a Python-native backend that marked nothing, and wrong
+    for output that arrives already marked. Measured on real Piper output from
+    the server, the binary's own in-sample watermark reads at 0.815 and
+    re-embedding over it costs ~41 dB SNR to raise a mark that already cleared
+    the threshold. C2PA would stack a second manifest on the first.
+
+    So the policy is the one the CrispASR backends already use:
+
+    * the declarative marker is applied **unconditionally** — it is idempotent,
+      dependency-free, does not touch the samples, and must not depend on a
+      detector being right;
+    * the in-sample watermark and C2PA are applied only when verification says
+      they are *absent*, never when it says "cannot tell". An unknown answer is
+      not a reason to damage the samples on the chance it helps, and the
+      declarative floor has already satisfied the machine-readable duty.
+
+    Raises:
+        ProvenanceError: if nothing landed. The file is deleted first.
+    """
+    options = options or {}
+    result = new_result()
+
+    if not output_path or not os.path.isfile(output_path):
+        return result
+
+    ext = os.path.splitext(output_path)[1].lower()
+    result["unsupported_format"] = ext not in _MARKABLE
+
+    found = verify_marking(output_path)
+    result["watermark"] = bool(found.get("watermark"))
+    result["c2pa"] = bool(found.get("c2pa"))
+
+    # Layer order is the same as apply_provenance's, and for the same reason.
+    # Marking first and watermarking second looks harmless and is not: the
+    # watermarker round-trips the file through soundfile, which rewrites it
+    # from the samples and drops the RIFF chunk the marker had just appended.
+    # The result claimed a marker that was no longer on disk.
+
+    # 1. In-sample watermark, only where verification says there is none.
+    if found.get("watermark") is False and not options.get("no_watermark"):
+        try:
+            from utils.audio_watermark import embed_watermark
+
+            result["watermark"] = embed_watermark(output_path)
+        except ImportError:
+            pass
+
+    # 2. The declarative floor, always — after anything that rewrites samples.
+    try:
+        from utils.ai_marking import embed_ai_marker
+
+        result["marker"] = bool(embed_ai_marker(output_path, model=model))
+    except ImportError:
+        result["marker"] = bool(found.get("marker"))
+
+    # 3. C2PA last: it hashes the finished bytes, so everything above is done.
+    if found.get("c2pa") is False and not options.get("no_c2pa"):
+        try:
+            from utils.c2pa_signing import sign_audio_file
+
+            result["c2pa"] = sign_audio_file(
+                output_path,
+                cert_pem=options.get("c2pa_cert"),
+                key_pem=options.get("c2pa_key"),
+                model=model,
+            )
+        except ImportError:
+            pass
+
+    return enforce_marking(result, output_path)
+
+
 def verify_marking(output_path):
     """Inspect a file and report which Art. 50 layers are actually present.
 

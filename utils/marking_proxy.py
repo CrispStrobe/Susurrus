@@ -229,7 +229,7 @@ class MarkingProxy:
         a 502: the alternative is forwarding unmarked synthetic audio, which is
         exactly what this proxy was added to stop.
         """
-        from utils.provenance import ProvenanceError, apply_provenance
+        from utils.provenance import ProvenanceError, complete_marking
 
         if not extension:
             return None
@@ -239,14 +239,15 @@ class MarkingProxy:
             with os.fdopen(fd, "wb") as f:
                 f.write(body)
             try:
-                apply_provenance(
-                    path,
-                    options=self.options,
-                    model=self.model,
-                    is_cloning=False,
-                )
+                # complete_marking, not apply_provenance: this audio came from
+                # the binary, which marks what it can. Applying every layer
+                # regardless stacked a second watermark on the first — measured
+                # at ~41 dB SNR cost on real Piper output whose mark was
+                # already above threshold — and would stack a second C2PA
+                # manifest too.
+                complete_marking(path, options=self.options, model=self.model)
             except ProvenanceError as e:
-                # apply_provenance has already deleted the file.
+                # complete_marking has already deleted the file.
                 logger.warning("Refusing to serve unmarked synthetic audio: %s", e)
                 self.refused_responses += 1
                 return None
