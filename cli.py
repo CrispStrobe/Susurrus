@@ -309,6 +309,16 @@ def main():
         help="Verify C2PA credentials in an audio file and exit",
     )
     prov_group.add_argument(
+        "--speaker-identity",
+        default=None,
+        choices=["real_person", "synthetic", "unknown"],
+        help=(
+            "Whose voice a preset is. 'real_person' makes Susurrus prepend the "
+            "audible EU AI Act Art. 50(4) disclosure to stock-voice output too, "
+            "not only to cloned voices. Overrides the shipped classification"
+        ),
+    )
+    prov_group.add_argument(
         "--about-ai",
         action="store_true",
         help=(
@@ -1246,6 +1256,9 @@ def _run_tts(args):
             "accept_marking_responsibility": getattr(args, "accept_marking_responsibility", False),
             "c2pa_cert": getattr(args, "c2pa_cert", None),
             "c2pa_key": getattr(args, "c2pa_key", None),
+            # Decides whether a *preset* voice owes the Art. 50(4) disclosure.
+            "speaker_identity": getattr(args, "speaker_identity", None),
+            "tts_backend_name": tts_backend,
         }
         if args.voice:
             tts_kwargs["voice"] = args.voice

@@ -114,6 +114,9 @@ class TestTTSBaseProvenance(unittest.TestCase):
                 "c2pa",
                 "opted_out",
                 "unsupported_format",
+                # Whose voice it was — decides whether Art. 50(4)
+                # engages for a preset, not only for a clone.
+                "speaker_identity",
             },
         )
 

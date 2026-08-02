@@ -374,6 +374,89 @@ class TestCompleteMarkingDoesNotRestack(unittest.TestCase):
         self.assertNotIn("apply_provenance(", source)
 
 
+class TestRawSampleResponsesAreMarked(unittest.TestCase):
+    """Container-less synthesis output must not escape on a Content-Type.
+
+    ``response_format: "f32"`` returns raw float32 as
+    ``application/octet-stream``. That is not ``audio/*``, so the proxy
+    classified it as "not audio" and forwarded it untouched — synthetic audio
+    served unmarked by the very route the proxy guards. Observed against the
+    real server before it was fixed. The endpoint, not the label, decides
+    whether a payload is synthetic.
+    """
+
+    def test_synthesis_paths_are_recognised(self):
+        from utils.marking_proxy import is_synthesis_path
+
+        for path in ("/v1/audio/speech", "/v1/audio/speech-to-speech", "/v1/audio/speech?x=1"):
+            self.assertTrue(is_synthesis_path(path), path)
+        for path in ("/v1/audio/transcriptions", "/v1/models", "/health", ""):
+            self.assertFalse(is_synthesis_path(path), path)
+
+    def _proxy(self, **options):
+        from utils.marking_proxy import MarkingProxy
+
+        return MarkingProxy("127.0.0.1", 0, "127.0.0.1", 0, options=options)
+
+    def _speechish(self, n=48000):
+        import numpy as np
+
+        rng = np.random.default_rng(11)
+        x = np.convolve(rng.standard_normal(n), np.ones(24) / 24, mode="same")
+        return (x / max(abs(x).max(), 1e-9) * 0.3).astype("float32")
+
+    def test_unmarked_float32_gets_a_watermark(self):
+        import numpy as np
+
+        from utils import spread_spectrum as ss
+
+        plain = self._speechish()
+        self.assertLess(ss.detect(plain), ss.DETECTION_THRESHOLD)
+
+        out = self._proxy().mark_raw_samples(plain.tobytes(), "<f4")
+        self.assertIsNotNone(out, "raw float32 was refused instead of marked")
+
+        marked = np.frombuffer(out, dtype="<f4")
+        self.assertEqual(len(marked), len(plain))
+        self.assertGreaterEqual(ss.detect(np.ascontiguousarray(marked)), ss.DETECTION_THRESHOLD)
+
+    def test_already_marked_float32_is_passed_through_untouched(self):
+        """Same no-restacking rule as the container paths."""
+        from utils import spread_spectrum as ss
+
+        pre = ss.embed(self._speechish())
+        body = pre.tobytes()
+        out = self._proxy().mark_raw_samples(body, "<f4")
+        self.assertEqual(out, body, "a second comb was stacked on the first")
+
+    def test_int16_pcm_round_trips_at_the_same_width(self):
+        import numpy as np
+
+        from utils import spread_spectrum as ss
+
+        pcm = (self._speechish() * 32767).astype("<i2")
+        out = self._proxy().mark_raw_samples(pcm.tobytes(), "<i2")
+        self.assertIsNotNone(out)
+        self.assertEqual(len(out), len(pcm.tobytes()), "sample width changed")
+
+        back = np.frombuffer(out, dtype="<i2").astype("float32") / 32768
+        self.assertGreaterEqual(ss.detect(np.ascontiguousarray(back)), ss.DETECTION_THRESHOLD)
+
+    def test_opting_out_of_the_watermark_is_the_only_way_past(self):
+        """Nothing else can mark a container-less payload."""
+        plain = self._speechish()
+        body = plain.tobytes()
+        self.assertEqual(self._proxy(no_watermark=True).mark_raw_samples(body, "<f4"), body)
+
+    def test_request_format_is_parsed_from_the_body(self):
+        from utils.marking_proxy import _requested_format
+
+        self.assertEqual(_requested_format(b'{"input":"x","response_format":"F32"}'), "f32")
+        self.assertIsNone(_requested_format(b'{"input":"x"}'))
+        self.assertIsNone(_requested_format(b"not json"))
+        self.assertIsNone(_requested_format(b"[1,2,3]"))
+
+
 class TestServerBindsWhereItWasTold(unittest.TestCase):
     """The binary must listen where start_server says, not where kwargs say.
 

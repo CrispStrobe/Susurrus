@@ -123,7 +123,17 @@ class TTSBackend(ABC):
             backend=self,
             is_cloning=self.is_cloning(voice),
             locale=locale,
+            speaker_backend=self.speaker_backend_name(),
         )
+
+    def speaker_backend_name(self):
+        """Name used to look this backend up in the speaker-identity table.
+
+        Defaults to the kwarg the CLI and GUI already thread through, so a
+        backend only overrides this if its registered name differs from the one
+        it is constructed with.
+        """
+        return self.kwargs.get("tts_backend_name")
 
     def list_voices(self):
         """Return a list of available voice IDs for this backend."""

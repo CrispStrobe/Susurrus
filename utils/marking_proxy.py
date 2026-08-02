@@ -70,6 +70,33 @@ _AUDIO_EXTENSIONS = {
 
 _READ_CHUNK = 64 * 1024
 
+#: Endpoints whose response body *is* synthetic audio, whatever it is labelled.
+#:
+#: Content-Type sniffing is not enough on its own. ``response_format: "f32"``
+#: returns raw float32 samples as ``application/octet-stream``, which is not
+#: ``audio/*`` and sailed straight through the proxy unmarked — synthetic audio
+#: served by the route the proxy exists to guard. The endpoint is ground truth
+#: about whether a payload is synthetic; the label is only a hint about how it
+#: is packaged.
+_SYNTHESIS_PATHS = ("/v1/audio/speech", "/v1/audio/speech-to-speech")
+
+#: ``response_format`` values that return bare samples with no container.
+#: There is nowhere to put metadata or a manifest, so the in-sample watermark
+#: is the only mark available — which is enough, because it is the mark that
+#: matters most and the one the binary applies before it encodes anything.
+_RAW_SAMPLE_DTYPES = {"pcm": "<i2", "f32": "<f4"}
+
+#: Cap on a synthesis request body we will buffer to read ``response_format``.
+#: These are small JSON documents; anything larger is not one, and buffering it
+#: would trade the streaming-upload property for nothing.
+_MAX_SYNTHESIS_REQUEST = 1 << 20
+
+
+def is_synthesis_path(path):
+    """True if *path* names an endpoint that returns synthetic audio."""
+    base = (path or "").split("?", 1)[0].rstrip("/")
+    return any(base == p or base.endswith(p) for p in _SYNTHESIS_PATHS)
+
 
 def find_free_port(host="127.0.0.1"):
     """Return a port that is free right now on *host*.
@@ -100,6 +127,25 @@ def wait_for_upstream(host, port, timeout=60.0, interval=0.2):
 
 def _content_type(headers):
     return (headers.get("Content-Type") or "").split(";")[0].strip().lower()
+
+
+def _requested_format(body):
+    """Return the ``response_format`` field of a synthesis request, or None.
+
+    Best effort by design: a body that is not the JSON we expect leaves the
+    format unknown, and an unknown format on a synthesis path is refused rather
+    than guessed at.
+    """
+    import json
+
+    try:
+        parsed = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    value = parsed.get("response_format")
+    return value.strip().lower() if isinstance(value, str) else None
 
 
 def _audio_extension(content_type):
@@ -266,6 +312,67 @@ class MarkingProxy:
         self.marked_responses += 1
         return marked
 
+    def mark_raw_samples(self, body, dtype):
+        """Watermark bare PCM in place. Returns new bytes, or None to refuse.
+
+        Raw formats have no container, so the declarative marker and C2PA have
+        nowhere to live and the in-sample watermark is the whole of what is
+        available. That is workable precisely because the watermark rides on
+        the samples: detection needs no header, no sample rate and no metadata,
+        only the array — so the proxy can both check the binary's mark and add
+        one if it is missing.
+
+        The sample format comes from the request's ``response_format`` rather
+        than being guessed from a Content-Type, because ``octet-stream`` says
+        nothing about what is inside it.
+        """
+        try:
+            import numpy as np
+
+            from utils import spread_spectrum
+        except ImportError:
+            logger.warning("Cannot watermark raw samples: numpy is not installed")
+            self.refused_responses += 1
+            return None
+
+        if self.options.get("no_watermark"):
+            # Nothing else can mark a container-less payload, so honouring the
+            # opt-out here means serving unmarked. The attestation that this
+            # flag requires is what makes that the operator's call.
+            return body
+
+        try:
+            samples = np.frombuffer(body, dtype=dtype)
+            if samples.size == 0:
+                return body
+            floats = samples.astype(np.float32)
+            scale = 32768.0 if dtype == "<i2" else 1.0
+            floats = np.ascontiguousarray(floats / scale)
+
+            if spread_spectrum.detect(floats) >= spread_spectrum.DETECTION_THRESHOLD:
+                # Already marked upstream — re-embedding would stack a second
+                # comb for nothing, exactly as on the container paths.
+                self.marked_responses += 1
+                return body
+
+            marked = spread_spectrum.embed(floats)
+            if spread_spectrum.detect(marked) < spread_spectrum.DETECTION_THRESHOLD:
+                logger.warning("Raw-sample watermark did not take; refusing to serve")
+                self.refused_responses += 1
+                return None
+
+            if dtype == "<i2":
+                out = np.clip(marked * scale, -32768, 32767).astype(np.int16)
+            else:
+                out = marked.astype(np.float32)
+        except Exception as e:
+            logger.warning("Could not watermark raw samples: %s", e)
+            self.refused_responses += 1
+            return None
+
+        self.marked_responses += 1
+        return out.tobytes()
+
 
 class _ProxyHandler(BaseHTTPRequestHandler):
     """Forward one request upstream and mark the response if it is audio."""
@@ -273,6 +380,13 @@ class _ProxyHandler(BaseHTTPRequestHandler):
     parent = None
     protocol_version = "HTTP/1.1"
     server_version = "Susurrus-MarkingProxy"
+
+    #: ``response_format`` from the request, set while reading the body. Per
+    #: request, not per connection: BaseHTTPRequestHandler reuses the instance
+    #: across keep-alive requests, so a stale value would describe the previous
+    #: one — and mis-describing the format of synthetic audio is how it gets
+    #: served wrong.
+    _requested_format = None
 
     def log_message(self, fmt, *args):  # noqa: A003 - BaseHTTPRequestHandler API
         logger.debug("proxy: " + fmt, *args)
@@ -326,6 +440,16 @@ class _ProxyHandler(BaseHTTPRequestHandler):
             length = int(length)
         except ValueError:
             return None, None
+
+        # Synthesis requests are small JSON documents and we need to read
+        # response_format out of them to know how the reply is packaged.
+        # Everything else keeps streaming — a transcription upload must not be
+        # pulled into memory for the sake of a field it does not have.
+        if is_synthesis_path(self.path) and 0 < length <= _MAX_SYNTHESIS_REQUEST:
+            body = self.rfile.read(length)
+            self._requested_format = _requested_format(body)
+            return body, length
+
         return _LimitedReader(self.rfile, length), length
 
     def _forward_headers(self):
@@ -339,6 +463,10 @@ class _ProxyHandler(BaseHTTPRequestHandler):
 
     def _proxy(self):
         import http.client
+
+        # Reset per request: the handler instance is reused across keep-alive
+        # requests on one connection.
+        self._requested_format = None
 
         # A protocol upgrade cannot survive this proxy: http.client gives us a
         # parsed response, not the raw socket, so a 101 would leave both sides
@@ -377,12 +505,69 @@ class _ProxyHandler(BaseHTTPRequestHandler):
 
     def _relay(self, response):
         content_type = _content_type(response.headers)
-        extension = _audio_extension(content_type)
+        synthesis = is_synthesis_path(self.path)
 
-        if extension is not None and self.command != "HEAD":
+        if self.command == "HEAD" or response.status >= 400:
+            # An error body is JSON, not audio, whatever the route.
+            self._relay_passthrough(response)
+            return
+
+        raw_dtype = _RAW_SAMPLE_DTYPES.get(getattr(self, "_requested_format", None))
+        if synthesis and raw_dtype:
+            self._relay_raw_samples(response, raw_dtype)
+            return
+
+        extension = _audio_extension(content_type)
+        if synthesis and extension is None:
+            # A synthesis endpoint returned something we do not recognise as
+            # audio. Passing it through on the strength of its label is how
+            # raw float32 got out unmarked; refuse instead and name it.
+            logger.warning(
+                "Synthesis response has unexpected content type %r; refusing",
+                content_type,
+            )
+            self.parent.refused_responses += 1
+            self._refuse(
+                502,
+                '{"error":"Susurrus could not identify the audio format of this '
+                "synthesis response, so it could not mark it. EU AI Act Art. "
+                "50(2) requires machine-readable marking of synthetic audio. "
+                "Request wav or mp3, or run the server with "
+                '--accept-marking-responsibility."}',
+            )
+            return
+
+        if extension is not None:
             self._relay_audio(response, extension)
         else:
             self._relay_passthrough(response)
+
+    def _relay_raw_samples(self, response, dtype):
+        """Watermark a container-less response and forward it."""
+        body = response.read()
+        marked = self.parent.mark_raw_samples(body, dtype)
+        if marked is None:
+            self._refuse(
+                502,
+                '{"error":"Susurrus refused to serve unmarked raw samples. '
+                "Container-less formats can carry only the in-sample "
+                "watermark, and it could not be applied. Request wav or mp3, "
+                'or run the server with --accept-marking-responsibility."}',
+            )
+            return
+
+        self.send_response(response.status)
+        for key, value in response.headers.items():
+            if key.lower() in _HOP_BY_HOP or key.lower() == "content-length":
+                continue
+            self.send_header(key, value)
+        self.send_header("Content-Length", str(len(marked)))
+        self.send_header("X-Susurrus-AI-Marked", "EU-AI-Act-Art50-2")
+        self.end_headers()
+        try:
+            self.wfile.write(marked)
+        except OSError:
+            pass
 
     def _relay_audio(self, response, extension):
         """Buffer, mark, forward. Audio is the one thing worth holding."""

@@ -50,11 +50,12 @@ class ProvenanceError(RuntimeError):
 
 #: Keys present in every result dict returned by :func:`apply_provenance`.
 #:
-#: ``spoken_required`` is deliberately separate from ``spoken``: Art. 50(4)
-#: engages on cloning, and whether the disclosure was *owed* is not the same
-#: question as whether it landed. Without the distinction a cloning run whose
-#: disclosure failed looked identical to a stock-voice run that never needed
-#: one, and callers reported success for both.
+#: ``spoken_required`` is deliberately separate from ``spoken``: whether the
+#: disclosure was *owed* is not the same question as whether it landed. Without
+#: the distinction a run whose disclosure failed looked identical to one that
+#: never needed a disclosure, and callers reported success for both. Art. 50(4)
+#: engages on cloning *or* on a preset voice that belongs to a real person —
+#: see :mod:`utils.speaker_identity`.
 _EMPTY = {
     "spoken": False,
     "spoken_required": False,
@@ -64,6 +65,9 @@ _EMPTY = {
     "c2pa": False,
     "opted_out": False,
     "unsupported_format": False,
+    # Whose voice this was, per utils.speaker_identity. Reported so an operator
+    # can see *why* a disclosure was or was not owed, rather than inferring it.
+    "speaker_identity": "unknown",
 }
 
 #: Containers the declarative marker understands. Anything else can still be
@@ -172,13 +176,21 @@ def enforce_marking(result, output_path):
         )
 
     if disclosure_missing(result):
+        # Name *why* it was owed. "Cloned voice" was the only reason once, and
+        # reading that over a stock-voice run would send the operator looking
+        # for a reference file they never passed.
+        because = (
+            "this preset voice belongs to an identifiable person"
+            if result.get("speaker_identity") == "real_person"
+            else "this audio clones a voice"
+        )
         _discard(output_path)
         raise ProvenanceError(
-            f"Refusing to write an undisclosed cloned voice to {output_path}. "
-            "EU AI Act Art. 50(4) requires disclosure that deepfake content is "
-            "artificially generated, and the audible disclosure could not be "
-            f"produced. Machine-readable marking does not reach a listener. "
-            f"{_REMEDY}",
+            f"Refusing to write undisclosed deepfake audio to {output_path}: "
+            f"{because}. EU AI Act Art. 50(4) requires disclosure that deepfake "
+            "content is artificially generated, and the audible disclosure "
+            "could not be produced. Machine-readable marking does not reach a "
+            f"listener. {_REMEDY}",
             output_path,
         )
 
@@ -249,6 +261,7 @@ def apply_provenance(
     backend=None,
     is_cloning=False,
     locale=None,
+    speaker_backend=None,
 ):
     """Apply the Art. 50 layers to *output_path* and report what landed.
 
@@ -260,9 +273,12 @@ def apply_provenance(
         model: Model identifier recorded in the marker and manifest.
         backend: The backend that produced the audio, used to synthesize the
             spoken disclosure in a matching format. Optional.
-        is_cloning: Whether this synthesis cloned a voice, which is what
-            engages the Art. 50(4) audible disclosure.
+        is_cloning: Whether this synthesis cloned a voice, which is one of the
+            two things that engages the Art. 50(4) audible disclosure.
         locale: Language for the spoken disclosure.
+        speaker_backend: TTS backend name, used to decide whether the *preset*
+            voice belongs to a real person — the other thing that engages it.
+            See :mod:`utils.speaker_identity`.
 
     Returns:
         dict with ``spoken``, ``spoken_required``, ``suppressed_spoken``,
@@ -294,10 +310,24 @@ def apply_provenance(
     ext = os.path.splitext(output_path)[1].lower()
     result["unsupported_format"] = ext not in _MARKABLE
 
-    # 1. Spoken disclosure — cloning only, matching CrispASR's behaviour.
-    result["spoken_required"] = bool(is_cloning)
-    result["suppressed_spoken"] = bool(is_cloning and options.get("no_spoken_disclaimer"))
-    if is_cloning and backend is not None and not options.get("no_spoken_disclaimer"):
+    # 1. Spoken disclosure. Owed when the voice is cloned *or* when the preset
+    #    belongs to an identifiable person — Art. 3(60) turns on the output
+    #    resembling someone, not on how the resemblance was obtained, and a
+    #    Piper voice trained on one speaker's corpus resembles that speaker
+    #    whether or not a reference WAV was passed. This used to key on
+    #    is_cloning alone, which let every real-person preset out undisclosed.
+    from utils.speaker_identity import requires_spoken_disclosure, resolve_speaker_identity
+
+    identity = resolve_speaker_identity(
+        backend=speaker_backend or getattr(backend, "backend_name", None),
+        override=options.get("speaker_identity"),
+    )
+    needs_spoken = requires_spoken_disclosure(bool(is_cloning), identity, backend=speaker_backend)
+
+    result["speaker_identity"] = identity
+    result["spoken_required"] = needs_spoken
+    result["suppressed_spoken"] = bool(needs_spoken and options.get("no_spoken_disclaimer"))
+    if needs_spoken and backend is not None and not options.get("no_spoken_disclaimer"):
         try:
             from utils.spoken_disclosure import prepend_spoken_disclosure
 

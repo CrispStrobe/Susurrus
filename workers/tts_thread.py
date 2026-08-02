@@ -121,9 +121,14 @@ class TTSThread(QThread):
                 "accept_marking_responsibility",
                 "c2pa_cert",
                 "c2pa_key",
+                "speaker_identity",
             ):
                 if self.args.get(key):
                     provenance[key] = self.args[key]
+
+            # Names the backend for the speaker-identity lookup, which decides
+            # whether a preset voice owes the Art. 50(4) audible disclosure.
+            provenance["tts_backend_name"] = backend_name
 
             if self.args.get("no_watermark"):
                 self.progress_signal.emit(t("warn.no_watermark"))

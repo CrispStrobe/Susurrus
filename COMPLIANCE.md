@@ -323,9 +323,47 @@ one. While it is being synthesized the cloning reference is withheld from the
 backend, so a disclaimer cannot be delivered by the impersonated speaker —
 which would produce exactly the confusion the disclosure exists to prevent.
 
-The disclosure is added only when cloning from reference audio. Synthesis in a
-stock voice is not a deepfake, so Art. 50(4) is not engaged — though Art. 50(2)
-marking still applies to it, and does.
+**A preset voice can be a deepfake too.** This document used to say that
+synthesis in a stock voice is not one, and that the disclosure is owed only
+when cloning from reference audio. That was wrong, and it was wrong about a
+large share of the voices actually shipped.
+
+Art. 3(60) defines a deep fake as AI-generated content "resembling existing
+persons … that would falsely appear to a person to be authentic". It says
+nothing about *how* the resemblance was obtained. A Piper voice trained on one
+speaker's corpus resembles that speaker whether or not you passed a WAV; so
+does a SpeechT5 voice conditioned on a CMU Arctic speaker embedding. Of the 27
+TTS models CrispTTS classified against their providers' own model cards, 13
+turned out to be real people.
+
+So the disclosure now turns on two questions, not one:
+
+| | Art. 50(4) disclosure |
+| --- | --- |
+| Cloned from reference audio | Always |
+| Preset voice, `real_person` (piper, speecht5, crispasr:orpheus-de …) | Yes |
+| Preset voice, `synthetic` (kokoro, bark …) | No |
+| Preset voice, `unknown` (edge-tts, melotts …) | No — but warns once |
+
+`unknown` is deliberately not a synonym for `synthetic`. It means nobody has
+checked, which is a question for the deployer rather than a default to assume
+away: forcing a disclosure on a guess would prepend a sentence to every stock
+voice, and assuming "synthetic" would silently drop the duty for voices that
+turn out to be people. The warning names the backend and says what to pass.
+
+Override the shipped classification with `--speaker-identity`
+(`real_person` | `synthetic` | `unknown`) when you know better than the table —
+for a voice pack you added, or a multi-voice backend where one voice differs
+from the rest. The classifications are backend-level and come from
+`utils/speaker_identity.py`.
+
+Art. 50(2) marking applies to all of these regardless, and does.
+
+One honest limit: when the disclosure is owed for a *preset* real-person voice,
+it is spoken in that same voice, because there is no second voice to use. For a
+cloned voice Susurrus withholds the reference so the disclaimer is never
+delivered by the impersonated speaker; a fixed-speaker model offers no such
+choice. An audible disclosure in the person's voice is still better than none.
 
 **Speech-to-speech is gated more strictly than synthesis.** `--s2s` re-voices a
 real recording of a real person, so the rights attestation is required whatever
