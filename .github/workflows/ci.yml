@@ -90,6 +90,12 @@ jobs:
           pip install --upgrade pip
           pip install pytest pytest-cov pytest-mock
           pip install --no-deps -e .
+          # numpy and soundfile are what the dependency-free watermark tier is
+          # built from. Without them tests/unit/test_spread_spectrum.py skips,
+          # and the layer that is supposed to work on a minimal install would
+          # never actually be exercised anywhere. Both are small — unlike the
+          # torch install below, which stays best-effort.
+          pip install numpy soundfile
 
       - name: Install optional heavy deps (best-effort)
         continue-on-error: true

@@ -16,6 +16,23 @@ import unittest
 import wave
 from unittest import mock
 
+# The dependency-free watermark tier is built from numpy + soundfile, and CI
+# installs the package with --no-deps. Where they are absent there is no
+# fallback to exercise, so these skip rather than fail: a graceful-degradation
+# suite that itself fails to degrade gracefully is not much of a signal.
+try:
+    import numpy  # noqa: F401
+    import soundfile  # noqa: F401
+
+    _HAVE_AUDIO_STACK = True
+except ImportError:  # pragma: no cover - minimal installs only
+    _HAVE_AUDIO_STACK = False
+
+requires_audio_stack = unittest.skipUnless(
+    _HAVE_AUDIO_STACK, "numpy/soundfile not installed"
+)
+
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 
@@ -30,6 +47,7 @@ def _write_wav(path, frames=4000):
     return path
 
 
+@requires_audio_stack
 class TestFFIBackendProvenance(unittest.TestCase):
     """crispasr-ffi synthesizes in-process, so the binary's marking never runs.
 

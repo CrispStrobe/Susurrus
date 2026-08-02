@@ -7,9 +7,32 @@ so these tests deliberately avoid torch, audioseal and any network.
 import os
 import unittest
 
-import numpy as np
+# CI installs the package with --no-deps, so numpy and soundfile may be
+# absent. These tests must then skip rather than fail collection: a module
+# that cannot even be imported reports as a broken suite, which is the
+# opposite of what a graceful-degradation layer should look like.
+try:
+    import numpy as np
 
-from utils import spread_spectrum as ss
+    from utils import spread_spectrum as ss
+
+    _HAVE_NUMPY = True
+except ImportError:  # pragma: no cover - exercised only on minimal installs
+    np = None
+    ss = None
+    _HAVE_NUMPY = False
+
+try:
+    import soundfile  # noqa: F401
+
+    _HAVE_SOUNDFILE = True
+except ImportError:  # pragma: no cover
+    _HAVE_SOUNDFILE = False
+
+requires_numpy = unittest.skipUnless(_HAVE_NUMPY, "numpy not installed")
+requires_soundfile = unittest.skipUnless(
+    _HAVE_NUMPY and _HAVE_SOUNDFILE, "numpy/soundfile not installed"
+)
 
 
 def _speech_like(seconds=4.0, sample_rate=24000):
@@ -22,6 +45,7 @@ def _speech_like(seconds=4.0, sample_rate=24000):
     ).astype(np.float32)
 
 
+@requires_numpy
 class TestCrossProjectConstants(unittest.TestCase):
     """These values are an interop contract, not free parameters.
 
@@ -70,6 +94,7 @@ class TestCrossProjectConstants(unittest.TestCase):
             self.assertIn(sign, (-1, 1))
 
 
+@requires_numpy
 class TestEmbedDetect(unittest.TestCase):
     def test_roundtrip_is_detected(self):
         marked = ss.embed(_speech_like())
@@ -139,6 +164,7 @@ class TestEmbedDetect(unittest.TestCase):
         np.testing.assert_allclose(ss.embed(pcm), ss.embed(pcm, alpha=-1.0), atol=1e-6)
 
 
+@requires_soundfile
 class TestFallbackWiring(unittest.TestCase):
     """audio_watermark must reach this layer when AudioSeal is absent."""
 

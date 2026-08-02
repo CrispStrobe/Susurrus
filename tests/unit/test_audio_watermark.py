@@ -14,6 +14,23 @@ from unittest import mock
 from utils import audio_watermark
 from workers.tts.backends.base import TTSBackend
 
+# The dependency-free watermark tier is built from numpy + soundfile, and CI
+# installs the package with --no-deps. Where they are absent there is no
+# fallback to exercise, so these skip rather than fail: a graceful-degradation
+# suite that itself fails to degrade gracefully is not much of a signal.
+try:
+    import numpy  # noqa: F401
+    import soundfile  # noqa: F401
+
+    _HAVE_AUDIO_STACK = True
+except ImportError:  # pragma: no cover - minimal installs only
+    _HAVE_AUDIO_STACK = False
+
+requires_audio_stack = unittest.skipUnless(
+    _HAVE_AUDIO_STACK, "numpy/soundfile not installed"
+)
+
+
 
 def _audioseal_installed():
     try:
@@ -37,6 +54,7 @@ class Dummy(TTSBackend):
         return output_path
 
 
+@requires_audio_stack
 class TestGracefulDegradation(unittest.TestCase):
     """Absent audioseal, watermarking falls back — it never crashes.
 
