@@ -100,10 +100,21 @@ class TestTTSBaseProvenance(unittest.TestCase):
         self.assertFalse(result["marker"])
 
     def test_returns_all_expected_keys(self):
+        # spoken_required / suppressed_spoken report the Art. 50(4) duty apart
+        # from whether it was discharged — see utils.provenance.
         result = self._dummy().apply_provenance("/nonexistent/output.mp3")
         self.assertEqual(
             set(result),
-            {"spoken", "watermark", "marker", "c2pa", "opted_out", "unsupported_format"},
+            {
+                "spoken",
+                "spoken_required",
+                "suppressed_spoken",
+                "watermark",
+                "marker",
+                "c2pa",
+                "opted_out",
+                "unsupported_format",
+            },
         )
 
     def test_mp3_is_a_supported_container(self):
@@ -129,16 +140,29 @@ class TestTTSBaseProvenance(unittest.TestCase):
             self.assertFalse(result["unsupported_format"])
             self.assertIsNotNone(read_ai_marker(mp3))
 
-    def test_unsupported_container_is_reported_not_claimed(self):
-        """An unmarkable container must say so rather than report success."""
+    def test_unmarkable_container_is_refused_and_deleted(self):
+        """An unmarkable container must be refused, not reported and kept.
+
+        This asserted the old fail-open policy: return a result saying
+        ``unsupported_format`` and leave the audio on disk. Art. 50(2) has no
+        exception for a missing dependency, so the file is now deleted and the
+        call raises. Watermarking is mocked off so the test means the same
+        thing whether or not soundfile is installed.
+        """
         import os
         import tempfile
+        from unittest import mock
+
+        from utils.provenance import ProvenanceError
 
         with tempfile.TemporaryDirectory() as d:
             path = _write_wav(os.path.join(d, "audio.opus"))
-            result = self._dummy(no_c2pa=True).apply_provenance(path)
-            self.assertTrue(result["unsupported_format"])
-            self.assertFalse(result["marker"])
+            with mock.patch("utils.audio_watermark.embed_watermark", return_value=False):
+                with self.assertRaises(ProvenanceError) as caught:
+                    self._dummy(no_c2pa=True).apply_provenance(path)
+
+            self.assertIn("Art. 50(2)", str(caught.exception))
+            self.assertFalse(os.path.exists(path), "unmarked audio must not survive")
 
     def test_crispasr_backend_verifies_rather_than_asserts(self):
         """The binary marks its own output — but that must be *checked*.

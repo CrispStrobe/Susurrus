@@ -166,8 +166,28 @@ class TestPrependSpokenDisclosure(unittest.TestCase):
         self.assertFalse(prepend_spoken_disclosure(backend, self.out))
         self.assertEqual(_frames(self.out), CONTENT_FRAMES)
 
-    def test_skips_non_wav(self):
-        self.assertFalse(prepend_spoken_disclosure(FakeTTS(), "out.mp3"))
+    def test_non_wav_is_routed_to_the_soundfile_concatenator(self):
+        """Non-WAV is no longer refused outright — it needs a decoder, not a veto.
+
+        This used to assert False for any non-WAV path, which read as a
+        deliberate scope limit but meant the one Python-native backend that
+        clones (chatterbox, whose encoder follows the output extension) could
+        write an .mp3 deepfake with no audible disclosure at all. The refusal
+        now comes only from a missing decoder or a genuine format mismatch.
+        """
+        from unittest import mock
+
+        with mock.patch(
+            "utils.spoken_disclosure._concat_via_soundfile", return_value=False
+        ) as concat:
+            path = os.path.join(self._dir.name, "out.mp3")
+            with open(path, "wb") as f:
+                f.write(b"\xff\xfb\x90\x00" + b"\x00" * 400)
+            self.assertFalse(prepend_spoken_disclosure(FakeTTS(), path))
+
+        concat.assert_called_once()
+        # The prefix must be synthesized into the content's own container.
+        self.assertTrue(concat.call_args[0][0].endswith(".mp3"))
 
     def test_skips_missing_file(self):
         self.assertFalse(prepend_spoken_disclosure(FakeTTS(), self.out))

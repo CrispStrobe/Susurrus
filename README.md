@@ -38,8 +38,9 @@ Susurrus is a professional, modular audio suite providing transcription, text-to
 
 ### Speech-to-Speech
 
-- **Audio-in → Audio-out**: Supported by lfm2-audio and mini-omni2 backends via `--s2s` flag
-- **FFI support**: `speech_to_speech()` method for in-process S2S with optional intermediate transcript
+- **Audio-in → Audio-out**: Supported by lfm2-audio and mini-omni2 backends
+- **FFI support**: `speech_to_speech()` method for in-process S2S with optional intermediate transcript — this is the supported route, and it marks its output per EU AI Act Art. 50
+- **Not a CLI flag**: there is no `susurrus --s2s`. The subprocess backend accepts `s2s=True` programmatically and passes `--s2s` to the binary, but that route is unverified — Susurrus does not inspect the binary's `--s2s-output`. Prefer the FFI route.
 
 ### Translation
 
@@ -75,9 +76,14 @@ Susurrus is a professional, modular audio suite providing transcription, text-to
 See **[COMPLIANCE.md](COMPLIANCE.md)** for the full obligations map — what the
 software does for you, and what remains yours to do as provider or deployer.
 
+- **Marking fails closed**: if no marking layer can be applied, the output is
+  **deleted** and the run refused (exit 2) — Susurrus does not emit unmarked
+  synthetic audio. WAV and MP3 always succeed (the declarative marker is pure
+  standard library); exotic containers need C2PA or soundfile. A cheap
+  preflight refuses before any model loads. The one way past it is
+  `--accept-marking-responsibility`
 - **Marking ON by default, on every TTS path**: no backend emits unmarked WAV
-  or MP3. Other containers have no dependency-free marker and say so rather
-  than reporting success
+  or MP3
 - **Marking is verified, not assumed**: on the CrispASR routes the binary does
   the marking, so Susurrus reads the finished file back and reports what is
   actually present — applying the declarative marker as a floor if nothing is
@@ -95,7 +101,9 @@ software does for you, and what remains yours to do as provider or deployer.
 - **Spoken disclosure on every backend**: cloned audio gets an audible,
   localized AI-disclosure prefix — CrispASR in-binary, Python-native backends
   by synthesizing the phrase with the same model, in the backend's own voice
-  rather than the cloned one
+  rather than the cloned one, in whatever container the output uses. If it
+  cannot be delivered, the cloned audio is refused and deleted: Art. 50(4) is
+  enforced separately from Art. 50(2), since a listener hears no metadata
 - **In-sample watermark, always on**: a numpy-only spread-spectrum comb
   survives re-encoding where metadata does not, so no install is left with
   metadata as its only durable mark. `pip install 'susurrus[watermark]'`
@@ -104,9 +112,10 @@ software does for you, and what remains yours to do as provider or deployer.
   recorded to a hash-chained append-only log. `susurrus --audit-log` prints it
   and verifies the chain; Tools → Biometric Audit Log in the GUI
 - **`--accept-marking-responsibility`**: the explicit opt-out that produces
-  unmarked audio. The narrower flags (`--no-watermark`, `--no-c2pa`,
-  `--no-spoken-disclaimer`) each require it too, so reducing provenance is
-  always a deliberate, attested act
+  unmarked audio, and the only thing that disarms the fail-closed gate. The
+  narrower flags (`--no-watermark`, `--no-c2pa`, `--no-spoken-disclaimer`)
+  each require it too, so reducing provenance is always a deliberate, attested
+  act
 - **`--detect-watermark`**: Standalone AI-content detection (confidence + verdict)
 - **`--verify-c2pa`**: Check whether a file is marked as AI-generated —
   reports both the C2PA credentials and the declarative marker, exits 0 if

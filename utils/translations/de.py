@@ -234,6 +234,19 @@ STRINGS = {
         "maschinenlesbare Kennzeichnung synthetischer Audioinhalte."
     ),
     "status.marked": "Als KI-generiert gekennzeichnet ({layers}).",
+    "error.marking_required": (
+        "Susurrus erzeugt keine ungekennzeichneten synthetischen Audioinhalte. "
+        "Wählen Sie einen .wav- oder .mp3-Ausgabepfad, installieren Sie die "
+        "Kennzeichnungskomponenten, oder aktivieren Sie „Ich übernehme die "
+        "Kennzeichnungsverantwortung“, um die Pflicht nach EU AI Act Art. 50 "
+        "selbst zu übernehmen."
+    ),
+    "warn.disclosure_missing": (
+        "WARNUNG: Diese Audiodatei klont eine Stimme, enthält aber keinen "
+        "hörbaren Hinweis. EU AI Act Art. 50(4) verlangt die Offenlegung, "
+        "dass Deepfake-Inhalte künstlich erzeugt wurden; eine maschinen"
+        "lesbare Kennzeichnung erfüllt diese Pflicht gegenüber Hörenden nicht."
+    ),
     "warn.marking_unsupported_format": (
         "WARNUNG: Dieses Audioformat trägt keine deklarative "
         "KI-Kennzeichnung, die Ausgabe ist daher möglicherweise ungekenn"

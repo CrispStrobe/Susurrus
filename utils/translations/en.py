@@ -238,6 +238,18 @@ STRINGS = {
         "Art. 50(2) requires machine-readable marking of synthetic audio."
     ),
     "status.marked": "Marked as AI-generated ({layers}).",
+    "error.marking_required": (
+        "Susurrus does not produce unmarked synthetic audio. Choose a .wav or "
+        ".mp3 output path, install the marking stack, or tick 'I accept "
+        "marking responsibility' to take the EU AI Act Art. 50 obligation on "
+        "yourself."
+    ),
+    "warn.disclosure_missing": (
+        "WARNING: this audio clones a voice but carries no audible "
+        "disclosure. EU AI Act Art. 50(4) requires disclosure that deepfake "
+        "content is artificially generated, and machine-readable marking does "
+        "not discharge it for a listener."
+    ),
     "warn.marking_unsupported_format": (
         "WARNING: this audio format carries no declarative AI marker, so the "
         "output may be unmarked. EU AI Act Art. 50(2) requires machine-readable "

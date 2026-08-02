@@ -16,6 +16,18 @@ Layer order is load-bearing:
    dependency-free, so a default install still emits marked audio.
 4. **C2PA Content Credentials** — hashes the finished file, so it must be
    last or the manifest describes audio that no longer exists.
+
+**This pipeline fails closed.** If no machine-readable layer lands, or a
+cloning run cannot deliver its audible disclosure, the output file is deleted
+and :class:`ProvenanceError` is raised. Art. 50(2) has no "unless a dependency
+is missing" clause, so an install that cannot mark must not synthesize: the one
+outcome the Regulation rules out is unmarked synthetic audio reaching a person,
+and warning about it while leaving the file on disk does not prevent that.
+
+The single way past it is ``accept_marking_responsibility``, which is an
+attestation that the operator is taking the Art. 50 duty on. Reusing the
+existing opt-out rather than adding a second switch keeps one rule: either the
+software marked the output, or a named human said they would.
 """
 
 import logging
@@ -23,9 +35,30 @@ import os
 
 logger = logging.getLogger(__name__)
 
+
+class ProvenanceError(RuntimeError):
+    """Raised when synthetic audio cannot be marked or disclosed.
+
+    Carries the path that was refused so callers can name it. The file itself
+    is already gone by the time this is raised — see :func:`enforce_marking`.
+    """
+
+    def __init__(self, message, output_path=None):
+        super().__init__(message)
+        self.output_path = output_path
+
+
 #: Keys present in every result dict returned by :func:`apply_provenance`.
+#:
+#: ``spoken_required`` is deliberately separate from ``spoken``: Art. 50(4)
+#: engages on cloning, and whether the disclosure was *owed* is not the same
+#: question as whether it landed. Without the distinction a cloning run whose
+#: disclosure failed looked identical to a stock-voice run that never needed
+#: one, and callers reported success for both.
 _EMPTY = {
     "spoken": False,
+    "spoken_required": False,
+    "suppressed_spoken": False,
     "watermark": False,
     "marker": False,
     "c2pa": False,
@@ -48,6 +81,165 @@ def new_result(**overrides):
 def marking_applied(result):
     """True if at least one machine-readable layer landed on the file."""
     return bool(result.get("watermark") or result.get("marker") or result.get("c2pa"))
+
+
+def disclosure_missing(result):
+    """True if an Art. 50(4) audible disclosure was owed and did not happen.
+
+    Distinct from :func:`marking_applied`, which answers the Art. 50(2)
+    machine-readable question. The two obligations are separate, and a run can
+    satisfy one while failing the other — so callers that only checked for
+    marking reported a confident success over cloned audio that announced
+    nothing to whoever hears it.
+
+    An operator who passed ``--no-spoken-disclaimer`` (which itself requires
+    the responsibility attestation) has made that choice knowingly, so it is
+    not reported as a shortfall.
+    """
+    return bool(
+        result.get("spoken_required")
+        and not result.get("spoken")
+        and not result.get("suppressed_spoken")
+        and not result.get("opted_out")
+    )
+
+
+#: Human-readable install hint, appended to every refusal. A refusal that does
+#: not say how to satisfy it just reads as breakage.
+_REMEDY = (
+    "Install the marking stack with \"pip install 'susurrus[tts]'\" (adds "
+    "soundfile + C2PA), or write .wav / .mp3 output, which needs no optional "
+    "dependency. To ship unmarked audio deliberately, pass "
+    "--accept-marking-responsibility (CLI) or tick 'I accept marking "
+    "responsibility' (GUI), which attests that the EU AI Act Art. 50 duty "
+    "rests with you."
+)
+
+
+def _discard(output_path):
+    """Delete audio that may not be released. Returns True if it is gone.
+
+    Refusing while leaving the file behind would be theatre: the unmarked
+    audio would still be on disk under the name the user asked for, ready to
+    be shipped by anyone who ignores an exit code. Deleting it undoes this
+    run's own write — synthesis just created or overwrote this path, so there
+    is no pre-existing user data here to lose.
+    """
+    try:
+        os.unlink(output_path)
+        return True
+    except OSError as e:
+        logger.error(
+            "Could not delete unmarked audio %s: %s — this file is synthetic "
+            "and carries no EU AI Act Art. 50 marking. Delete it manually.",
+            output_path,
+            e,
+        )
+        return False
+
+
+def enforce_marking(result, output_path):
+    """Delete and refuse *output_path* if it may not be released. Fails closed.
+
+    Called at the end of every ``apply_provenance`` implementation — the base
+    one here and the two CrispASR overrides that verify rather than apply — so
+    no synthesis route can opt out of the check by having its own marking
+    logic.
+
+    Returns *result* unchanged when the output is releasable.
+
+    Raises:
+        ProvenanceError: if no machine-readable layer landed (Art. 50(2)) or a
+            cloning run produced no audible disclosure (Art. 50(4)).
+    """
+    if result.get("opted_out"):
+        return result
+
+    if not marking_applied(result):
+        detail = ""
+        if result.get("unsupported_format"):
+            ext = os.path.splitext(output_path or "")[1].lower() or "this container"
+            detail = (
+                f" {ext} has no declarative marker, so marking it needs "
+                "C2PA or the in-sample watermark, and neither is available."
+            )
+        _discard(output_path)
+        raise ProvenanceError(
+            f"Refusing to write unmarked synthetic audio to {output_path}. EU "
+            "AI Act Art. 50(2) requires machine-readable marking of synthetic "
+            f"audio and no layer could be applied.{detail} {_REMEDY}",
+            output_path,
+        )
+
+    if disclosure_missing(result):
+        _discard(output_path)
+        raise ProvenanceError(
+            f"Refusing to write an undisclosed cloned voice to {output_path}. "
+            "EU AI Act Art. 50(4) requires disclosure that deepfake content is "
+            "artificially generated, and the audible disclosure could not be "
+            f"produced. Machine-readable marking does not reach a listener. "
+            f"{_REMEDY}",
+            output_path,
+        )
+
+    return result
+
+
+def marking_available(output_path, is_cloning=False):
+    """Preflight: can this install mark *output_path*? Returns (ok, reason).
+
+    Advisory, and deliberately cheap — it inspects the extension and what
+    imports, never the file, and loads no models. :func:`enforce_marking` is
+    the authoritative check because only it can see what actually landed.
+
+    The point of asking early is that a refusal should cost nothing. Without
+    it, an install that cannot mark FLAC still loads the model, synthesizes,
+    and only then throws the result away — the user waits minutes to be told
+    something knowable in milliseconds.
+    """
+    ext = os.path.splitext(output_path or "")[1].lower()
+
+    if ext in _MARKABLE:
+        declarative = True
+    else:
+        declarative = False
+
+    if not declarative:
+        if not (_c2pa_installed() or _soundfile_installed()):
+            return False, (
+                f"No marking layer can be applied to {ext or 'this container'}: "
+                "it has no declarative marker, and neither C2PA nor the "
+                "in-sample watermark is installed."
+            )
+
+    # Art. 50(4) needs to concatenate audio. WAV goes through the stdlib;
+    # every other container needs a decoder.
+    if is_cloning and ext != ".wav" and not _soundfile_installed():
+        return False, (
+            f"Voice cloning to {ext or 'this container'} needs an audible "
+            "disclosure, and concatenating non-WAV audio requires soundfile, "
+            "which is not installed."
+        )
+
+    return True, ""
+
+
+def _c2pa_installed():
+    try:
+        from utils.c2pa_signing import is_available
+
+        return bool(is_available())
+    except ImportError:
+        return False
+
+
+def _soundfile_installed():
+    try:
+        import soundfile  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
 
 
 def apply_provenance(
@@ -73,12 +265,20 @@ def apply_provenance(
         locale: Language for the spoken disclosure.
 
     Returns:
-        dict with ``spoken``, ``watermark``, ``marker``, ``c2pa``,
-        ``opted_out`` and ``unsupported_format``.
+        dict with ``spoken``, ``spoken_required``, ``suppressed_spoken``,
+        ``watermark``, ``marker``, ``c2pa``, ``opted_out`` and
+        ``unsupported_format``.
+
+    Raises:
+        ProvenanceError: if the output cannot be marked or disclosed. The file
+            is deleted first — see :func:`enforce_marking`.
     """
     options = options or {}
     result = new_result()
 
+    # Nothing to mark and nothing to delete. Callers pass paths that a failed
+    # synthesis never created, and refusing over a file that does not exist
+    # would turn a backend error into a confusing compliance error.
     if not output_path or not os.path.isfile(output_path):
         return result
 
@@ -95,6 +295,8 @@ def apply_provenance(
     result["unsupported_format"] = ext not in _MARKABLE
 
     # 1. Spoken disclosure — cloning only, matching CrispASR's behaviour.
+    result["spoken_required"] = bool(is_cloning)
+    result["suppressed_spoken"] = bool(is_cloning and options.get("no_spoken_disclaimer"))
     if is_cloning and backend is not None and not options.get("no_spoken_disclaimer"):
         try:
             from utils.spoken_disclosure import prepend_spoken_disclosure
@@ -134,14 +336,9 @@ def apply_provenance(
         except ImportError:
             pass
 
-    if not marking_applied(result):
-        logger.warning(
-            "Could not mark %s as AI-generated. EU AI Act Art. 50(2) requires "
-            "machine-readable marking of synthetic audio.",
-            output_path,
-        )
-
-    return result
+    # Fails closed: deletes the file and raises rather than returning a result
+    # that says "unmarked" and trusting every caller to act on it.
+    return enforce_marking(result, output_path)
 
 
 def verify_marking(output_path):

@@ -206,7 +206,7 @@ class CrispasrTTSBackend(TTSBackend):
         has not taken responsibility, apply the dependency-free declarative
         marker, which is idempotent and leaves the samples untouched.
         """
-        from utils.provenance import new_result, verify_marking
+        from utils.provenance import enforce_marking, new_result, verify_marking
 
         if self.accept_marking_responsibility:
             # Report what is actually on the file — the binary may still have
@@ -220,8 +220,18 @@ class CrispasrTTSBackend(TTSBackend):
             )
 
         found = verify_marking(output_path)
+        # The binary speaks the disclosure only when it clones from reference
+        # audio, so report it on the same condition. `bool(self.voice)` was
+        # also true for a preset voice name, which made every stock-voice
+        # synthesis claim "Marked as AI-generated (spoken disclosure + ...)"
+        # over audio that carried no disclosure and needed none — Art. 50(4)
+        # is not engaged by a stock voice. It ignored the per-call `voice`
+        # argument as well. Mirrors CrispasrBackend.apply_provenance.
+        cloning = self.resolve_reference_audio(voice) is not None
         result = new_result(
-            spoken=bool(self.voice) and not self.no_spoken_disclaimer,
+            spoken=cloning and not self.no_spoken_disclaimer,
+            spoken_required=cloning,
+            suppressed_spoken=cloning and self.no_spoken_disclaimer,
             watermark=bool(found.get("watermark")),
             marker=bool(found.get("marker")),
             c2pa=bool(found.get("c2pa")),
@@ -257,7 +267,12 @@ class CrispasrTTSBackend(TTSBackend):
                 ),
             )
 
-        return result
+        # Fail closed on the binary's output too. The binary marking it itself
+        # is not a reason to trust it less carefully than the Python routes —
+        # a build without C2PA support or an engine that cannot watermark is
+        # exactly the case this catches, and the declarative floor above has
+        # already had its chance to satisfy it.
+        return enforce_marking(result, output_path)
 
     def list_voices(self):
         from config import TTS_BACKEND_MAP

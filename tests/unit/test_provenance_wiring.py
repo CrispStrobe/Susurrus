@@ -436,17 +436,28 @@ class TestProvenanceLayering(unittest.TestCase):
         self.assertFalse(result["unsupported_format"])
         self.assertIsNotNone(read_ai_marker(mp3))
 
-    def test_unmarkable_container_reports_rather_than_claims(self):
-        """No marker for this container must surface, not pass as success."""
+    def test_unmarkable_container_is_refused_and_deleted(self):
+        """An unmarkable container fails closed rather than surfacing a warning.
+
+        Previously this asserted that the result merely *reported* the gap.
+        Reporting is not enough: the unmarked file stayed on disk under the
+        name the user asked for. Watermarking and C2PA are mocked off so the
+        outcome does not depend on which optional packages are present.
+        """
         import os
         import shutil
+        from unittest import mock
+
+        from utils.provenance import ProvenanceError
 
         target = os.path.join(self._dir.name, "out.opus")
         shutil.copyfile(self.path, target)
 
-        result = self.Dummy().apply_provenance(target)
-        self.assertTrue(result["unsupported_format"])
-        self.assertFalse(result["marker"])
+        with mock.patch("utils.audio_watermark.embed_watermark", return_value=False):
+            with self.assertRaises(ProvenanceError):
+                self.Dummy(no_c2pa=True).apply_provenance(target)
+
+        self.assertFalse(os.path.exists(target), "unmarked audio must not survive")
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ import traceback
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from utils.i18n import t
+from utils.provenance import ProvenanceError
 
 #: Display names for the provenance layers, in the order they are applied.
 _LAYER_NAMES = (
@@ -27,6 +28,18 @@ def _describe_marking(marking):
             return t("warn.marking_unsupported_format")
         return t("warn.marking_failed")
     return t("status.marked").format(layers=" + ".join(layers))
+
+
+def _describe_disclosure_shortfall(marking):
+    """Return a warning if a cloning run gave no audible disclosure, else None.
+
+    Art. 50(2) marking and the Art. 50(4) audible disclosure are separate
+    obligations that fail independently. Reporting only the first let a cloned
+    voice with no disclosure show a green "Marked as AI-generated".
+    """
+    from utils.provenance import disclosure_missing
+
+    return t("warn.disclosure_missing") if disclosure_missing(marking) else None
 
 
 #: Provenance opt-outs that require the responsibility attestation, mirroring
@@ -78,6 +91,21 @@ class TTSThread(QThread):
             if refusal:
                 self.error_signal.emit(refusal)
                 return
+
+            # Ask whether this install can mark the chosen container before
+            # loading a model, so an unmarkable request costs a moment rather
+            # than a full synthesis that is then thrown away.
+            if not self.args.get("accept_marking_responsibility"):
+                from utils.provenance import marking_available
+
+                ok, reason = marking_available(
+                    output_path,
+                    is_cloning=bool(self.args.get("reference_audio")),
+                )
+                if not ok:
+                    logging.warning("TTS refused: %s", reason)
+                    self.error_signal.emit(f"{reason}\n\n{t('error.marking_required')}")
+                    return
 
             self.progress_signal.emit(t("status.tts_initializing").format(backend=backend_name))
 
@@ -148,6 +176,10 @@ class TTSThread(QThread):
             # in German — it was previously dropped, defaulting every
             # disclosure to the process locale.
             marking = backend.apply_provenance(result, model=model_id, voice=voice, locale=language)
+            shortfall = _describe_disclosure_shortfall(marking)
+            if shortfall:
+                logging.warning(shortfall)
+                self.progress_signal.emit(shortfall)
             self.progress_signal.emit(_describe_marking(marking))
 
             backend.cleanup()
@@ -160,6 +192,12 @@ class TTSThread(QThread):
 
         except PermissionError as e:
             # Voice-cloning consent gate — a refusal, not a crash.
+            logging.warning(f"TTS refused: {e}")
+            self.error_signal.emit(str(e))
+        except ProvenanceError as e:
+            # Art. 50 gate. The unmarked audio is already deleted, and
+            # finished_signal must not fire: emitting a path here would hand
+            # the GUI an output file to offer for playback and saving.
             logging.warning(f"TTS refused: {e}")
             self.error_signal.emit(str(e))
         except Exception as e:

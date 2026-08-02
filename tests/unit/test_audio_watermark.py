@@ -208,10 +208,23 @@ class TestProvenanceLayerOrdering(unittest.TestCase):
             self.assertTrue(Dummy().apply_provenance(self.path)["watermark"])
 
     def test_result_exposes_all_four_layers(self):
+        # spoken_required / suppressed_spoken carry the Art. 50(4) duty
+        # separately from whether the disclosure landed, so a cloning run that
+        # failed to disclose is distinguishable from a stock-voice run that
+        # never owed one. See utils.provenance.disclosure_missing.
         result = Dummy().apply_provenance(self.path)
         self.assertEqual(
             set(result),
-            {"spoken", "watermark", "marker", "c2pa", "opted_out", "unsupported_format"},
+            {
+                "spoken",
+                "spoken_required",
+                "suppressed_spoken",
+                "watermark",
+                "marker",
+                "c2pa",
+                "opted_out",
+                "unsupported_format",
+            },
         )
 
 

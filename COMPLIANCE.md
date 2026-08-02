@@ -70,6 +70,35 @@ be optional: when AudioSeal is absent, the spread-spectrum comb is embedded
 instead, needing nothing beyond numpy. A default install therefore ships two
 marks in the samples and one in the metadata, not metadata alone.
 
+### Marking fails closed
+
+**If Susurrus cannot mark the output, it does not produce the output.** When no
+machine-readable layer lands, or a cloning run cannot deliver its audible
+disclosure, the file is **deleted** and the run exits 2 with a refusal naming
+what was missing and how to satisfy it.
+
+Deleting rather than warning is the point. Earlier versions logged a warning
+and left the audio on disk under the name you asked for, which is not a
+control — the unmarked file still exists and can still be shipped by anyone
+who does not read stderr. An obligation that the software announces but does
+not enforce is one the software has not implemented.
+
+Two consequences worth being clear about:
+
+- **A minimal install still works for WAV and MP3.** The declarative marker is
+  pure standard library, so it always succeeds for those two containers. The
+  gate bites on exotic containers (FLAC, Opus, M4A) with no C2PA and no
+  soundfile, and on cloning to a non-WAV container without soundfile.
+- **The check runs twice.** A cheap preflight refuses before any model loads,
+  so an unmarkable request costs milliseconds rather than a full synthesis
+  that is then thrown away. The authoritative check runs after synthesis,
+  because only the finished file can say what actually landed.
+
+The single way past the gate is `--accept-marking-responsibility`, which is
+the same attestation described under "Opting out" below — one rule, not a
+second switch. Either the software marked the output, or a named human said
+they are taking the Art. 50 duty on.
+
 The declarative marker uses each container's own metadata format: any ordinary
 parser reads it, parsers that don't care skip it, and the audio samples are
 untouched by that layer.
@@ -79,18 +108,28 @@ step that quietly downmixed stereo to mono, or requantised 24-bit to 16-bit,
 would be damaging the audio it is supposed to be annotating.
 
 **Containers other than WAV and MP3** (FLAC, M4A, Opus …) get C2PA if the
-library is installed, but have no dependency-free fallback. Susurrus says so
-rather than reporting success: the CLI prints a warning naming the container,
-and the GUI shows the same. Prefer `.wav` or `.mp3` if marking matters to you.
+library is installed, and the in-sample watermark wherever soundfile can
+round-trip the container, but they have no *declarative* fallback. If neither
+is available, synthesis to those containers is refused rather than performed
+unmarked. Prefer `.wav` or `.mp3` if marking matters to you — those two never
+depend on an optional package.
+
+**Server mode is not covered by any of this.** `--mode server` hands the
+socket to the CrispASR binary; Susurrus never sees a response body, so it can
+neither verify what the binary marked nor apply the declarative floor it
+applies on every other route. The CLI says so at startup. If you expose a TTS
+endpoint you are the provider of everything it emits — verify a sample with
+`susurrus --verify-c2pa FILE` before relying on it.
 
 **Marking is verified, not assumed.** On the CrispASR routes the binary
 applies the layers itself, and its support depends on build options, engine
 capability and version. Susurrus reads the finished file back — declarative
 marker, C2PA manifest, and AudioSeal detection where available — and reports
 what is actually there. If nothing is detectable it applies the declarative
-marker as a floor. Earlier versions reported marking straight from the command
-line flags, which meant a build without C2PA support still produced a
-confident "Marked as AI-generated" over unmarked audio.
+marker as a floor, and if even that fails the output is deleted and the run
+refused. Earlier versions reported marking straight from the command line
+flags, which meant a build without C2PA support still produced a confident
+"Marked as AI-generated" over unmarked audio.
 
 C2PA signing needs an X.509 credential. Pass `--c2pa-cert` / `--c2pa-key` to
 use your own; otherwise Susurrus generates a local CA + end-entity chain once
@@ -101,7 +140,8 @@ certificate. Signing is offline by default; set `SUSURRUS_C2PA_TSA` to an
 RFC 3161 timestamp authority URL to add a trusted timestamp.
 
 Verify marking on a file — this reports **both** layers and exits 0 if the
-file is marked by either:
+file is marked by either. It dispatches on the container, so an MP3 marked
+with ID3 verifies as readily as a WAV marked with a RIFF chunk:
 
 ```bash
 susurrus --verify-c2pa output.wav
@@ -153,6 +193,13 @@ pass one without it. This matches what the CrispASR binary already enforced,
 and replaces an inconsistency where the same flag meant different things
 depending on which backend you chose.
 
+`--accept-marking-responsibility` is also the only thing that disarms the
+fail-closed gate above. That is deliberate: an install that cannot mark and an
+operator who has chosen not to mark are the same situation as far as the
+output is concerned, and both should require the same explicit statement.
+There is no separate "allow unmarked output" switch, and no configuration file
+setting that turns the gate off quietly.
+
 Be precise about what the attestation does. Art. 50(2) binds the *provider* of
 the system that generates the content, and no command-line flag can move a
 statutory obligation from one party to another. What the flag records is that
@@ -188,6 +235,21 @@ phrase with the same model and concatenate it (`utils/spoken_disclosure.py`).
 The phrase is localized, so a German user gets a German disclosure. Suppress it
 with `--no-spoken-disclaimer` (which requires the attestation above);
 machine-readable marking still applies.
+
+The disclosure is prepended in whatever container the output uses, not only
+WAV. That matters because the Python-native backend that clones (chatterbox)
+picks its encoder from the output extension, and the GUI's save dialog offers
+`.mp3` — so restricting the disclosure to WAV would have left the one route
+where Art. 50(4) actually applies producing undisclosed deepfakes. Non-WAV
+concatenation needs soundfile, which ships in the `tts` extra.
+
+Art. 50(2) and Art. 50(4) are tracked **separately**, because they fail
+separately. If a run clones a voice and the audible disclosure does not land,
+that is a refusal in its own right — the output is deleted even when the
+machine-readable marking succeeded, because a listener hears no metadata and
+no manifest. Reporting a marking success that is true of only one half was how
+this used to behave, and it let an undisclosed deepfake through under a green
+status line.
 
 The disclosure is spoken in the backend's **own** voice, never in the cloned
 one. While it is being synthesized the cloning reference is withheld from the
@@ -235,14 +297,23 @@ rather than an event — it would assert that people were identified even when
 the backend failed to start or the audio was unreadable. An audit trail that
 overstates what happened is worse than a sparse one.
 
-Entries are SHA-256 hash-chained, so modification, deletion, reordering and
-truncation are all detectable:
+Entries are SHA-256 hash-chained, so modification, deletion from the middle,
+and reordering are all detectable:
 
 ```bash
 susurrus --audit-log        # print the log and verify the chain; exit 1 if broken
 ```
 
 Also available from the GUI under Tools → Biometric Audit Log.
+
+**What the chain does not catch: truncation of the tail.** Deleting the most
+recent *n* entries leaves a shorter chain that still verifies, because every
+remaining entry's `prev_hash` still matches its predecessor. No hash chain can
+detect this on its own — it needs an external anchor (a counter-signed head, a
+separate copy of the last hash, or append-only storage that refuses the
+deletion). Deletion from the *middle* and modification of any entry are
+detected, and so is reordering. Do not read `--audit-log` reporting a valid
+chain as proof that nothing has been removed from the end of it.
 
 The log deliberately never contains the voice embedding or any audio — a
 record-keeping mechanism must not become a second copy of the special-category
@@ -321,6 +392,8 @@ for exactly this reason.
 
 ## What Susurrus does not do for you
 
+- Mark output you produced with `--accept-marking-responsibility`. That flag
+  is the point at which the software stops and you start.
 - Register anything with any authority.
 - Perform a conformity assessment or produce technical documentation
   under Art. 11 / Annex IV.

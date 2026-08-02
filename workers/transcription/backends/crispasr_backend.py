@@ -345,7 +345,7 @@ class CrispasrBackend(TranscriptionBackend):
         declarative marker when nothing verifiable is present. Mirrors
         ``CrispasrTTSBackend.apply_provenance``.
         """
-        from utils.provenance import new_result, verify_marking
+        from utils.provenance import enforce_marking, new_result, verify_marking
 
         found = verify_marking(output_path)
         layers = {
@@ -360,9 +360,12 @@ class CrispasrBackend(TranscriptionBackend):
             # be its own false claim.
             return new_result(opted_out=True, **layers)
 
+        cloning = self.resolve_reference_audio(voice) is not None
+        suppressed = bool(self.kwargs.get("no_spoken_disclaimer", False))
         result = new_result(
-            spoken=self.resolve_reference_audio(voice) is not None
-            and not self.kwargs.get("no_spoken_disclaimer", False),
+            spoken=cloning and not suppressed,
+            spoken_required=cloning,
+            suppressed_spoken=cloning and suppressed,
             **layers,
         )
 
@@ -387,7 +390,8 @@ class CrispasrBackend(TranscriptionBackend):
                 output_path,
             )
 
-        return result
+        # Fail closed, as every other synthesis route does.
+        return enforce_marking(result, output_path)
 
     def _build_base_cmd(self):
         """Build the base command with the crispasr binary and model."""

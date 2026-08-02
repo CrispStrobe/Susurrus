@@ -42,6 +42,8 @@ import logging
 import os
 import sys
 
+from utils.provenance import ProvenanceError
+
 sys.path.insert(0, os.path.dirname(__file__))
 
 
@@ -554,15 +556,21 @@ def main():
     # It reports *both* marking layers: a file carrying only the declarative
     # marker is still marked as AI-generated, and answering "is this marked?"
     # with exit 1 just because c2pa-audio is missing would be misleading.
+    #
+    # Dispatch on the container, as the marking side does. The WAV-only
+    # readers cannot see an ID3 marker, so verifying a correctly marked MP3
+    # reported "not AI-generated" and exited 1 — Susurrus contradicting its
+    # own output. edge-tts synthesizes MP3 natively and the GUI save dialog
+    # offers .mp3, so this was the common case, not an edge one.
     if getattr(args, "verify_c2pa", None):
         try:
             import json
 
-            from utils.ai_marking import read_wav_ai_marker
-            from utils.c2pa_signing import verify_wav_file
+            from utils.ai_marking import read_ai_marker
+            from utils.c2pa_signing import verify_audio_file
 
-            c2pa_result = verify_wav_file(args.verify_c2pa)
-            marker = read_wav_ai_marker(args.verify_c2pa)
+            c2pa_result = verify_audio_file(args.verify_c2pa)
+            marker = read_ai_marker(args.verify_c2pa)
 
             report = {
                 "c2pa": c2pa_result if c2pa_result else {"available": c2pa_result is not None},
@@ -971,17 +979,24 @@ def _run_detect_watermark(args):
 
     import json
 
-    from utils.ai_marking import read_wav_ai_marker
+    # read_ai_marker dispatches on the container; the WAV-only reader silently
+    # missed the ID3 marker that MP3 output actually carries.
+    from utils.ai_marking import read_ai_marker
     from utils.audio_watermark import detect_watermark
 
     neural = detect_watermark(target)
-    marker = read_wav_ai_marker(target)
+    marker = read_ai_marker(target)
 
     # Two independent checks. Name them separately: the declarative marker is
-    # always readable, the neural detector needs audioseal, and a report that
-    # collapses them makes "could not check" look like "clean".
+    # always readable, the in-sample detector may be unavailable, and a report
+    # that collapses them makes "could not check" look like "clean".
+    #
+    # Name the detector that actually ran, too. detect_watermark() falls back
+    # to the spread-spectrum tier when AudioSeal is absent, so labelling every
+    # result "audioseal" misreported which scheme produced the verdict — and
+    # the two differ in what they are robust against.
     report = {
-        "neural_detector": "audioseal" if neural is not None else "unavailable",
+        "neural_detector": (neural.get("backend", "unknown") if neural else "unavailable"),
         "neural_watermark": neural,
         "ai_marker": marker or None,
         "detected_as_ai_generated": bool((neural and neural["watermarked"]) or marker),
@@ -990,9 +1005,11 @@ def _run_detect_watermark(args):
 
     if neural is None and marker is None:
         print(
-            "Inconclusive: no neural detector available (install the crispasr "
-            "binary or 'pip install audioseal') and no declarative marker "
-            "found. This is 'could not check', not 'not AI-generated'.",
+            "Inconclusive: no in-sample detector available (install the "
+            "crispasr binary, or 'pip install audioseal', or the numpy + "
+            "soundfile stack for the spread-spectrum detector) and no "
+            "declarative marker found. This is 'could not check', not "
+            "'not AI-generated'.",
             file=sys.stderr,
         )
         return 2
@@ -1035,8 +1052,36 @@ def _require_marking_attestation(args):
     sys.exit(2)
 
 
+def _report_disclosure_shortfall(marking):
+    """Warn when a cloning run owed an audible disclosure and did not give one.
+
+    Art. 50(4) is a duty to disclose to whoever hears the audio. Machine-
+    readable marking does not reach a listener, so it cannot stand in for it.
+    """
+    from utils.provenance import disclosure_missing
+
+    if not disclosure_missing(marking):
+        return
+
+    print(
+        "WARNING: this audio clones a voice but carries no audible "
+        "disclosure. EU AI Act Art. 50(4) requires disclosure that deepfake "
+        "content is artificially generated, and the machine-readable marking "
+        "below does not discharge it for a listener.",
+        file=sys.stderr,
+    )
+
+
 def _report_marking(marking):
-    """Print the EU AI Act Art. 50(2) marking status for synthesized audio."""
+    """Print the EU AI Act Art. 50 provenance status for synthesized audio.
+
+    Reports the two obligations separately. Art. 50(2) marking and the
+    Art. 50(4) audible disclosure can succeed and fail independently, and
+    folding them into one verdict meant a cloned voice that announced nothing
+    to a listener still printed a confident "Marked as AI-generated".
+    """
+    _report_disclosure_shortfall(marking)
+
     if marking.get("opted_out"):
         layers = [
             label
@@ -1067,17 +1112,42 @@ def _report_marking(marking):
     if layers:
         print(f"Marked as AI-generated ({' + '.join(layers)}).")
     else:
-        hint = ""
-        if marking.get("unsupported_format"):
-            hint = (
-                " This output container has no declarative marker; use .wav "
-                "or .mp3 for marking that needs no optional dependency."
-            )
+        # Reached only when marking is skipped rather than failed: a genuine
+        # failure raises ProvenanceError and deletes the file before getting
+        # here. Kept because ``opted_out`` returns above and a caller that
+        # constructs a bare result should still see something honest.
         print(
-            "WARNING: could not mark this audio as AI-generated. EU AI Act "
-            f"Art. 50(2) requires machine-readable marking of synthetic audio.{hint}",
+            "WARNING: this audio carries no AI-generation marking. EU AI Act "
+            "Art. 50(2) requires machine-readable marking of synthetic audio.",
             file=sys.stderr,
         )
+
+
+def _preflight_marking(args, output_path, is_cloning):
+    """Refuse before synthesis when this install cannot mark the output.
+
+    ``enforce_marking`` is the check that counts, but it can only run after
+    the audio exists — by which point the user has waited through a model load
+    and a synthesis for output that is about to be deleted. This asks the
+    knowable part up front, in milliseconds, so a refusal costs nothing.
+    """
+    if getattr(args, "accept_marking_responsibility", False):
+        return
+
+    from utils.provenance import marking_available
+
+    ok, reason = marking_available(output_path, is_cloning=is_cloning)
+    if ok:
+        return
+
+    print(f"Refused: {reason}", file=sys.stderr)
+    print(
+        "Susurrus does not emit unmarked synthetic audio. Pass "
+        "--accept-marking-responsibility to take the EU AI Act Art. 50 "
+        "obligation on yourself, or use a .wav / .mp3 output path.",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 
 
 def _run_tts(args):
@@ -1092,6 +1162,12 @@ def _run_tts(args):
 
     _require_marking_attestation(args)
 
+    # A path-like --voice is reference audio, which engages Art. 50(4) and so
+    # needs the disclosure path to be available too.
+    _preflight_marking(
+        args, output_path, is_cloning=bool(args.voice and os.path.isfile(args.voice))
+    )
+
     # Route to CrispASR TTS or Python TTS backend
     if tts_backend.startswith("crispasr"):
         model = args.model or "auto"
@@ -1104,6 +1180,10 @@ def _run_tts(args):
             print(f"Audio saved to: {result}")
         except PermissionError as e:
             # Voice-cloning consent gate — a refusal, not a crash.
+            print(f"Refused: {e}", file=sys.stderr)
+            sys.exit(2)
+        except ProvenanceError as e:
+            # Art. 50 gate — the unmarked output has already been deleted.
             print(f"Refused: {e}", file=sys.stderr)
             sys.exit(2)
         finally:
@@ -1139,6 +1219,10 @@ def _run_tts(args):
             print(f"Audio saved to: {result}")
         except PermissionError as e:
             # Voice-cloning consent gate — a refusal, not a crash.
+            print(f"Refused: {e}", file=sys.stderr)
+            sys.exit(2)
+        except ProvenanceError as e:
+            # Art. 50 gate — the unmarked output has already been deleted.
             print(f"Refused: {e}", file=sys.stderr)
             sys.exit(2)
         finally:
@@ -1224,6 +1308,31 @@ def _run_stream(args):
         backend.cleanup()
 
 
+def _warn_server_provenance(host, port):
+    """Warn that synthetic audio served over HTTP is not verified by Susurrus.
+
+    Every other synthesis route was moved off "trust the binary's flags" and
+    onto reading the finished file back (see COMPLIANCE.md). Server mode is
+    the one route where that is not possible: the binary owns the socket, and
+    Susurrus never sees a response body, so it can neither verify marking nor
+    apply the declarative floor it applies everywhere else.
+
+    Saying so at startup is the whole of what this process can honestly do.
+    An operator exposing a TTS endpoint is the provider of everything it
+    emits, and needs to know the marking is the binary's alone.
+    """
+    logging.warning("Server mode: AI-content marking is not verified by Susurrus.")
+    print(
+        f"NOTE: {host}:{port} is served by the CrispASR binary directly. Any "
+        "synthetic audio it returns is marked by that binary alone — Susurrus "
+        "is not in the response path and cannot verify EU AI Act Art. 50(2) "
+        "marking or apply its declarative fallback. If the endpoint does TTS, "
+        "verify a sample with 'susurrus --verify-c2pa FILE' before relying on "
+        "it, and see COMPLIANCE.md.",
+        file=sys.stderr,
+    )
+
+
 def _run_server(args):
     """Run CrispASR server mode."""
     backend_name = args.backend
@@ -1243,6 +1352,7 @@ def _run_server(args):
     try:
         proc = backend.start_server(host=host, port=port)
         print(f"CrispASR server started on {host}:{port}")
+        _warn_server_provenance(host, port)
         proc.wait()
     except KeyboardInterrupt:
         print("\nServer stopped.")
