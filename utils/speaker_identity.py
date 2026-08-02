@@ -54,28 +54,26 @@ BACKEND_SPEAKER_IDENTITY = {
     # Thorsten-Voice narrators. Named individuals who published recordings.
     "piper": "real_person",
     "crispasr:piper": "real_person",
-    # SpeechT5 conditions on CMU ARCTIC x-vectors: bdl, slt, jmk, awb, rms,
-    # clb, ksp — seven identifiable recorded people, pseudonymous in exactly
-    # the way VCTK's p225 is.
+    # The *Python-native* SpeechT5 backend loads Matthijs/cmu-arctic-xvectors
+    # and defaults to speaker_idx 7306 — a CMU ARCTIC x-vector baked in, so the
+    # voice you hear without doing anything is one of bdl, slt, jmk, awb, rms,
+    # clb, ksp: identifiable recorded people, pseudonymous exactly as VCTK's
+    # p225 is. This verdict does NOT port to crispasr:speecht5, which takes the
+    # x-vector from the operator — see the unknowns below.
     "speecht5": "real_person",
-    "crispasr:speecht5": "real_person",
-    # FastPitch German is trained on HUI-Audio-Corpus-German, whose narrators
-    # are named (Bernd, Friedrich, Eva, Karlsson, Sonja). Eva and Karlsson are
-    # the same donors as the Piper voices above — one corpus, two routes.
-    "crispasr:fastpitch": "real_person",
-    # Kartoffel-Orpheus "natural" is the provider's own word: fine-tuned on
-    # natural human speech recordings, 19 speakers extracted from permissive
-    # podcasts, lectures and OER. Real people who spoke in public.
+    # Kartoffel-Orpheus "natural" is the provider's own word: fine-tuned
+    # "primarily on natural human speech recordings" — permissive podcasts,
+    # lectures, OER — with its 19 speakers extracted from those recordings.
+    # Real people who spoke in public.
     "crispasr:kartoffel-orpheus-de-natural": "real_person",
     # -- designed voices ---------------------------------------------------
-    # Kokoro's voices are blended rather than any one person.
+    # hexgrad/Kokoro-82M's voicepacks are style vectors, documented upstream as
+    # designed/blended rather than any one person. The German HUI fine-tune is
+    # the exception and is handled by MODEL_RULES below, not here.
     "kokoro-onnx": "synthetic",
     "crispasr:kokoro": "synthetic",
     "crispasr:bark": "synthetic",
     "crispasr:bark-tts": "synthetic",
-    # The provider ships this as the synthetic counterpart to the natural
-    # variant above and says so in the model name.
-    "crispasr:kartoffel-orpheus-de-synthetic": "synthetic",
     # -- checked, genuinely undocumented -----------------------------------
     # Recorded so the same dead ends are not re-searched. Each of these was
     # looked for and not found; none is a shrug.
@@ -94,6 +92,22 @@ BACKEND_SPEAKER_IDENTITY = {
     # No training-data documentation found at all.
     "crispasr:bananamind-tts": "unknown",
     "crispasr:bananamind-tts-de": "unknown",
+    # Explicitly NOT researched. The name says "synthetic" and that is exactly
+    # why it is not classified from it: this project's rule is provenance, not
+    # filename, and guessing "synthetic" is the error that silently *removes* a
+    # disclosure. CrispASR holds the same checkpoint at unknown.
+    "crispasr:kartoffel-orpheus-de-synthetic": "unknown",
+    # CrispASR ships fastpitch-en (NVIDIA, English), not the German NeMo model
+    # whose HUI narrators are named. Different weights, so that verdict does
+    # not port. NVIDIA's English FastPitch is conventionally LJSpeech — one
+    # identifiable narrator — which is a strong hypothesis, deliberately not
+    # asserted without reading the card.
+    "crispasr:fastpitch": "unknown",
+    # microsoft/speecht5_tts takes its 512-d speaker x-vector from the operator
+    # via --voice, so the identity is per-invocation and no backend-level
+    # verdict can be right. Distinct from the Python-native speecht5 above,
+    # which bakes in a CMU ARCTIC default.
+    "crispasr:speecht5": "unknown",
     # -- cloning backends ---------------------------------------------------
     # Identity comes from the reference audio, and is_cloning already forces
     # the disclosure for that. Listed so they read as considered, not missed.
@@ -114,10 +128,52 @@ BACKEND_SPEAKER_IDENTITY = {
 #: voice and prepending a disclosure to the rest.
 VOICE_SPEAKER_IDENTITY = {}
 
+#: ``(backend, model-name substring) -> identity``, checked before the
+#: backend-level table.
+#:
+#: One CrispASR backend serves many checkpoints, and they do not share an
+#: answer: ``crispasr:kokoro`` runs both hexgrad's English voicepacks and a
+#: German fine-tune whose backbone is a corpus of named narrators. A
+#: backend-level verdict is simply not expressible for those.
+#:
+#: Matching on a file name is against this project's own "classify by
+#: provenance, not by filename" rule, and is used anyway because the
+#: alternative is no answer at all — and because the failure is *safe*: a
+#: renamed checkpoint matches nothing, falls through to the backend table or to
+#: unknown, and warns. A rename can turn a known answer back into a question;
+#: it cannot turn ``real_person`` into ``synthetic``.
+MODEL_RULES = (
+    # CONFLICT, held at unknown rather than inheriting either neighbour.
+    # CrispTTS classifies kokoro synthetic, which is right for the English
+    # voicepacks. The German backbone is kokoro-de-hui-base, trained on
+    # HUI-Audio-Corpus-German — the same corpus, with the same named narrators
+    # (Bernd, Hokuspokus, Friedrich, Eva, Karlsson, Sonja), that CrispTTS
+    # itself cites when marking the NeMo FastPitch German model real_person.
+    # Whether a style vector derived from that corpus is recognisably one of
+    # them is a real question, and it is not answered here.
+    ("crispasr:kokoro", "hui", "unknown"),
+    ("kokoro-onnx", "hui", "unknown"),
+    # One backend, several checkpoints, different answers.
+    ("crispasr:orpheus", "kartoffel-orpheus-de-natural", "real_person"),
+)
+
+
+def identity_for_model(backend, model):
+    """Return a model-specific verdict for *backend*, or None if no rule hits."""
+    if not backend or not model:
+        return None
+    key = str(backend).strip().lower()
+    haystack = str(model).strip().lower()
+    for rule_backend, needle, identity in MODEL_RULES:
+        if key == rule_backend and needle in haystack:
+            return identity
+    return None
+
+
 _warned = set()
 
 
-def resolve_speaker_identity(backend=None, override=None, voice=None):
+def resolve_speaker_identity(backend=None, override=None, voice=None, model=None):
     """Resolve whose voice a preset produces.
 
     Precedence: an explicit override, then a per-voice entry, then the
@@ -126,8 +182,9 @@ def resolve_speaker_identity(backend=None, override=None, voice=None):
     Args:
         backend: TTS backend name, e.g. ``"piper"`` or ``"crispasr:kokoro"``.
         override: Operator's ``--speaker-identity`` value, if any.
-        voice: Voice id, for future per-voice entries. Accepted now so callers
-            need not change when one is added.
+        voice: Voice id, for backends whose voices differ from each other.
+        model: Loaded checkpoint name or path. Only the tail is inspected, and
+            only to distinguish checkpoints that a single backend serves.
 
     Returns:
         One of :data:`SPEAKER_IDENTITY_VALUES`.
@@ -149,6 +206,13 @@ def resolve_speaker_identity(backend=None, override=None, voice=None):
         per_voice = VOICE_SPEAKER_IDENTITY.get((key, str(voice).strip().lower()))
         if per_voice in SPEAKER_IDENTITY_VALUES:
             return per_voice
+
+    # Before the backend table: a checkpoint-specific answer is more precise
+    # than a blanket one, and for backends that serve several models it is the
+    # only answer that can be right.
+    per_model = identity_for_model(key, model)
+    if per_model in SPEAKER_IDENTITY_VALUES:
+        return per_model
 
     if not key:
         return "unknown"

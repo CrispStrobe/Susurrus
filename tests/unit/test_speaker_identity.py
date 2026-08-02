@@ -89,6 +89,110 @@ class TestClassificationTable(unittest.TestCase):
         self.assertEqual(warn.call_count, 1)
 
 
+class TestModelAwareVerdicts(unittest.TestCase):
+    """One backend can serve checkpoints with different answers.
+
+    Every case here is a classification this project got wrong first time by
+    reasoning from a name instead of from a model card, and that CrispASR's
+    researched table corrected.
+    """
+
+    def setUp(self):
+        si._reset_warnings_for_tests()
+
+    def test_kokoro_english_is_synthetic_but_the_hui_finetune_is_not(self):
+        """CONFLICT held at unknown rather than inheriting either neighbour.
+
+        The German backbone is trained on HUI-Audio-Corpus-German, whose
+        narrators are the same named people cited when marking FastPitch German
+        real_person. Whether a style vector derived from it is recognisably one
+        of them is unanswered, so it is not answered.
+        """
+        self.assertEqual(
+            si.resolve_speaker_identity(backend="crispasr:kokoro", model="kokoro-82m-q8_0.gguf"),
+            "synthetic",
+        )
+        self.assertEqual(
+            si.resolve_speaker_identity(
+                backend="crispasr:kokoro", model="kokoro-de-hui-base-q8_0.gguf"
+            ),
+            "unknown",
+        )
+
+    def test_orpheus_checkpoints_differ(self):
+        self.assertEqual(
+            si.resolve_speaker_identity(
+                backend="crispasr:orpheus", model="kartoffel-orpheus-de-natural-q8_0.gguf"
+            ),
+            "real_person",
+        )
+        self.assertEqual(
+            si.resolve_speaker_identity(backend="crispasr:orpheus", model="orpheus-3b-0.1-ft.gguf"),
+            "unknown",
+        )
+
+    def test_a_renamed_checkpoint_fails_safe(self):
+        """Filename matching is allowed only because its failure is safe.
+
+        A rename must turn a known answer back into a question, never turn
+        real_person into synthetic.
+        """
+        self.assertEqual(
+            si.resolve_speaker_identity(backend="crispasr:orpheus", model="my-copy.gguf"),
+            "unknown",
+        )
+
+    def test_synthetic_in_a_name_is_not_evidence(self):
+        """The costly error: a name-derived 'synthetic' removes a disclosure."""
+        self.assertEqual(
+            si.resolve_speaker_identity(backend="crispasr:kartoffel-orpheus-de-synthetic"),
+            "unknown",
+        )
+
+    def test_a_sibling_projects_verdict_does_not_port_across_weights(self):
+        """crispasr:fastpitch is NVIDIA English, not the German NeMo model."""
+        self.assertEqual(si.resolve_speaker_identity(backend="crispasr:fastpitch"), "unknown")
+
+    def test_operator_supplied_speaker_cannot_have_a_backend_verdict(self):
+        """crispasr:speecht5 takes its x-vector from --voice, per invocation.
+
+        The Python-native backend is different: it bakes in CMU ARCTIC
+        speaker_idx 7306, so there the answer is knowable.
+        """
+        self.assertEqual(si.resolve_speaker_identity(backend="crispasr:speecht5"), "unknown")
+        self.assertEqual(si.resolve_speaker_identity(backend="speecht5"), "real_person")
+
+    def test_model_rules_are_wellformed(self):
+        for backend, needle, identity in si.MODEL_RULES:
+            self.assertEqual(backend, backend.lower())
+            self.assertEqual(needle, needle.lower())
+            self.assertIn(identity, si.SPEAKER_IDENTITY_VALUES)
+
+    def test_model_reaches_the_pipeline(self):
+        import os
+        import tempfile
+        import wave
+
+        from utils.provenance import apply_provenance
+
+        tmpdir = tempfile.mkdtemp()
+        path = os.path.join(tmpdir, "o.wav")
+        with wave.open(path, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(24000)
+            w.writeframes(b"\x00\x01" * 12000)
+
+        result = apply_provenance(
+            path, model="kokoro-de-hui-base-q8_0.gguf", speaker_backend="crispasr:kokoro"
+        )
+        self.assertEqual(
+            result["speaker_identity"],
+            "unknown",
+            "the loaded checkpoint did not reach the verdict",
+        )
+
+
 class TestPerVoiceOverrides(unittest.TestCase):
     """A backend-level answer is wrong for a model with mixed voices.
 

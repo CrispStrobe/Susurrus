@@ -322,6 +322,7 @@ def apply_provenance(
         backend=speaker_backend or getattr(backend, "backend_name", None),
         override=options.get("speaker_identity"),
         voice=options.get("voice"),
+        model=model,
     )
     needs_spoken = requires_spoken_disclosure(bool(is_cloning), identity, backend=speaker_backend)
 

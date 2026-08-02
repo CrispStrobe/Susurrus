@@ -154,6 +154,12 @@ so it is back in the response path:
 - Protocol upgrades (WebSocket) are refused with a 501 naming the reason. They
   cannot be forwarded through this proxy, and half-forwarding one produces a
   connection that dies later for reasons nobody can trace.
+- **Streaming synthesis** (`"stream": true` on `/v1/audio/speech`, which pushes
+  audio per sentence) is refused with a 502. Marking needs the finished
+  samples, so the proxy would have to buffer the whole stream — silently
+  turning a streaming endpoint into a non-streaming one, for reasons invisible
+  from the client. Set `stream=false`, or take the attestation and bypass the
+  proxy.
 
 If the proxy cannot be established — the port is taken, the backend does not
 come up — the run is **refused** rather than falling back to serving directly.
@@ -369,6 +375,42 @@ the backend-level answer. None of the backends Susurrus currently exposes is
 mixed in that way, so that table is empty; it exists because the alternative
 for a mixed model is classifying it by its riskiest voice and prepending a
 disclosure to the rest.
+
+**The verdict can depend on the checkpoint, not just the backend.** One CrispASR
+backend serves several models with different answers: `crispasr:orpheus` runs
+Canopy's base model (undocumented speakers, `unknown`) *and* Kartoffel's German
+fine-tune (`real_person`), and `crispasr:kokoro` runs both hexgrad's English
+voicepacks (`synthetic`) and a German fine-tune whose backbone is a corpus of
+named narrators. Those are resolved by matching the loaded model's name.
+
+Matching on a filename is against this project's own "classify by provenance,
+not by filename" rule. It is used anyway because the alternative is no answer
+at all, and because the failure is safe: a renamed checkpoint matches nothing,
+falls back to the backend verdict or to `unknown`, and warns. A rename can turn
+a known answer back into a question; it cannot turn `real_person` into
+`synthetic`.
+
+Four classifications in the first cut of this table were wrong, all from
+reasoning about names rather than reading model cards, and are recorded here
+because the same mistakes are easy to repeat:
+
+- `crispasr:kartoffel-orpheus-de-synthetic` was marked `synthetic` **because
+  the name says so**. It has not been researched. Guessing "synthetic" is the
+  error that silently removes a disclosure, so it is now `unknown`.
+- `crispasr:fastpitch` inherited a sibling project's `real_person` verdict for
+  a German NeMo model. CrispASR ships NVIDIA's *English* FastPitch — different
+  weights, so the verdict does not port.
+- `crispasr:speecht5` takes its speaker x-vector from the operator, so no
+  backend-level verdict can be right. The Python-native `speecht5` backend is
+  genuinely different: it bakes in CMU ARCTIC speaker 7306 as its default.
+- `crispasr:kokoro` was a blanket `synthetic`, which is wrong for the German
+  HUI fine-tune.
+
+The German Kokoro case is an open **conflict**, not a settled answer: CrispTTS
+classifies Kokoro `synthetic` and is right about the English voicepacks, while
+the German backbone is trained on the same named-narrator corpus that both
+projects cite when marking FastPitch German `real_person`. It is held at
+`unknown` rather than inheriting either neighbouring verdict.
 
 Art. 50(2) marking applies to all of these regardless, and does.
 

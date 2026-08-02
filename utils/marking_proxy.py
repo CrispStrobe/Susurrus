@@ -129,8 +129,8 @@ def _content_type(headers):
     return (headers.get("Content-Type") or "").split(";")[0].strip().lower()
 
 
-def _requested_format(body):
-    """Return the ``response_format`` field of a synthesis request, or None.
+def _parse_synthesis_request(body):
+    """Return ``(response_format, streaming)`` for a synthesis request body.
 
     Best effort by design: a body that is not the JSON we expect leaves the
     format unknown, and an unknown format on a synthesis path is refused rather
@@ -141,11 +141,17 @@ def _requested_format(body):
     try:
         parsed = json.loads(body.decode("utf-8"))
     except (UnicodeDecodeError, ValueError):
-        return None
+        return None, False
     if not isinstance(parsed, dict):
-        return None
+        return None, False
     value = parsed.get("response_format")
-    return value.strip().lower() if isinstance(value, str) else None
+    fmt = value.strip().lower() if isinstance(value, str) else None
+    return fmt, bool(parsed.get("stream"))
+
+
+def _requested_format(body):
+    """Return the ``response_format`` field of a synthesis request, or None."""
+    return _parse_synthesis_request(body)[0]
 
 
 def _audio_extension(content_type):
@@ -388,6 +394,9 @@ class _ProxyHandler(BaseHTTPRequestHandler):
     #: served wrong.
     _requested_format = None
 
+    #: Whether the request asked for streaming synthesis. See _proxy().
+    _streaming = False
+
     def log_message(self, fmt, *args):  # noqa: A003 - BaseHTTPRequestHandler API
         logger.debug("proxy: " + fmt, *args)
 
@@ -447,7 +456,7 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         # pulled into memory for the sake of a field it does not have.
         if is_synthesis_path(self.path) and 0 < length <= _MAX_SYNTHESIS_REQUEST:
             body = self.rfile.read(length)
-            self._requested_format = _requested_format(body)
+            self._requested_format, self._streaming = _parse_synthesis_request(body)
             return body, length
 
         return _LimitedReader(self.rfile, length), length
@@ -467,6 +476,7 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         # Reset per request: the handler instance is reused across keep-alive
         # requests on one connection.
         self._requested_format = None
+        self._streaming = False
 
         # A protocol upgrade cannot survive this proxy: http.client gives us a
         # parsed response, not the raw socket, so a 101 would leave both sides
@@ -483,6 +493,25 @@ class _ProxyHandler(BaseHTTPRequestHandler):
             return
 
         body, length = self._request_body()
+
+        # Streaming synthesis (`"stream": true` on /v1/audio/speech) pushes
+        # audio per sentence. Marking needs the finished samples, so the proxy
+        # would have to buffer the whole stream — silently turning a streaming
+        # endpoint into a non-streaming one, which is the "appears to hang"
+        # failure the passthrough relay exists to avoid. Refusing says so,
+        # where buffering would just be slow for reasons nobody could see.
+        if self._streaming:
+            self.parent.refused_responses += 1
+            self._refuse(
+                502,
+                '{"error":"Susurrus\'s EU AI Act marking proxy cannot mark '
+                "streaming synthesis: marking needs the finished audio, and "
+                "buffering the stream to get it would defeat the streaming. "
+                "Set stream=false, or run the server with "
+                '--accept-marking-responsibility to bypass the proxy."}',
+            )
+            return
+
         headers = self._forward_headers()
         if length is not None:
             headers["Content-Length"] = str(length)

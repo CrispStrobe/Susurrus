@@ -176,6 +176,35 @@ class TestMarkingProxy(unittest.TestCase):
             f"all events arrived together ({arrivals}) — the stream was buffered",
         )
 
+    def test_streaming_synthesis_is_refused_not_silently_buffered(self):
+        """/v1/audio/speech accepts stream=true and pushes audio per sentence.
+
+        Marking needs the finished samples, so the proxy would have to buffer
+        the whole stream — turning a streaming endpoint into a non-streaming
+        one for reasons invisible from the client. Refuse and say so.
+        """
+        request = urllib.request.Request(
+            f"{self.base}/v1/audio/speech",
+            data=b'{"input":"hello","stream":true,"response_format":"pcm"}',
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(request, timeout=30)
+        self.assertEqual(caught.exception.code, 502)
+        self.assertIn("streaming", caught.exception.read().decode())
+
+    def test_non_streaming_synthesis_still_works(self):
+        """The refusal must key on the flag, not on the endpoint."""
+        request = urllib.request.Request(
+            f"{self.base}/json",
+            data=b'{"input":"hello","stream":false}',
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        response = urllib.request.urlopen(request, timeout=30)
+        self.assertEqual(response.status, 200)
+
     def test_protocol_upgrades_are_refused_explicitly(self):
         """Better a named 501 than a tunnel both sides think exists."""
         request = urllib.request.Request(f"{self.base}/json")
@@ -455,6 +484,15 @@ class TestRawSampleResponsesAreMarked(unittest.TestCase):
         self.assertIsNone(_requested_format(b'{"input":"x"}'))
         self.assertIsNone(_requested_format(b"not json"))
         self.assertIsNone(_requested_format(b"[1,2,3]"))
+
+    def test_streaming_flag_is_parsed(self):
+        from utils.marking_proxy import _parse_synthesis_request
+
+        self.assertEqual(
+            _parse_synthesis_request(b'{"response_format":"pcm","stream":true}'), ("pcm", True)
+        )
+        self.assertEqual(_parse_synthesis_request(b'{"response_format":"wav"}'), ("wav", False))
+        self.assertEqual(_parse_synthesis_request(b"garbage"), (None, False))
 
 
 class TestServerBindsWhereItWasTold(unittest.TestCase):
