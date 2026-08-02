@@ -228,6 +228,63 @@ class TestServerModeRefusesWithoutTheProxy(unittest.TestCase):
         self.assertIn("find_free_port", toggle)
 
 
+class TestServerBindsWhereItWasTold(unittest.TestCase):
+    """The binary must listen where start_server says, not where kwargs say.
+
+    Found by running the real binary rather than a stand-in: ``--port`` was
+    emitted twice — once by ``start_server`` for the loopback port the proxy
+    had chosen, once by ``_append_params`` from the operator's ``--port`` — and
+    the last one won. The binary bound the *public* port and served unproxied
+    while the proxy waited for an upstream that never arrived. Harmless while
+    both sources agreed; a hole in the marking gate the moment they did not.
+    """
+
+    def _backend(self, **kwargs):
+        from workers.transcription.backends.crispasr_backend import CrispasrBackend
+
+        return CrispasrBackend(model_id="auto", device="cpu", **kwargs)
+
+    def _server_cmd(self, backend, host, port):
+        captured = {}
+
+        def fake_popen(cmd, *args, **kwargs):
+            captured["cmd"] = cmd
+            raise RuntimeError("stop before launching")
+
+        import subprocess
+
+        real = subprocess.Popen
+        subprocess.Popen = fake_popen
+        try:
+            backend.start_server(host=host, port=port)
+        except RuntimeError:
+            pass
+        finally:
+            subprocess.Popen = real
+        return captured.get("cmd", [])
+
+    def test_port_appears_once_and_is_the_one_requested(self):
+        backend = self._backend(port=8080, host="0.0.0.0")
+        cmd = self._server_cmd(backend, "127.0.0.1", 49999)
+
+        self.assertEqual(cmd.count("--port"), 1, f"--port emitted twice: {cmd}")
+        self.assertEqual(cmd[cmd.index("--port") + 1], "49999")
+
+    def test_host_appears_once_and_is_the_one_requested(self):
+        backend = self._backend(port=8080, host="0.0.0.0")
+        cmd = self._server_cmd(backend, "127.0.0.1", 49999)
+
+        self.assertEqual(cmd.count("--host"), 1, f"--host emitted twice: {cmd}")
+        self.assertEqual(cmd[cmd.index("--host") + 1], "127.0.0.1")
+
+    def test_other_kwargs_still_reach_the_binary(self):
+        """The exclusion must be surgical, not a blanket suppression."""
+        backend = self._backend(port=8080, threads=4)
+        cmd = self._server_cmd(backend, "127.0.0.1", 49999)
+        self.assertIn("-t", cmd)
+        self.assertEqual(cmd[cmd.index("-t") + 1], "4")
+
+
 class TestAuditLogTailTruncation(unittest.TestCase):
     """The gap a hash chain cannot close on its own."""
 

@@ -426,9 +426,19 @@ class CrispasrBackend(TranscriptionBackend):
 
         return cmd, exe
 
-    def _append_params(self, cmd):
-        """Append all configured parameters from kwargs to the command."""
+    def _append_params(self, cmd, exclude=()):
+        """Append configured parameters from kwargs to the command.
+
+        Args:
+            cmd: Command list, extended in place.
+            exclude: Kwarg names to skip because the caller has already put an
+                authoritative value on the command line. Without this the two
+                sources both emit their flag and the *last* one wins, which is
+                a silent override rather than an error.
+        """
         for kwarg_name, (flag, param_type) in PARAM_MAP.items():
+            if kwarg_name in exclude:
+                continue
             value = self.extra_kwargs.get(kwarg_name)
             if value is None:
                 continue
@@ -723,6 +733,15 @@ class CrispasrBackend(TranscriptionBackend):
     def start_server(self, host="127.0.0.1", port=8080):
         """Start CrispASR in server mode (blocking).
 
+        The *host* and *port* arguments are authoritative and the matching
+        kwargs are suppressed. They used to be appended a second time from
+        ``--host``/``--port`` in PARAM_MAP, which was harmless only while both
+        sources agreed. Once the marking proxy started the binary on a loopback
+        port different from the one the operator asked for, the duplicate won:
+        the binary bound the *public* port and served unproxied, while the
+        proxy waited for an upstream that never came up. Observed directly —
+        ``--port 65120 -t 8 --port 8791`` with the binary listening on 8791.
+
         Returns the subprocess.Popen object for the caller to manage.
         """
         logging.info("=== Starting CrispASR Server ===")
@@ -733,7 +752,7 @@ class CrispasrBackend(TranscriptionBackend):
         if "threads" not in self.extra_kwargs:
             cmd.extend(["-t", str(min(os.cpu_count() or 4, 8))])
 
-        self._append_params(cmd)
+        self._append_params(cmd, exclude=("host", "port"))
 
         logging.info(f"Starting server: {' '.join(cmd)}")
         return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
