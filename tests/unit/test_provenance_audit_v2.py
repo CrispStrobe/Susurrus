@@ -284,12 +284,14 @@ class TestDisclosureReachesNonWavContainers(unittest.TestCase):
 
 
 class TestAuditChainTruncationIsDocumentedHonestly(unittest.TestCase):
-    """The hash chain cannot detect tail truncation, and must not claim to.
+    """Tail truncation is caught by the anchor, not by the chain.
 
     Removing the last n entries leaves every remaining ``prev_hash`` matching
-    its predecessor, so the chain still verifies. Middle deletion and
-    modification are caught. This test pins the real behaviour so the
-    documentation and the code cannot drift apart again.
+    its predecessor, so the *chain* still verifies — that has not changed and
+    cannot. What changed is that the entry count and head hash are now mirrored
+    into a sibling anchor file, which the truncation contradicts. The
+    distinction matters: strip the anchor as well and the log verifies again,
+    which is why this is still tamper-evidence rather than tamper-proofing.
     """
 
     def setUp(self):
@@ -314,14 +316,27 @@ class TestAuditChainTruncationIsDocumentedHonestly(unittest.TestCase):
 
         self.assertTrue(verify_chain(self.path)["valid"])
 
-    def test_tail_truncation_is_NOT_detected(self):
-        """Known limitation. Asserted so the docs stay honest about it."""
+    def test_tail_truncation_is_detected_by_the_anchor(self):
         from utils.audit_log import verify_chain
 
         self._rewrite(self._lines()[:2])
         result = verify_chain(self.path)
-        self.assertTrue(result["valid"])
+        self.assertFalse(result["valid"], "tail truncation went undetected")
         self.assertEqual(result["entries"], 2)
+
+    def test_the_chain_alone_still_cannot_see_it(self):
+        """Pins *why* the anchor is needed, not just that it works.
+
+        With the anchor removed the truncated log verifies again — the chain
+        has no way to know entries once existed. Anyone who can write the log
+        can write the anchor beside it, so this remains evidence of tampering
+        rather than prevention of it, exactly as COMPLIANCE.md says.
+        """
+        from utils.audit_log import anchor_path, verify_chain
+
+        self._rewrite(self._lines()[:2])
+        os.unlink(anchor_path(self.path))
+        self.assertTrue(verify_chain(self.path)["valid"])
 
     def test_middle_deletion_is_detected(self):
         from utils.audit_log import verify_chain

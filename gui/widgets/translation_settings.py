@@ -143,6 +143,14 @@ class TranslationSettingsWidget(QWidget):
         self.result_text.setMaximumHeight(150)
         layout.addWidget(self.result_text)
 
+        # AI disclosure for synthetic text. Beside the result box rather than
+        # inside it: the box is what people select and copy, and a notice that
+        # travels into the pasted text is a notice they will delete.
+        self.disclosure_label = QLabel("")
+        self.disclosure_label.setWordWrap(True)
+        self.disclosure_label.setStyleSheet("color: #888888;")
+        layout.addWidget(self.disclosure_label)
+
         # Status
         self.status_label = QLabel("")
         self.status_label.setStyleSheet("color: #888888; font-style: italic;")

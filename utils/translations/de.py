@@ -271,6 +271,14 @@ STRINGS = {
         "Sie dies mit --speaker-db-consent."
     ),
     "disclosure.spoken": ("Die folgende Aufnahme wurde von künstlicher Intelligenz erzeugt."),
+    "notice.synthetic_text": (
+        "Dieser Text wurde von einem maschinellen Übersetzungsmodell erzeugt. "
+        "Er verliert Nuancen und kann die Bedeutung umkehren — lassen Sie ihn "
+        "von einem Menschen prüfen. Wenn Sie ihn veröffentlichen, um die "
+        "Öffentlichkeit über Angelegenheiten von öffentlichem Interesse zu "
+        "informieren, obliegt Ihnen die Offenlegung, dass er KI-generiert ist "
+        "(KI-Verordnung Art. 50(4))."
+    ),
     # --- KI-Kompetenz (Art. 4) / Zweckbestimmung ---------------------------
     "action.ai_notice": "Über KI in Susurrus",
     "msg.about.title": "Über Susurrus",
@@ -349,6 +357,18 @@ STRINGS = {
     "status.starting_synthesis": "Synthese wird gestartet …",
     "status.server_stopped": "Server gestoppt.",
     "status.server_started": "Server gestartet auf {host}:{port}",
+    "status.server_marking_proxy": (
+        "Audio-Antworten werden als KI-generiert gekennzeichnet, bevor sie "
+        "diesen Prozess verlassen (EU-KI-Verordnung Art. 50(2)). Antworten, "
+        "die nicht gekennzeichnet werden können, werden abgelehnt statt "
+        "ungekennzeichnet ausgeliefert."
+    ),
+    "msg.server_proxy_failed": (
+        "Der KI-Kennzeichnungs-Proxy konnte nicht gestartet werden: {reason}.\n\n"
+        "Der Server wurde nicht gestartet. Ohne den Proxy ist Susurrus nicht im "
+        "Antwortpfad und kann die synthetischen Audiodaten des Endpunkts weder "
+        "kennzeichnen noch prüfen, was Art. 50(2) der KI-Verordnung verlangt."
+    ),
     "status.tts_done": "Fertig! Audio gespeichert unter: {path}",
     "status.install_issues": "Installation mit Problemen abgeschlossen: {detail}",
     "msg.install_voxtral.body": (

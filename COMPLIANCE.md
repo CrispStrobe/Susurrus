@@ -134,12 +134,38 @@ is available, synthesis to those containers is refused rather than performed
 unmarked. Prefer `.wav` or `.mp3` if marking matters to you — those two never
 depend on an optional package.
 
-**Server mode is not covered by any of this.** `--mode server` hands the
-socket to the CrispASR binary; Susurrus never sees a response body, so it can
-neither verify what the binary marked nor apply the declarative floor it
-applies on every other route. The CLI says so at startup. If you expose a TTS
-endpoint you are the provider of everything it emits — verify a sample with
-`susurrus --verify-c2pa FILE` before relying on it.
+**Server mode is covered too, by a marking proxy.** `--mode server` used to
+hand the socket to the CrispASR binary, which made an HTTP endpoint the one
+route emitting synthetic audio Susurrus never saw — and an endpoint reaches
+people who will never read a warning printed on the operator's terminal.
+
+Susurrus now binds the port you asked for and starts the binary on loopback,
+so it is back in the response path:
+
+- `audio/*` responses are buffered and run through the same marking pipeline a
+  local synthesis uses, then forwarded with the marked bytes and an
+  `X-Susurrus-AI-Marked: EU-AI-Act-Art50-2` header.
+- Audio that **cannot** be marked is answered with a 502 instead of being
+  served unmarked. The gate works the same way on the wire as it does on disk.
+- Everything else — transcription JSON, chat completions, Server-Sent Events —
+  is streamed through untouched. Buffering an SSE stream would turn a working
+  endpoint into one that appears to hang, so the relay is deliberately split:
+  audio is the only thing worth holding.
+- Protocol upgrades (WebSocket) are refused with a 501 naming the reason. They
+  cannot be forwarded through this proxy, and half-forwarding one produces a
+  connection that dies later for reasons nobody can trace.
+
+If the proxy cannot be established — the port is taken, the backend does not
+come up — the run is **refused** rather than falling back to serving directly.
+Silently degrading to the behaviour the proxy exists to prevent is how a
+control becomes decorative. The GUI's Tools → server toggle behaves the same
+way and refuses to start if the proxy does not bind.
+
+The one way to run unproxied is `--accept-marking-responsibility`, the same
+attestation as everywhere else, and it prints the old warning: marking is then
+the binary's alone. Note the proxy marks what the *endpoint returns*; if you
+put a CDN or another proxy in front that re-encodes audio, you are back to
+being the provider of whatever comes out the far end.
 
 **Marking is verified, not assumed.** On the CrispASR routes the binary
 applies the layers itself, and its support depends on build options, engine
@@ -358,20 +384,33 @@ susurrus --audit-log        # print the log and verify the chain; exit 1 if brok
 
 Also available from the GUI under Tools → Biometric Audit Log.
 
-**What the chain does not catch: truncation of the tail.** Deleting the most
-recent *n* entries leaves a shorter chain that still verifies, because every
-remaining entry's `prev_hash` still matches its predecessor. No hash chain can
-detect this on its own — it needs an external anchor (a counter-signed head, a
-separate copy of the last hash, or append-only storage that refuses the
-deletion). Deletion from the *middle* and modification of any entry are
-detected, and so is reordering. Do not read `--audit-log` reporting a valid
-chain as proof that nothing has been removed from the end of it.
+**Truncation of the tail is caught by an anchor, not by the chain.** Deleting
+the most recent *n* entries leaves a shorter chain that still verifies, because
+every remaining entry's `prev_hash` still matches its predecessor. No hash chain
+can detect this on its own — it needs a reference held outside itself. So after
+every append, the entry count and head hash are mirrored into a sibling file,
+`biometric.jsonl.anchor`, and `--audit-log` compares the two. Removing entries
+from the end now contradicts the anchor and reports as a failure naming how many
+are missing. Replacing the final entry is caught the same way.
+
+The anchor is a sibling rather than a section of the log, because an anchor
+stored inside the thing it anchors would be truncated by the same edit it is
+supposed to detect.
+
+**This raises the bar; it does not make the log tamper-proof.** Anyone who can
+write the log can write the anchor beside it, and a log with no anchor at all
+verifies as before — that case has to be tolerated, because logs written before
+anchoring existed have none, and flagging every upgraded deployment as tampered
+would train operators to ignore the check. Deletion from the *middle*,
+modification of any entry, and reordering are all still detected by the chain
+itself. If your obligations call for guarantees that survive an attacker with
+write access, ship the log to append-only storage; nothing in a file the
+attacker controls can give you that.
 
 The log deliberately never contains the voice embedding or any audio — a
 record-keeping mechanism must not become a second copy of the special-category
-data it documents. The hash chain is tamper-*evidence*, not tamper-proofing:
-anyone who can write the file can rebuild it. If your obligations call for
-stronger guarantees, ship the log to append-only storage.
+data it documents. The anchor holds only a count, a hash and a timestamp, for
+the same reason.
 
 If your deployment lands in Annex III, the remaining high-risk obligations
 (risk management, data governance, human oversight, conformity assessment,
@@ -425,9 +464,24 @@ of informing the public on matters of public interest" — a judgement about
 your publication, not about the tool.
 
 This is a grey area, and it is stated here rather than left silent because a
-compliance document that only lists the settled parts is not much use. If you
-publish machine-translated text to inform the public, the disclosure duty is
-yours and Susurrus does nothing toward it.
+compliance document that only lists the settled parts is not much use.
+
+**The exemption covers marking, not silence.** Whatever the right reading of
+Art. 50(2) is for translation, the output is still machine-generated, and the
+Art. 50(4) duty on text published to inform the public on a matter of public
+interest still lands on whoever publishes it. So Susurrus says so: the CLI
+prints a disclosure after every translation, and the GUI shows one beside the
+result box.
+
+The disclosure goes on **stderr**, never stdout. `--mode translate` exists to
+be piped and redirected, and a notice mixed into the payload would corrupt
+every downstream use of it — a disclosure that makes the output unusable is one
+that gets suppressed, and a suppressed disclosure discloses nothing. The GUI
+follows the same principle: the notice sits beside the result box rather than
+inside it, so text copied out of the box is the translation and nothing else.
+
+If you publish machine-translated text to inform the public, the disclosure
+duty is still yours. Susurrus now tells you that; it cannot do it for you.
 
 Transcription is not covered: it is a transformation of a real recording, not
 synthetic content. But see the AI-literacy note below on what a transcript is
@@ -480,9 +534,16 @@ for exactly this reason.
 - Perform a conformity assessment or produce technical documentation
   under Art. 11 / Annex IV.
 - Establish a lawful basis for processing voice data.
-- Disclose to your audience that content is AI-generated.
+- Disclose to your audience that content is AI-generated. Marking travels with
+  the file and the marking proxy covers your own endpoint, but the duty to tell
+  the people who see or hear the output is a deployer obligation that no
+  library can discharge.
 - Assess whether *your* deployment is high-risk.
 - Guarantee the audit log's integrity against someone with write access to it.
+  The anchor makes tail truncation *evident*; it does not prevent it.
+- Mark synthetic audio that leaves your endpoint through something other than
+  the marking proxy — a CDN, a re-encoding gateway, or the binary running
+  unproxied under `--accept-marking-responsibility`.
 
 ## Reporting
 

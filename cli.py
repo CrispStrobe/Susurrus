@@ -1294,8 +1294,36 @@ def _run_translate(args):
             target_lang=args.target_lang or "de",
         )
         print(result)
+        _disclose_synthetic_text()
     finally:
         backend.cleanup()
+
+
+def _disclose_synthetic_text():
+    """Tell the operator the translation is machine-generated, on stderr.
+
+    Art. 50(2) names synthetic *text* alongside audio, and Susurrus does not
+    mark translation output — the "assistive function for standard editing"
+    exemption is the better reading for transforming text a user supplied, and
+    COMPLIANCE.md argues it. But that reading covers *marking*; it does not make
+    the output any less machine-generated, and the Art. 50(4) duty on text
+    published to inform the public on a matter of public interest still lands
+    on whoever publishes it.
+
+    So: say so, and say it on stderr. Putting the notice on stdout would
+    corrupt the payload for the pipelines and redirects this mode exists to
+    feed — a disclosure that makes the output unusable gets suppressed, and a
+    suppressed disclosure discloses nothing.
+    """
+    print(
+        "NOTE: this text was produced by a machine-translation model. Machine "
+        "translation loses nuance and can invert meaning, especially around "
+        "negation, idiom and ambiguous pronouns — have a person review it "
+        "before relying on it. If you publish it to inform the public on a "
+        "matter of public interest, the EU AI Act Art. 50(4) duty to disclose "
+        "that the text is artificially generated is yours. See COMPLIANCE.md.",
+        file=sys.stderr,
+    )
 
 
 def _run_stream(args):
@@ -1353,17 +1381,12 @@ def _run_stream(args):
 
 
 def _warn_server_provenance(host, port):
-    """Warn that synthetic audio served over HTTP is not verified by Susurrus.
+    """Warn that synthetic audio served over HTTP is not marked by Susurrus.
 
-    Every other synthesis route was moved off "trust the binary's flags" and
-    onto reading the finished file back (see COMPLIANCE.md). Server mode is
-    the one route where that is not possible: the binary owns the socket, and
-    Susurrus never sees a response body, so it can neither verify marking nor
-    apply the declarative floor it applies everywhere else.
-
-    Saying so at startup is the whole of what this process can honestly do.
-    An operator exposing a TTS endpoint is the provider of everything it
-    emits, and needs to know the marking is the binary's alone.
+    Reached only when the operator has taken the Art. 50 duty on with
+    ``--accept-marking-responsibility``, which is the one way to run server
+    mode without the marking proxy in front of it. Everything the endpoint
+    emits is then marked by the binary alone, or not at all.
     """
     logging.warning("Server mode: AI-content marking is not verified by Susurrus.")
     print(
@@ -1378,7 +1401,19 @@ def _warn_server_provenance(host, port):
 
 
 def _run_server(args):
-    """Run CrispASR server mode."""
+    """Run CrispASR server mode behind the Art. 50 marking proxy.
+
+    The binary is started on loopback and Susurrus binds the port the operator
+    asked for, so every audio response passes through the same marking pipeline
+    a local synthesis uses. Server mode used to hand the socket over directly,
+    which made an HTTP endpoint the one route that emitted synthetic audio
+    Susurrus never saw — and an endpoint reaches people who will never read a
+    warning printed on the operator's terminal.
+
+    If the proxy cannot be established the run is refused, unless the operator
+    has taken the marking duty on. That is the same rule as everywhere else:
+    either the software marked the output, or a named human said they would.
+    """
     backend_name = args.backend
     model = args.model or "auto"
 
@@ -1386,22 +1421,107 @@ def _run_server(args):
         print("Error: server mode is only supported with crispasr backends", file=sys.stderr)
         sys.exit(1)
 
+    # The proxy honours --no-watermark / --no-c2pa, so they reduce Art. 50
+    # provenance here exactly as they do on the TTS path and need the same
+    # attestation. Without this the one rule had an exception nobody declared.
+    _require_marking_attestation(args)
+
     kwargs = _build_crispasr_kwargs(args)
     BackendClass = get_backend_class(backend_name)
     backend = BackendClass(model_id=model, device=args.device, language=args.language, **kwargs)
 
     host = args.host or "127.0.0.1"
     port = args.port or 8080
+    attested = getattr(args, "accept_marking_responsibility", False)
 
+    proxy = None
+    proc = None
     try:
-        proc = backend.start_server(host=host, port=port)
-        print(f"CrispASR server started on {host}:{port}")
-        _warn_server_provenance(host, port)
+        if attested:
+            # The operator has said the Art. 50 duty is theirs. Adding a proxy
+            # they did not ask for would only slow their endpoint down.
+            proc = backend.start_server(host=host, port=port)
+            print(f"CrispASR server started on {host}:{port}")
+            _warn_server_provenance(host, port)
+            proc.wait()
+            return
+
+        proxy, proc = _start_marking_proxy(backend, host, port, args)
+        print(f"CrispASR server started on {host}:{port} (behind the Art. 50 marking proxy)")
+        print(
+            "Audio responses are marked as AI-generated before they leave this "
+            "process. Responses that cannot be marked are refused with a 502 "
+            "rather than served unmarked.",
+            file=sys.stderr,
+        )
         proc.wait()
     except KeyboardInterrupt:
         print("\nServer stopped.")
     finally:
+        if proxy is not None:
+            proxy.stop()
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
         backend.cleanup()
+
+
+def _start_marking_proxy(backend, host, port, args):
+    """Start the binary on loopback and Susurrus's marking proxy in front.
+
+    Returns ``(proxy, process)``. Exits 2 rather than falling back to an
+    unproxied server: silently degrading to the behaviour the operator was
+    trying to avoid is how a control becomes decorative.
+    """
+    from utils.marking_proxy import MarkingProxy, find_free_port, wait_for_upstream
+
+    upstream_host = "127.0.0.1"
+    try:
+        upstream_port = find_free_port(upstream_host)
+    except OSError as e:
+        _refuse_unproxied_server(f"could not reserve a loopback port for the backend ({e})")
+
+    proc = backend.start_server(host=upstream_host, port=upstream_port)
+
+    if not wait_for_upstream(upstream_host, upstream_port):
+        proc.terminate()
+        _refuse_unproxied_server(
+            f"the CrispASR server did not come up on {upstream_host}:{upstream_port}"
+        )
+
+    options = {
+        key: getattr(args, key, None)
+        for key in ("no_watermark", "no_c2pa", "c2pa_cert", "c2pa_key")
+        if getattr(args, key, None)
+    }
+
+    try:
+        proxy = MarkingProxy(
+            listen_host=host,
+            listen_port=port,
+            upstream_host=upstream_host,
+            upstream_port=upstream_port,
+            options=options,
+            model=args.model or "auto",
+        ).start()
+    except OSError as e:
+        proc.terminate()
+        _refuse_unproxied_server(f"could not bind {host}:{port} ({e})")
+
+    return proxy, proc
+
+
+def _refuse_unproxied_server(reason):
+    """Refuse to serve when the marking proxy cannot be established."""
+    print(f"Refused: {reason}.", file=sys.stderr)
+    print(
+        "Server mode serves synthetic audio, and without the marking proxy "
+        "Susurrus is not in the response path — it can neither mark nor verify "
+        "what the endpoint emits. Fix the condition above, or pass "
+        "--accept-marking-responsibility to run unproxied and take the EU AI "
+        "Act Art. 50 obligation on yourself.",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 
 
 def _run_align(args):

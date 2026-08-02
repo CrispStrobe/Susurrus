@@ -160,7 +160,9 @@ special-category data requiring a lawful basis.
 - **History browser**: Search, load, delete past transcriptions (auto-saved)
 - **Voice clone wizard**: 3-step guided dialog with a required EU AI Act consent
   checkbox — "Clone Voice" stays disabled until the attestation is given (Tools menu)
-- **Server toggle**: Start/stop OpenAI-compatible HTTP server from Tools menu
+- **Server toggle**: Start/stop OpenAI-compatible HTTP server from Tools menu —
+  audio responses are marked as AI-generated in transit (EU AI Act Art. 50(2)),
+  and the server refuses to start if that marking proxy cannot bind
 - **Light/dark themes**: Toggle via Ctrl+T, persisted in QSettings
 - **Log viewer**: Real-time log display with level filtering (View → Show Logs)
 - **i18n**: full English + German interface (259 strings, no hardcoded text) —

@@ -1264,7 +1264,12 @@ class MainWindow(QWidget):
     def _on_translation_finished(self, result):
         self.translation_widget.translate_btn.setEnabled(True)
         self.translation_widget.result_text.setPlainText(result)
+        # The result box holds the translation alone, so copying it out yields
+        # the text and nothing else; the disclosure goes beside it. Susurrus
+        # does not mark synthetic text (see COMPLIANCE.md), which makes saying
+        # it is machine-generated the whole of the transparency on this route.
         self.translation_widget.status_label.setText(t("msg.translation_complete"))
+        self.translation_widget.disclosure_label.setText(t("notice.synthetic_text"))
 
     def _on_translation_error(self, error_msg):
         self.translation_widget.translate_btn.setEnabled(True)
@@ -1308,11 +1313,21 @@ class MainWindow(QWidget):
     # ---- Server toggle ----
 
     def _toggle_server(self):
-        """Start or stop the CrispASR server."""
+        """Start or stop the CrispASR server behind the Art. 50 marking proxy.
+
+        The binary listens on loopback and Susurrus binds the advertised port,
+        so audio responses are marked before they leave the process — the same
+        obligation the CLI's ``--mode server`` now meets. Started directly, this
+        toggle would be the one surface that serves synthetic audio Susurrus
+        never sees.
+        """
         if hasattr(self, "_server_process") and self._server_process is not None:
             self._server_process.terminate()
             self._server_process.wait(timeout=5)
             self._server_process = None
+            if getattr(self, "_server_proxy", None) is not None:
+                self._server_proxy.stop()
+                self._server_proxy = None
             self.metrics_output.appendPlainText(t("status.server_stopped"))
             logging.info("CrispASR server stopped")
             return
@@ -1326,7 +1341,17 @@ class MainWindow(QWidget):
 
         import subprocess
 
+        from utils.marking_proxy import MarkingProxy, find_free_port, wait_for_upstream
+
         port = 8080
+        try:
+            upstream_port = find_free_port()
+        except OSError as e:
+            QMessageBox.warning(
+                self, t("msg.warning.title"), t("msg.server_proxy_failed").format(reason=str(e))
+            )
+            return
+
         cmd = [
             exe,
             "-m",
@@ -1335,18 +1360,52 @@ class MainWindow(QWidget):
             "--host",
             "127.0.0.1",
             "--port",
-            str(port),
+            str(upstream_port),
             "--no-gpu",
             "--auto-download",
         ]
 
-        self._server_process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-        )
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+        if not wait_for_upstream("127.0.0.1", upstream_port):
+            process.terminate()
+            QMessageBox.warning(
+                self,
+                t("msg.warning.title"),
+                t("msg.server_proxy_failed").format(
+                    reason=f"backend did not come up on port {upstream_port}"
+                ),
+            )
+            return
+
+        try:
+            self._server_proxy = MarkingProxy(
+                listen_host="127.0.0.1",
+                listen_port=port,
+                upstream_host="127.0.0.1",
+                upstream_port=upstream_port,
+                model="auto",
+            ).start()
+        except OSError as e:
+            # Refuse rather than fall back to serving unproxied: degrading to
+            # the behaviour the proxy exists to prevent would make it theatre.
+            process.terminate()
+            self._server_proxy = None
+            QMessageBox.warning(
+                self, t("msg.warning.title"), t("msg.server_proxy_failed").format(reason=str(e))
+            )
+            return
+
+        self._server_process = process
         self.metrics_output.appendPlainText(
             t("status.server_started").format(host="127.0.0.1", port=port)
         )
-        logging.info("CrispASR server started on port %d", port)
+        self.metrics_output.appendPlainText(t("status.server_marking_proxy"))
+        logging.info(
+            "CrispASR server started on port %d behind the marking proxy (backend on %d)",
+            port,
+            upstream_port,
+        )
 
     # ---- Voice clone wizard ----
 
