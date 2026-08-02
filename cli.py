@@ -308,6 +308,15 @@ def main():
         default=None,
         help="Verify C2PA credentials in an audio file and exit",
     )
+    prov_group.add_argument(
+        "--about-ai",
+        action="store_true",
+        help=(
+            "Print the AI-literacy notice (EU AI Act Art. 4) and exit: what "
+            "this system is, its intended purpose, its failure modes, and what "
+            "it is not validated for"
+        ),
+    )
 
     # --- Translation-specific ---
     tr_group = parser.add_argument_group("Translation Options")
@@ -540,6 +549,18 @@ def main():
     # that people were enrolled or identified even when the run then failed,
     # or never processed audio at all.
     _warn_speaker_biometrics(args)
+
+    # --about-ai is a standalone verb: the Art. 4 AI-literacy notice. The GUI
+    # carries this under Help > About AI in Susurrus, and CLI-only deployments
+    # had no equivalent — so the one obligation that is about people rather
+    # than files was reachable only by the users who never opened the GUI.
+    # Rendered from the same localized source the dialog uses, so the two
+    # cannot drift apart.
+    if getattr(args, "about_ai", False):
+        from utils.i18n import t
+
+        print(_html_to_text(t("msg.ai_notice.body")))
+        sys.exit(0)
 
     # --audit-log is a standalone verb: read and verify the Art. 12 record
     if getattr(args, "audit_log", False):
@@ -851,6 +872,29 @@ def _run_transcribe(args):
                     print(text)
     finally:
         backend.cleanup()
+
+
+def _html_to_text(html):
+    """Render the localized AI-literacy notice as plain text for a terminal.
+
+    The notice is authored once, as HTML, for the GUI dialog. Keeping a second
+    plain-text copy in the translation files would mean two texts to keep in
+    step across every language — and the one that drifts is always the one
+    nobody is looking at.
+    """
+    import re
+
+    text = re.sub(r"</(h[1-6]|p|ul)>", "\n\n", html)
+    text = re.sub(r"<li>", "  - ", text)
+    text = re.sub(r"</li>", "\n", text)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    # The source is trusted (our own translation files), but it is still HTML:
+    # decode entities so "&amp;" does not reach the terminal as written.
+    import html as html_module
+
+    return html_module.unescape(text).strip()
 
 
 def _warn_speaker_biometrics(args):

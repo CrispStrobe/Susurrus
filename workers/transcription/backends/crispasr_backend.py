@@ -369,18 +369,23 @@ class CrispasrBackend(TranscriptionBackend):
             **layers,
         )
 
-        if not any(layers.values()):
-            try:
-                from utils.ai_marking import embed_ai_marker
+        # Unconditional, not "only if nothing was detected" — see the same
+        # change in CrispasrTTSBackend.apply_provenance. A false positive from
+        # the in-sample detector used to suppress this floor and let genuinely
+        # unmarked audio through enforce_marking. The marker is idempotent and
+        # dependency-free, so there is no cost to applying it every time.
+        try:
+            from utils.ai_marking import embed_ai_marker
 
-                result["marker"] = embed_ai_marker(output_path, model=model or self.model_id)
-                if result["marker"]:
+            if embed_ai_marker(output_path, model=model or self.model_id):
+                if not result["marker"]:
                     logging.info(
-                        "CrispASR output carried no detectable AI marking; "
-                        "applied the declarative marker as a floor."
+                        "Applied the declarative marker to CrispASR output as "
+                        "an Art. 50(2) floor."
                     )
-            except ImportError:
-                pass
+                result["marker"] = True
+        except ImportError:
+            pass
 
         if not (result["marker"] or result["watermark"] or result["c2pa"]):
             logging.warning(
@@ -491,9 +496,55 @@ class CrispasrBackend(TranscriptionBackend):
             self.temp_files.append(wav_path)
         return wav_path
 
+    def _s2s_output(self):
+        """Return the speech-to-speech output path, or None if s2s is off."""
+        if not self.extra_kwargs.get("s2s"):
+            return None
+        return self.extra_kwargs.get("s2s_output")
+
+    def require_s2s_consent(self):
+        """Gate speech-to-speech on a rights attestation, and on a known path.
+
+        ``--s2s`` re-voices a real recording of a real person. That is
+        manipulated audio content under Art. 50(4) whatever the target voice
+        is, so unlike ``synthesize()`` this does not turn on whether ``--voice``
+        looks like a file: a stock target voice still produces a recording of
+        someone saying something in a voice that is not theirs.
+
+        The output path must also be known. ``--s2s`` without ``--s2s-output``
+        leaves the binary to pick a filename, and audio at a path Susurrus
+        cannot name is audio it cannot mark, verify, or delete — which is the
+        one outcome the Art. 50 gate exists to prevent.
+
+        Raises:
+            PermissionError: without ``i_have_rights``.
+            ValueError: if no ``s2s_output`` path was given.
+        """
+        if not self.extra_kwargs.get("s2s"):
+            return
+        if not self.kwargs.get("i_have_rights"):
+            from workers.tts.backends.base import CLONE_CONSENT_ERROR
+
+            raise PermissionError(CLONE_CONSENT_ERROR)
+        if not self.extra_kwargs.get("s2s_output"):
+            raise ValueError(
+                "Speech-to-speech requires an explicit --s2s-output path so the "
+                "result can be marked per EU AI Act Art. 50(2). Refusing to "
+                "synthesize audio this process cannot locate."
+            )
+
     def transcribe(self, audio_path):
-        """Transcribe using the crispasr binary."""
+        """Transcribe using the crispasr binary.
+
+        When ``--s2s`` is set this also emits synthetic audio, so the Art. 50
+        gate runs here too — the binary applies its own marking, but relying on
+        that alone put the only check for this route outside this codebase,
+        which is exactly the arrangement every other synthesis path rejects.
+        """
         logging.info("=== Starting CrispASR pipeline ===")
+
+        # Before the binary is located, as on every other cloning route.
+        self.require_s2s_consent()
 
         cmd, exe = self._build_base_cmd()
         logging.info(f"Using crispasr: {exe}")
@@ -520,6 +571,15 @@ class CrispasrBackend(TranscriptionBackend):
         t0 = time.time()
         results = self._run_process(cmd)
         elapsed = time.time() - t0
+
+        # Art. 50(2)/(4) on the speech-to-speech output. This raises
+        # ProvenanceError and deletes the file if it cannot be marked, which
+        # aborts the transcription too — deliberately: the run produced
+        # synthetic audio, and a partial success that leaves unmarked audio on
+        # disk is the failure mode the gate exists to prevent.
+        s2s_output = self._s2s_output()
+        if s2s_output:
+            self.apply_provenance(s2s_output, model=self.model_id)
 
         # Compute metrics
         word_count = sum(len(r[2].split()) for r in results)

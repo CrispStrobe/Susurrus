@@ -16,14 +16,45 @@ should be able to tell it was AI-generated.
 Placement follows CrispASR's ``wm_params``. The comb sits inside the speech band
 (~1.5-4.8 kHz) rather than spread to 11.7 kHz: the wide version put ~20 of its
 32 bins where clean TTS speech is near-silent, which was audible as a "tinny"
-tone. ``CRISPASR_WATERMARK_LEGACY=1`` selects the old band, and detection always
-sweeps both so previously-marked audio still verifies.
+tone. ``CRISPASR_WATERMARK_LEGACY=1`` selects the old band for *embedding*, and
+detection reads both so previously-marked audio still verifies — though the
+legacy reading has to clear a stricter bar before it may override the primary
+one, for the reason given at :data:`LEGACY_DETECTION_THRESHOLD`.
 
-Measured on 20 s of real speech (44.1 kHz): 0.84 after embedding, 0.78 after a
-44.1k->16k->44.1k resample, 0.81 after an MP3 round-trip, 0.44 on unwatermarked
-audio, ~39.5 dB SNR. Treat the SNR as specific to that recording — the nudge is
-scaled by the mean bin magnitude, so peaky material takes a proportionally
-louder mark than broadband speech does.
+Detection correlates the comb against the averaged magnitude spectrum, weighted
+by each bin's own deviation. An earlier version counted bare sign agreement over
+the 32 bins and took the better of the two band placements. That threw away the
+magnitudes and gave the noise two chances to win: measured over 1500 clips of
+unwatermarked speech, harmonic stacks, tones and noise at 16/24/44.1 kHz and
+0.5-15 s, it called **~12%** of them watermarked at its 0.65 threshold.
+Weighting by deviation and gating the legacy band separately puts that at
+**1.2%** while raising true detection from 93% to 98%. The numbers below are
+from that run — rerun it before changing the threshold, and do not lower it on
+the strength of one recording.
+
+    unwatermarked (n=1500):            mean 0.52, p99 0.78, max 0.90
+    watermarked, native rate (n=375):  mean 0.88, p1  0.76, min 0.70
+    watermarked, 128k MP3 (same rate): mean 0.89, min 0.85
+
+1.2% is a floor, not a triumph: a 32-bin comb read against one spectrum cannot
+do much better, and the residual false positives are harmonic material whose
+partials happen to land on comb bins. Treat a positive from this tier as
+evidence, not proof — which is why nothing in the Art. 50 enforcement path is
+allowed to depend on it (see ``apply_provenance`` on the CrispASR backends).
+
+**What it survives, and what it does not.** The mark rides on fixed *bin
+indices* of a fixed-size FFT, so it is tied to the sample rate it was embedded
+at. Transcoding survives — MP3, requantisation, interpolation loss — but
+*resampling does not*: at 24k->16k the same bins are a different frequency band
+and detection falls to chance (measured ~5%). Restoring the original rate
+restores detection, which is why a 44.1k->16k->44.1k round trip verifies while
+a plain 44.1k->16k does not. Compensating by sweeping candidate rate ratios was
+tried and rejected: a max over ~12 hypotheses drove the false-positive rate to
+100%. AudioSeal is the layer to use where resampling is expected.
+
+SNR is signal-dependent — the nudge is scaled by the mean bin magnitude, so
+peaky material takes a proportionally louder mark than broadband speech does
+(~39.5 dB measured on 20 s of real speech).
 
 It is a fixed-key comb, so someone who knows the scheme can strip it deliberately
 — AudioSeal remains the right choice where that matters.
@@ -42,8 +73,17 @@ WATERMARK_NBINS = 32
 FFT_SIZE = 1024
 HOP = FFT_SIZE // 2
 
-#: Correlation at or above which audio counts as watermarked.
-DETECTION_THRESHOLD = 0.65
+#: Correlation at or above which audio counts as watermarked. See the module
+#: docstring for the measurements behind this value — at 0.65, where it used to
+#: sit, ~12% of unwatermarked audio read as marked.
+DETECTION_THRESHOLD = 0.78
+
+#: The legacy band is a *second* hypothesis, and every extra hypothesis buys
+#: the noise another chance to clear the bar. It therefore has to clear a
+#: stricter one before it may override the primary reading: legacy-marked audio
+#: is rare (the band changed because it was audible), so paying for it with a
+#: higher false-positive rate on everything else is the wrong trade.
+LEGACY_DETECTION_THRESHOLD = 0.85
 
 _U64 = 0xFFFFFFFFFFFFFFFF
 
@@ -164,30 +204,35 @@ def embed(pcm, alpha=None):
 def detect(pcm):
     """Return detection confidence in [0, 1] for float32 mono PCM.
 
-    Sweeps both comb placements and returns the stronger reading, so audio
-    marked on the legacy band still verifies.
+    Reads the primary band, and lets the legacy placement override only when it
+    clears :data:`LEGACY_DETECTION_THRESHOLD` — so audio marked on the old band
+    still verifies without the second hypothesis inflating false positives on
+    everything else.
     """
-    best = 0.0
-    for legacy in (False, True):
-        lo_bin, hi_bin, _ = wm_params(FFT_SIZE, legacy=legacy)
-        best = max(best, _detect_band(pcm, lo_bin, hi_bin))
-    return best
+    avg_mags = _average_spectrum(pcm)
+    if avg_mags is None:
+        return 0.0
+
+    lo_bin, hi_bin, _ = wm_params(FFT_SIZE, legacy=False)
+    primary = _correlate(avg_mags, lo_bin, hi_bin)
+
+    lo_bin, hi_bin, _ = wm_params(FFT_SIZE, legacy=True)
+    legacy = _correlate(avg_mags, lo_bin, hi_bin)
+
+    return max(primary, legacy if legacy >= LEGACY_DETECTION_THRESHOLD else 0.0)
 
 
-def _detect_band(pcm, lo_bin, hi_bin):
-    """Correlate one comb placement against the averaged magnitude spectrum.
+def _average_spectrum(pcm):
+    """Return the frame-averaged magnitude spectrum, or None if too short.
 
     Averaging across frames before correlating is what makes this work on
     speech: per-frame noise cancels while the watermark, being identical in
-    every frame, survives.
+    every frame, survives. Computed once and shared by both band readings —
+    the FFTs dominate the cost and do not depend on comb placement.
     """
     n = len(pcm)
     if n < FFT_SIZE:
-        return 0.0
-
-    bins = generate_bin_pattern(WATERMARK_KEY, FFT_SIZE, WATERMARK_NBINS, lo_bin, hi_bin)
-    if not bins:
-        return 0.0
+        return None
 
     window = np.hanning(FFT_SIZE).astype(np.float32)
     half = FFT_SIZE // 2
@@ -197,13 +242,31 @@ def _detect_band(pcm, lo_bin, hi_bin):
         frame = pcm[start : start + FFT_SIZE] * window
         all_mags.append(np.abs(np.fft.rfft(frame)[:half]).astype(np.float64))
     if not all_mags:
-        return 0.0
-    avg_mags = np.mean(all_mags, axis=0)
+        return None
+    return np.mean(all_mags, axis=0)
 
-    correlation = 0.0
-    valid_bins = 0
+
+def _correlate(avg_mags, lo_bin, hi_bin):
+    """Correlate one comb placement against an averaged magnitude spectrum.
+
+    Each bin contributes its *deviation* from the local mean, not merely the
+    sign of that deviation. A bin sitting far above its neighbours is strong
+    evidence; one a hair above them is nearly none, and counting both as a full
+    vote is what let unwatermarked audio reach the old threshold on a lucky run
+    of 21-of-32 coin flips. Weighting by |delta| and normalising by the total
+    weight keeps the result in [0, 1] with 0.5 as "no evidence either way".
+
+    Deltas are clamped to 1.0 so a single spectral spike — a tone landing on a
+    comb bin — cannot dominate the other 31.
+    """
+    bins = generate_bin_pattern(WATERMARK_KEY, FFT_SIZE, WATERMARK_NBINS, lo_bin, hi_bin)
+    if not bins:
+        return 0.0
+
+    weighted_sum = 0.0
+    total_weight = 0.0
     for b_idx, b_sign in bins:
-        if b_idx >= len(avg_mags):
+        if b_idx < 1 or b_idx >= len(avg_mags):
             continue
         neighbours = [
             avg_mags[b_idx + d] for d in range(-2, 3) if d != 0 and 1 <= b_idx + d < len(avg_mags)
@@ -214,9 +277,10 @@ def _detect_band(pcm, lo_bin, hi_bin):
         if local_mean < 1e-12 and avg_mags[b_idx] < 1e-12:
             continue
         delta = (avg_mags[b_idx] - local_mean) / max(local_mean, 1e-12)
-        correlation += (1.0 if delta > 0 else -1.0) * b_sign
-        valid_bins += 1
+        delta = max(-1.0, min(1.0, delta))
+        weighted_sum += delta * b_sign
+        total_weight += abs(delta)
 
-    if valid_bins == 0:
+    if total_weight < 1e-12:
         return 0.0
-    return float(max(0.0, min(1.0, (correlation / valid_bins + 1.0) / 2.0)))
+    return float(max(0.0, min(1.0, (weighted_sum / total_weight + 1.0) / 2.0)))

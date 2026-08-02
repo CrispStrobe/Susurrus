@@ -53,10 +53,30 @@ Three kinds of layer, one of which has two tiers:
 
 | Layer | Mechanism | Availability | Survives re-encoding |
 | --- | --- | --- | --- |
-| In-sample watermark (tier 1) | AudioSeal, learned | CrispASR binary, or `pip install 'susurrus[watermark]'` | Yes, incl. deliberate removal |
-| In-sample watermark (tier 2) | Spread-spectrum comb — `utils/spread_spectrum.py` | Always — numpy only | Yes, for ordinary transcoding |
+| In-sample watermark (tier 1) | AudioSeal, learned | CrispASR binary, or `pip install 'susurrus[watermark]'` | Yes, incl. resampling and deliberate removal |
+| In-sample watermark (tier 2) | Spread-spectrum comb — `utils/spread_spectrum.py` | Needs numpy + soundfile, both in `[tts]` | Yes for transcoding, **no for resampling** |
 | Cryptographic | C2PA Content Credentials | CrispASR binary, or `pip install 'susurrus[c2pa]'` — included in `[tts]` | No (manifest is stripped) |
 | Declarative | RIFF `LIST/INFO` (WAV) or ID3v2.4 (MP3) — `utils/ai_marking.py` | Always — no dependencies | No |
+
+Two limits of tier 2 are worth stating plainly, because earlier versions of
+this document overstated both.
+
+It is **not dependency-free.** `utils/spread_spectrum.py` needs only numpy, but
+the code that reads and rewrites the audio around it needs soundfile, and
+soundfile ships in the `[tts]` extra rather than the base install. A bare
+`pip install susurrus` therefore has the declarative marker and nothing else.
+That install cannot run the Python TTS backends either, so in practice it
+matters for the CrispASR-binary route, where marking is the binary's job and
+the declarative marker is the floor Susurrus can add.
+
+It does **not survive resampling.** The comb rides on fixed bin indices of a
+fixed-size FFT, so it is tied to the sample rate it was embedded at. An MP3
+round trip at the same rate is fine; 24 kHz → 16 kHz drops detection to chance.
+Restoring the original rate restores detection, which is why a
+44.1k → 16k → 44.1k round trip verifies and a plain 44.1k → 16k does not.
+Compensating by sweeping candidate rate ratios was tried and rejected — a max
+over ~12 hypotheses drove the false-positive rate to 100%. Use AudioSeal where
+resampling is expected.
 
 The layers are applied in a fixed order, and the order matters: the spoken
 disclosure and the watermark change the samples, the declarative marker adds
@@ -67,8 +87,8 @@ Art. 50(2) requires marking that is "effective, interoperable, robust and
 reliable as far as technically feasible", and it has no "unless a dependency
 is missing" clause. So neither layer that survives re-encoding is allowed to
 be optional: when AudioSeal is absent, the spread-spectrum comb is embedded
-instead, needing nothing beyond numpy. A default install therefore ships two
-marks in the samples and one in the metadata, not metadata alone.
+instead. A `[tts]` install therefore ships two marks in the samples and one in
+the metadata, not metadata alone.
 
 ### Marking fails closed
 
@@ -124,12 +144,33 @@ endpoint you are the provider of everything it emits — verify a sample with
 **Marking is verified, not assumed.** On the CrispASR routes the binary
 applies the layers itself, and its support depends on build options, engine
 capability and version. Susurrus reads the finished file back — declarative
-marker, C2PA manifest, and AudioSeal detection where available — and reports
-what is actually there. If nothing is detectable it applies the declarative
-marker as a floor, and if even that fails the output is deleted and the run
-refused. Earlier versions reported marking straight from the command line
+marker, C2PA manifest, and in-sample detection where available — and reports
+what is actually there. If even the floor fails the output is deleted and the
+run refused. Earlier versions reported marking straight from the command line
 flags, which meant a build without C2PA support still produced a confident
 "Marked as AI-generated" over unmarked audio.
+
+**The declarative floor is applied unconditionally on those routes**, not only
+when the detectors come up empty. Gating it on "nothing was detected" made an
+Art. 50(2) guarantee depend on a detector being right, and the spread-spectrum
+detector was not reliable enough to carry that: measured over 1500 clips of
+unwatermarked speech, harmonic stacks, tones and noise, it read ~12% of them as
+watermarked. One false positive suppressed the floor and the gate then passed
+on the phantom reading, releasing genuinely unmarked audio under a green status
+line. The marker is idempotent, needs no dependency and does not touch the
+samples, so there is no cost to applying it every time — and a marking
+obligation should not turn on a coin flip. The detector statistic was fixed in
+the same change (weighted correlation, threshold 0.65 → 0.78, false positives
+12% → 1.2%, true detection 93% → 98%), but the enforcement no longer depends on
+it being right.
+
+That residual 1.2% still matters for the *verification* verbs.
+`susurrus --detect-watermark FILE` reports the in-sample tier's own reading, so
+roughly one unwatermarked file in eighty will come back
+`detected_as_ai_generated: true` on the spread-spectrum tier alone. The report
+names the detector that ran and gives the confidence — read both. A positive
+from this tier is evidence, not proof; C2PA is the layer that answers
+"is this file authentic" rather than "does this look marked".
 
 C2PA signing needs an X.509 credential. Pass `--c2pa-cert` / `--c2pa-key` to
 use your own; otherwise Susurrus generates a local CA + end-entity chain once
@@ -260,6 +301,17 @@ The disclosure is added only when cloning from reference audio. Synthesis in a
 stock voice is not a deepfake, so Art. 50(4) is not engaged — though Art. 50(2)
 marking still applies to it, and does.
 
+**Speech-to-speech is gated more strictly than synthesis.** `--s2s` re-voices a
+real recording of a real person, so the rights attestation is required whatever
+the target voice is — unlike `--tts`, where a stock voice needs none. A preset
+target still produces a recording of someone saying something in a voice that
+is not theirs. `--s2s` also requires an explicit `--s2s-output`: audio at a path
+Susurrus cannot name is audio it cannot mark, verify or delete. Both routes into
+speech-to-speech — the subprocess one and the in-process FFI one — apply the
+Art. 50 gate in Susurrus rather than leaving it to the binary. The subprocess
+route previously did neither, and was the last synthesis path whose only check
+lived outside this codebase.
+
 Disclosure to the people who see or hear the output remains a deployer
 obligation that no library can discharge for you.
 
@@ -326,6 +378,33 @@ If your deployment lands in Annex III, the remaining high-risk obligations
 registration) fall on you as provider or deployer. Susurrus does not implement
 them, and enabling these flags is not a conformity assessment.
 
+## Provisions that do not apply, and why
+
+A map that lists only the engaged obligations cannot be checked. These were
+considered and found not to bite; if your fork changes that, they are yours.
+
+**Art. 50(1) — informing people they are interacting with an AI system.** This
+binds systems "intended to interact directly with natural persons". Susurrus
+has no conversational surface: it processes files and text you hand it, and
+never addresses a person as an interlocutor. Not engaged.
+
+**Art. 50(3) — emotion recognition and biometric categorisation.** Susurrus
+ships neither. Speaker enrollment and matching is biometric *identification*,
+which is a different thing from *categorisation* (inferring attributes such as
+sex, age or ethnicity) — so Art. 50(3)'s duty to inform exposed persons is not
+engaged, while the Annex III(1)(a) analysis below is. Do not add emotion
+inference and leave this paragraph standing.
+
+**Art. 53 / 55 — general-purpose AI models.** Susurrus is not a GPAI provider.
+It downloads and runs third-party models; it does not train, fine-tune or place
+a model on the market under its own name. The GPAI obligations fall on whoever
+provides the models you point it at. If you fine-tune a model and ship it as
+part of a fork, you may become a provider of that model, and the fact that
+Susurrus is MIT-licensed does nothing for you there.
+
+**Art. 5 — prohibited practices** is treated below rather than here, because it
+needs a statement about deployment and not only about the code.
+
 ## Art. 5 — prohibited practices
 
 Susurrus ships no emotion-recognition capability, so the Art. 5(1)(f)
@@ -357,10 +436,13 @@ and is not.
 ## Art. 4 — AI literacy
 
 Providers and deployers must ensure a sufficient level of AI literacy among
-staff operating these systems. The GUI carries this as **Help → About AI in
-Susurrus**: what the system is, its intended purpose, its known failure modes,
-and what it is not validated for. It is localized along with the rest of the
-interface. Practically, whoever runs Susurrus should understand:
+staff operating these systems. Susurrus carries this as **Help → About AI in
+Susurrus** in the GUI and **`susurrus --about-ai`** on the command line: what
+the system is, its intended purpose, its known failure modes, and what it is
+not validated for. Both render the same localized source, so they cannot drift
+apart — and a CLI-only deployment, which is most server deployments, is no
+longer the one that gets nothing. Practically, whoever runs Susurrus should
+understand:
 
 - Transcription output is a **model prediction, not a record**. It contains
   errors, and error rates vary sharply by accent, audio quality, background

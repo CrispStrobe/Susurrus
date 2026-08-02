@@ -240,18 +240,31 @@ class CrispasrTTSBackend(TTSBackend):
         # "Cannot tell" is not "absent": if no detector is installed for the
         # robust layers, only the declarative marker is a reliable signal.
         undetectable = found.get("watermark") is None and found.get("c2pa") is None
-        if not result["marker"] and not result["watermark"] and not result["c2pa"]:
-            try:
-                from utils.ai_marking import embed_ai_marker
 
-                result["marker"] = embed_ai_marker(output_path, model=model or self.model_id)
-                if result["marker"]:
+        # The floor is applied unconditionally, not only when the detectors
+        # came up empty. Gating it on "nothing was detected" made an Art. 50(2)
+        # guarantee depend on a detector being right, and the spread-spectrum
+        # detector is not: at its old threshold it read ~12% of unwatermarked
+        # audio as marked. One false positive there suppressed the floor, and
+        # enforce_marking below then passed on the phantom reading — shipping
+        # genuinely unmarked audio under a printed "Marked as AI-generated".
+        #
+        # Applying it always costs nothing to be wrong about: embed_ai_marker
+        # is idempotent, needs no dependency, and leaves the samples untouched.
+        # A marking obligation should not be decided by a coin flip that lands
+        # the wrong way one time in eight.
+        try:
+            from utils.ai_marking import embed_ai_marker
+
+            if embed_ai_marker(output_path, model=model or self.model_id):
+                if not result["marker"]:
                     logging.info(
-                        "CrispASR output carried no detectable AI marking; "
-                        "applied the declarative marker as a floor."
+                        "Applied the declarative marker to CrispASR output as "
+                        "an Art. 50(2) floor."
                     )
-            except ImportError:
-                pass
+                result["marker"] = True
+        except ImportError:
+            pass
 
         if not (result["marker"] or result["watermark"] or result["c2pa"]):
             logging.warning(
