@@ -42,6 +42,33 @@ partials happen to land on comb bins. Treat a positive from this tier as
 evidence, not proof — which is why nothing in the Art. 50 enforcement path is
 allowed to depend on it (see ``apply_provenance`` on the CrispASR backends).
 
+**A sibling statistic was ported, measured, and rejected — the data, so nobody
+re-ports it blind.** CrispASR and CrispTTS both replaced this with a per-frame
+one-sample t (sample count = frame count, not 32) plus a specificity check
+against 15 decoy sign patterns. On *their* corpus — 1265 one-second clips of
+real human speech — it reads 0.9% FP / 97.0% TP where the old sign statistic
+read 5.2% / 68.6%, which is a large and real improvement.
+
+It does not survive this project's corpus, which deliberately includes pure
+tones and harmonic stacks. A stationary tone produces an enormous per-frame t
+(median 49, max 1212), and with 15 decoys the MAD estimate is loose enough that
+a third of them clear z >= 1. Measured over 288 unmarked clips across speech,
+tones, formant stacks and noise at 16/24/44.1 kHz and 1-5 s:
+
+    correlation (this module)     FP  0.00%   TP 79.2%
+    frames t/z (ported)           FP 15.62%   TP 97.9%
+    both required                 FP  0.00%   TP 79.2%
+    correlation OR (t, z>=3)      FP  2.08%   TP 90.3%
+
+Raising the decoy count to 31 or 63 moves it very little; the trade is real and
+neither statistic dominates. This module keeps the correlation because the two
+errors are not symmetric here: a false positive is an affirmative claim that
+someone's real recording is AI-generated, while a miss is reported as "could
+not check, not not-AI-generated" and cannot produce unmarked output — the
+declarative floor is unconditional. The sibling statistic is the better choice
+for a speech-only corpus at short durations, and if this module is ever
+retargeted at one, that is the change to make.
+
 **What it survives, and what it does not.** The mark rides on fixed *bin
 indices* of a fixed-size FFT, so it is tied to the sample rate it was embedded
 at. Transcoding survives — MP3, requantisation, interpolation loss — but
