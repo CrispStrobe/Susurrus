@@ -74,6 +74,20 @@ _EMPTY = {
 #: watermarked or C2PA-signed, but has no dependency-free fallback.
 _MARKABLE = (".wav", ".mp3")
 
+#: Opt-outs that name *one* layer. Each requires the responsibility attestation
+#: alongside it (the CLI and the GUI both refuse otherwise), but the attestation
+#: is the authorisation to reduce marking, not an instruction to drop all of it.
+_NARROW_OPT_OUTS = ("no_watermark", "no_c2pa", "no_spoken_disclaimer")
+
+
+def narrowed_opt_outs(options):
+    """Return the single-layer opt-outs present in *options*.
+
+    Empty when the operator attested without naming a layer, which is the
+    documented "produce completely unmarked audio" case.
+    """
+    return [key for key in _NARROW_OPT_OUTS if options.get(key)]
+
 
 def new_result(**overrides):
     """Return a fresh provenance-result dict."""
@@ -298,7 +312,21 @@ def apply_provenance(
     if not output_path or not os.path.isfile(output_path):
         return result
 
-    if options.get("accept_marking_responsibility"):
+    # The attestation is the *authorisation* to reduce marking; the narrow
+    # flags select what to reduce. Treating the attestation alone as "drop
+    # everything" is right, and treating it that way when a narrow flag is also
+    # present was wrong: every narrow flag requires the attestation, so this
+    # short circuit ran first and no narrow flag could ever take effect on the
+    # Python-native path. COMPLIANCE.md promised "--no-c2pa skips only the
+    # cryptographic layer"; what actually happened was that it skipped all
+    # three, and the CrispASR routes — which forward the flags to the binary
+    # individually — honoured the documented behaviour while these did not.
+    # That is exactly the "same flag means different things depending on the
+    # backend" split the attestation rule was introduced to remove.
+    attested = bool(options.get("accept_marking_responsibility"))
+    narrowed = narrowed_opt_outs(options)
+
+    if attested and not narrowed:
         logger.warning(
             "AI-content marking skipped (--accept-marking-responsibility). "
             "Responsibility for marking this output rests with the operator "
@@ -367,6 +395,19 @@ def apply_provenance(
             )
         except ImportError:
             pass
+
+    # An operator who attested *and* named layers has already taken the Art. 50
+    # duty on, so if their selection happens to leave nothing behind that is
+    # their call and not a refusal. Reported as an opt-out rather than as a
+    # success, because it is one.
+    if attested and not marking_applied(result):
+        logger.warning(
+            "AI-content marking reduced to nothing by %s. Responsibility for "
+            "marking this output rests with the operator per EU AI Act Art. 50.",
+            ", ".join(narrowed),
+        )
+        result["opted_out"] = True
+        return result
 
     # Fails closed: deletes the file and raises rather than returning a result
     # that says "unmarked" and trusting every caller to act on it.
