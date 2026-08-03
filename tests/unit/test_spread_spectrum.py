@@ -150,6 +150,51 @@ class TestEmbedDetect(unittest.TestCase):
         ).astype(np.float32)
         self.assertGreater(ss.detect(up), ss.DETECTION_THRESHOLD)
 
+    def test_the_caller_gets_the_band_default_not_a_stale_one(self):
+        """A caller-side alpha default outlives the band it was chosen for.
+
+        CrispTTS shipped every file 1.6x louder than designed for a while: its
+        embed helper declared alpha=0.08 in its own signature, so when the comb
+        moved into the speech band and the band default became 0.05, the
+        caller's stale default won. Susurrus resolves the default inside
+        embed() from wm_params(), which is why it did not inherit that — this
+        pins it, since the failure is silent and costs 3-4 dB of SNR.
+        """
+        pcm = _speech_like()
+        np.testing.assert_allclose(
+            ss.embed(pcm), ss.embed(pcm, alpha=ss.wm_params(ss.FFT_SIZE)[2]), atol=1e-6
+        )
+
+    def test_documented_snr_is_not_a_single_lucky_segment(self):
+        """The docstring's SNR must describe the scheme, not one recording.
+
+        It claimed ~39.5 dB from one 20 s clip; measured across rates and
+        seeds the mark is 13-27 dB. Inaudibility is the argument for embedding
+        into every output by default, so the number has to be honest.
+        """
+        import re
+
+        measured = []
+        for rate in (16000, 24000):
+            for seed in (0, 1, 2):
+                rng = np.random.default_rng(seed)
+                n = int(8.0 * rate)
+                x = np.convolve(rng.standard_normal(n), np.ones(24) / 24, mode="same")
+                x = x * (0.5 + 0.5 * np.sin(2 * np.pi * 4 * np.arange(n) / rate) ** 2)
+                x = (x / max(abs(x).max(), 1e-9) * 0.3).astype(np.float32)
+                noise = ss.embed(x) - x
+                measured.append(10 * np.log10(np.mean(x**2) / max(np.mean(noise**2), 1e-20)))
+
+        worst = min(measured)
+        claimed = [float(m) for m in re.findall(r"(\d\d(?:\.\d)?) dB", ss.__doc__ or "")]
+        self.assertTrue(claimed, "docstring states no SNR figures at all")
+        self.assertLessEqual(
+            min(claimed),
+            worst + 6.0,
+            f"docstring's lowest claim ({min(claimed)} dB) is far above the "
+            f"measured worst case ({worst:.1f} dB)",
+        )
+
     def test_short_audio_is_a_noop(self):
         pcm = np.zeros(500, dtype=np.float32)
         np.testing.assert_array_equal(ss.embed(pcm), pcm)

@@ -79,6 +79,17 @@ That install cannot run the Python TTS backends either, so in practice it
 matters for the CrispASR-binary route, where marking is the binary's job and
 the declarative marker is the floor Susurrus can add.
 
+It is **low-level, not inaudible.** `utils/spread_spectrum.py` claimed
+"~39.5 dB" from a single recording; measured across 18 twenty-second segments
+at 16/24/44.1 kHz it is mean 18.9 dB, worst 13.3 dB. That matters because
+inaudibility is the argument for embedding a watermark into *every* output by
+default, and at 13-19 dB on sparse passages the argument does not hold. Use
+AudioSeal where imperceptibility is required. (The sibling CrispTTS project
+found the same overstatement in its own docs, and separately shipped 1.6x
+hotter than designed by letting a stale caller-side alpha override the band
+default — Susurrus resolves the default inside `embed()`, and a test now pins
+that.)
+
 It does **not survive resampling.** The comb rides on fixed bin indices of a
 fixed-size FFT, so it is tied to the sample rate it was embedded at. An MP3
 round trip at the same rate is fine; 24 kHz → 16 kHz drops detection to chance.

@@ -52,9 +52,25 @@ a plain 44.1k->16k does not. Compensating by sweeping candidate rate ratios was
 tried and rejected: a max over ~12 hypotheses drove the false-positive rate to
 100%. AudioSeal is the layer to use where resampling is expected.
 
-SNR is signal-dependent — the nudge is scaled by the mean bin magnitude, so
-peaky material takes a proportionally louder mark than broadband speech does
-(~39.5 dB measured on 20 s of real speech).
+**The mark is low-level, not inaudible.** This docstring claimed "~39.5 dB
+measured on 20 s of real speech" — a figure from one recording, reported as
+though it were the scheme's. Measured across 18 twenty-second segments at
+16/24/44.1 kHz: **mean 18.9 dB, median 18.3 dB, worst 13.3 dB**, best 27.4 dB.
+CrispTTS found the same overstatement in its own docs and landed on the same
+range.
+
+That distinction is load-bearing rather than pedantic. Inaudibility is the
+argument for embedding a watermark in *every* output by default; at 13-19 dB on
+sparse passages that argument does not hold, and an operator who needs the mark
+to be genuinely imperceptible needs to know before shipping, not after someone
+complains. The alpha is deliberately the band default (0.05) rather than the
+wideband 0.08 — CrispTTS shipped 1.6x hotter than designed for a while by
+letting a caller's stale default win, which cost 3-4 dB for nothing.
+
+SNR is signal-dependent: the nudge scales with the mean bin magnitude, so peaky
+material takes a proportionally louder mark than broadband speech, and passages
+near silence take the worst of it. Use AudioSeal where imperceptibility
+matters.
 
 It is a fixed-key comb, so someone who knows the scheme can strip it deliberately
 — AudioSeal remains the right choice where that matters.
