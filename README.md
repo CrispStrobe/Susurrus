@@ -79,9 +79,10 @@ software does for you, and what remains yours to do as provider or deployer.
 - **Marking fails closed**: if no marking layer can be applied, the output is
   **deleted** and the run refused (exit 2) — Susurrus does not emit unmarked
   synthetic audio. WAV and MP3 always succeed (the declarative marker is pure
-  standard library); exotic containers need C2PA or soundfile. A cheap
-  preflight refuses before any model loads. The one way past it is
-  `--accept-marking-responsibility`
+  standard library, and since 2.12.0 the in-sample watermark is a base
+  dependency rather than an extra). A cheap preflight refuses before any model
+  loads. The one way past it is `--accept-marking-responsibility`, which is an
+  attestation about your role, not a waiver
 - **Marking ON by default, on every TTS path**: no backend emits unmarked WAV
   or MP3
 - **Marking is verified, not assumed**: on the CrispASR routes the binary does
@@ -111,11 +112,11 @@ software does for you, and what remains yours to do as provider or deployer.
   not, and a backend nobody has researched says so rather than assuming.
   `--speaker-identity` (CLI) or **Preset voice is:** (GUI) overrides the
   shipped classification
-- **In-sample watermark**: a spread-spectrum comb (numpy + soundfile, both in
-  the `tts` extra) survives transcoding where metadata does not. It is tied to
+- **In-sample watermark**: a spread-spectrum comb (numpy + soundfile, both
+  base dependencies) survives transcoding where metadata does not. It is tied to
   its sample rate — resampling loses it — so `pip install 'susurrus[watermark]'`
   upgrades it to AudioSeal, which survives resampling and resists deliberate
-  removal. (That upgrade silently did nothing before v2.13: the generator was
+  removal. (That upgrade silently did nothing until it was fixed: the generator was
   called through a method the `audioseal` package does not have, so every
   install fell back to the comb. Fixed and pinned by a test that asserts which
   layer applied, not merely that one did)
@@ -145,6 +146,14 @@ software does for you, and what remains yours to do as provider or deployer.
   About AI in Susurrus in the GUI state the intended purpose, the known failure
   modes and what the system is not validated for (Art. 4). Both render the same
   localized source, so a CLI-only deployment is not the one that gets nothing
+- **Accessible disclosure form**: `susurrus --disclosure-text [--language de]`
+  prints the exact sentence the synthesizer speaks, on stdout, for the caption
+  or on-page notice. The spoken disclosure reaches only listeners; Art. 50(5)
+  requires the information to meet accessibility requirements, and an audio
+  file has nowhere to put a caption
+- **Unclassified preset voices say so**: on the 43 of 59 backends where nobody
+  has established whether the voice is a real person, the run warns — in the
+  GUI status area, not only in a log file — and names what to pass
 - **Machine-translated text is disclosed**, not marked: the CLI prints the
   notice on stderr and the GUI shows it beside the result box, so the payload
   stays pipeable. Art. 50(2) marking of text is not applied — see
@@ -172,6 +181,34 @@ does not implement. See [COMPLIANCE.md](COMPLIANCE.md).
 **Speaker enrollment stores biometric data.** `--enroll-speaker` and
 `--speaker-db` persist voice embeddings linked to named people — GDPR Art. 9
 special-category data requiring a lawful basis.
+
+### Acceptable use
+
+Susurrus can clone a voice from a few seconds of audio. Use it on **your own
+voice, or one whose owner has consented.** `--i-have-rights` and the GUI consent
+box record that you assert this; they are not evidence of it, and they are not a
+defence. Cloning someone's voice without permission engages personality rights
+that vary by country and that the EU AI Act leaves untouched — in Germany, the
+*allgemeines Persönlichkeitsrecht*, KUG §§ 22–23 by analogy, and § 201a StGB.
+
+Do not use it to impersonate people, to fabricate statements, or to produce
+material presented as a genuine recording of someone. Reports of misuse, and
+gaps in the marking or consent gates, go to the issue tracker and are treated as
+defects.
+
+### Model licences
+
+Susurrus ships no model weights — it downloads third-party checkpoints from
+their upstream hosts on demand. **Their licences are between you and their
+publishers**, and several backends in this space are research-only or
+non-commercial. The MIT licence on this repository covers this source tree and
+nothing it fetches. Read the licence of any backend you deploy commercially.
+
+### Privacy
+
+Audio is processed locally. There is **no telemetry, no analytics and no crash
+reporting** in this project; the only outbound traffic is model downloads and
+any API service you explicitly configure.
 
 ### GUI
 
@@ -221,6 +258,11 @@ python cli.py --list-backends
 ```
 
 ### Optional Dependencies
+
+The base install carries `soundfile` and `numpy` deliberately: they are what the
+in-sample AI watermark is built from, and EU AI Act Art. 50(2) marking is not
+allowed to depend on an extra nobody selected. C2PA (`[c2pa]`, included in
+`[tts]`) is the one marking layer still optional — install it where you can.
 
 ```bash
 # GUI (PyQt6)

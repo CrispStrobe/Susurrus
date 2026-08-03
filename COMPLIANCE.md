@@ -1,11 +1,26 @@
 # EU AI Act Compliance
 
+**Applies to Susurrus 2.12.0. Last reviewed 3 August 2026.**
+
 This document maps Susurrus onto the obligations of Regulation (EU) 2024/1689
 (the AI Act): what the software does for you, and what remains yours to do.
 
 > **Not legal advice.** Compliance is a property of a *deployment*, not of a
 > repository. This document describes the technical measures shipped in
 > Susurrus so you can assess your own obligations.
+
+> **Nothing here is a certification.** Susurrus is not certified, assessed or
+> approved by anyone, and no conformity assessment has been performed. There is
+> no CE marking for an Art. 50 transparency system, so any project claiming one
+> is describing something else. What this document records is which technical
+> measures are implemented and which obligations are left to you — and where
+> the implementation is partial, it says so rather than rounding up.
+
+Pin the version. This document has drifted from the code before — twice in
+ways that overstated coverage, both caught in the fourth audit — so a copy read
+against a different release is a copy that may be wrong. The counts it quotes
+are checked against the code by `tests/unit/test_provenance_audit_v4.py`, which
+fails the build if they diverge.
 
 ## Does the AI Act apply to this project?
 
@@ -54,11 +69,11 @@ Three kinds of layer, one of which has two tiers:
 | Layer | Mechanism | Availability | Survives re-encoding |
 | --- | --- | --- | --- |
 | In-sample watermark (tier 1) | AudioSeal, learned | CrispASR binary, or `pip install 'susurrus[watermark]'` | Yes, incl. resampling and deliberate removal |
-| In-sample watermark (tier 2) | Spread-spectrum comb — `utils/spread_spectrum.py` | Needs numpy + soundfile, both in `[tts]` | Yes for transcoding, **no for resampling** |
+| In-sample watermark (tier 2) | Spread-spectrum comb — `utils/spread_spectrum.py` | Always — numpy + soundfile are base dependencies | Yes for transcoding, **no for resampling** |
 | Cryptographic | C2PA Content Credentials | CrispASR binary, or `pip install 'susurrus[c2pa]'` — included in `[tts]` | No (manifest is stripped) |
 | Declarative | RIFF `LIST/INFO` (WAV) or ID3v2.4 (MP3) — `utils/ai_marking.py` | Always — no dependencies | No |
 
-**Tier 1 was inert until v2.13.** `embed_watermark()` called
+**Tier 1 had never once applied, until it was fixed.** `embed_watermark()` called
 `generator.get_watermarked_audio()`, which does not exist in the `audioseal`
 package — so on every install that actually had AudioSeal, the call raised,
 the fallback caught it, and the spread-spectrum comb marked the file instead.
@@ -71,13 +86,17 @@ audio came back watermarked, which the fallback satisfied. The test now asserts
 Two limits of tier 2 are worth stating plainly, because earlier versions of
 this document overstated both.
 
-It is **not dependency-free.** `utils/spread_spectrum.py` needs only numpy, but
-the code that reads and rewrites the audio around it needs soundfile, and
-soundfile ships in the `[tts]` extra rather than the base install. A bare
-`pip install susurrus` therefore has the declarative marker and nothing else.
-That install cannot run the Python TTS backends either, so in practice it
-matters for the CrispASR-binary route, where marking is the binary's job and
-the declarative marker is the floor Susurrus can add.
+It **used to depend on an extra, and no longer does.** `utils/spread_spectrum.py`
+needs only numpy, but the code that reads and rewrites the audio around it needs
+soundfile, and soundfile shipped in the `[tts]` extra. A bare
+`pip install susurrus` therefore had the declarative marker and nothing else —
+and while that install cannot run the Python TTS backends, it *can* drive the
+CrispASR binary, so the one configuration that could emit audio with
+strippable-metadata-only marking was also the one that had never opted into the
+marking dependencies. Art. 50(2) asks for marking that is robust "as far as is
+technically feasible", and an extra nobody selected is not a limit of technical
+feasibility. Both are now base dependencies (2.12.0), so every install can
+embed the in-sample watermark.
 
 It is **low-level, not inaudible.** `utils/spread_spectrum.py` claimed
 "~39.5 dB" from a single recording; measured across 18 twenty-second segments
@@ -108,8 +127,16 @@ Art. 50(2) requires marking that is "effective, interoperable, robust and
 reliable as far as technically feasible", and it has no "unless a dependency
 is missing" clause. So neither layer that survives re-encoding is allowed to
 be optional: when AudioSeal is absent, the spread-spectrum comb is embedded
-instead. A `[tts]` install therefore ships two marks in the samples and one in
+instead, and the comb's dependencies are carried in the base install rather than
+behind an extra. Every install therefore ships a mark in the samples and one in
 the metadata, not metadata alone.
+
+C2PA is the one marking dependency still behind an extra (`[c2pa]`, pulled in by
+`[tts]`). That is not a judgement that it matters less — it is a compiled wheel
+with narrower platform coverage than soundfile's, and a hard dependency that
+fails to install produces a tool that marks nothing at all. Install it wherever
+you can; without it you lose the tamper-evident layer while the in-sample
+watermark and the declarative floor still apply.
 
 ### Marking fails closed
 
@@ -127,9 +154,10 @@ not enforce is one the software has not implemented.
 Two consequences worth being clear about:
 
 - **A minimal install still works for WAV and MP3.** The declarative marker is
-  pure standard library, so it always succeeds for those two containers. The
-  gate bites on exotic containers (FLAC, Opus, M4A) with no C2PA and no
-  soundfile, and on cloning to a non-WAV container without soundfile.
+  pure standard library, so it always succeeds for those two containers, and
+  since 2.12.0 the in-sample watermark is available there too. The gate now
+  bites only where soundfile cannot round-trip the container and C2PA is
+  absent.
 - **The check runs twice.** A cheap preflight refuses before any model loads,
   so an unmarkable request costs milliseconds rather than a full synthesis
   that is then thrown away. The authoritative check runs after synthesis,
@@ -277,15 +305,29 @@ Which layers your install can actually apply is reported per synthesis, and
 `susurrus --verify-c2pa FILE` shows what a given file carries. Do not assume
 a layer is active because it is documented — check.
 
-**Opting out.** `--accept-marking-responsibility` produces completely unmarked
-audio. `--no-c2pa` skips only the cryptographic layer, `--no-watermark` only
-the neural one, `--no-spoken-disclaimer` only the audible prefix.
+**Opting out.** `--accept-marking-responsibility` on its own produces
+completely unmarked audio. `--no-c2pa` skips only the cryptographic layer,
+`--no-watermark` only the neural one, `--no-spoken-disclaimer` only the audible
+prefix — every other layer is still applied, and the fail-closed gate still
+runs against what lands.
 
 None of the three narrower flags takes effect on its own: each one requires
 `--accept-marking-responsibility` alongside it, and Susurrus exits 2 if you
 pass one without it. This matches what the CrispASR binary already enforced,
 and replaces an inconsistency where the same flag meant different things
 depending on which backend you chose.
+
+**The attestation authorises the reduction; the narrow flag chooses it.** Until
+2.12.0 those two roles were conflated, and the result was that no narrow flag
+could ever take effect on a Python-native backend. The attestation is mandatory
+alongside them, and it short-circuited the pipeline before any layer ran — so
+`--no-c2pa`, documented as skipping "only the cryptographic layer", in fact
+skipped all three. The CrispASR routes forward the flags to the binary
+individually and did behave as documented, which reproduced exactly the
+backend-dependent split the attestation rule had been introduced to remove.
+The flags now name what to drop and everything unnamed is still applied. If a
+selection happens to leave nothing behind, that is reported as an opt-out
+rather than refused: the operator already attested.
 
 `--accept-marking-responsibility` is also the only thing that disarms the
 fail-closed gate above. That is deliberate: an install that cannot mark and an
@@ -357,7 +399,7 @@ WAV. That matters because the Python-native backend that clones (chatterbox)
 picks its encoder from the output extension, and the GUI's save dialog offers
 `.mp3` — so restricting the disclosure to WAV would have left the one route
 where Art. 50(4) actually applies producing undisclosed deepfakes. Non-WAV
-concatenation needs soundfile, which ships in the `tts` extra.
+concatenation needs soundfile, which is a base dependency since 2.12.0.
 
 Art. 50(2) and Art. 50(4) are tracked **separately**, because they fail
 separately. If a run clones a voice and the audible disclosure does not land,
@@ -391,8 +433,8 @@ So the disclosure now turns on two questions, not one:
 | --- | --- |
 | Cloned from reference audio | Always |
 | Preset voice, `real_person` (piper, speecht5, crispasr:orpheus-de …) | Yes |
-| Preset voice, `synthetic` (kokoro, bark …) | No |
-| Preset voice, `unknown` (edge-tts, melotts …) | No — but warns once |
+| Preset voice, `synthetic` (kokoro, dia, csm …) | No |
+| Preset voice, `unknown` (edge-tts, melotts, bark …) | No — but warns once |
 
 `unknown` is deliberately not a synonym for `synthetic`. It means nobody has
 checked, which is a question for the deployer rather than a default to assume
@@ -400,15 +442,41 @@ away: forcing a disclosure on a guess would prepend a sentence to every stock
 voice, and assuming "synthetic" would silently drop the duty for voices that
 turn out to be people. The warning names the backend and says what to pass.
 
+**Where that warning appears matters as much as its wording.** The whole
+`unknown` policy rests on the operator being told, and for several releases the
+GUI operator was not: the warning was written with `logger.warning`, which in a
+packaged windowed application goes to a stderr there is no window for, and the
+log viewer attaches its handler only once you open Tools → Logs. Synthesizing
+before opening that dialog left no trace at all, under a status line reading
+"Marked as AI-generated". It is now emitted to the GUI status area alongside
+the marking result, in the interface language, the same way the Art. 50(4)
+disclosure shortfall already was. On the CLI it goes to stderr, where it always
+went.
+
 Override the shipped classification with `--speaker-identity`
 (`real_person` | `synthetic` | `unknown`), or the **Preset voice is:** control
 in the GUI's TTS settings, when you know better than the table — for a voice
 pack you added, or a multi-voice backend where one voice differs from the rest.
 
 **Coverage is partial, and the gap is loud rather than silent.** Susurrus
-exposes 59 TTS backends; 40 are classified from provider documentation, 14
-voices are classified individually, and the other 19 backends resolve to
-`unknown` and warn once each.
+exposes 59 TTS backends. Counting what a run actually resolves to:
+
+| | Backends |
+| --- | --- |
+| Determinate verdict (`real_person` or `synthetic`) | **16** |
+| Listed in the table, verdict recorded as `unknown` | 24 |
+| Absent from the table, so `unknown` by default | 19 |
+| **Resolving to `unknown` in total** | **43 of 59** |
+
+Plus 14 individually classified voices (`crispasr:kokoro` and `kokoro-onnx`,
+seven voices each) and three checkpoint-level rules.
+
+Earlier versions of this section said "40 are classified from provider
+documentation … the other 19 resolve to `unknown`", which read as 40 answered
+and 19 open. 40 is the number of *table entries*, and 24 of those entries record
+`unknown` as the answer — a checked dead end is worth recording so it is not
+re-searched, but it is not a classification. The real ratio is 16 answered and
+43 open, and that is the number to quote.
 
 **`unknown` is the normal state, not the exception.** Of the cards read, most
 say nothing whatsoever about whose voices trained the model — Bark, MeloTTS,
@@ -456,12 +524,18 @@ was first written:
   while only the repo *name* said so, because a name is not a source. Reading
   the card is what changed it, not the name agreeing with it.
 
-Where a single backend mixes real and designed voices — SauerkrautTTS ships two
-studio-recorded people and two synthetic voices — a per-voice entry overrides
-the backend-level answer. None of the backends Susurrus currently exposes is
-mixed in that way, so that table is empty; it exists because the alternative
-for a mixed model is classifying it by its riskiest voice and prepending a
-disclosure to the rest.
+Where a single backend mixes real and designed voices, a per-voice entry
+overrides the backend-level answer — the alternative for a mixed model is
+classifying it by its riskiest voice and prepending a disclosure to the rest.
+`crispasr:kokoro` is exactly such a backend: `df_eva` and `dm_bernd` are named
+HUI narrators while the hexgrad English packs are designed style vectors. The
+per-voice table currently holds seven voices, mirrored across `crispasr:kokoro`
+and `kokoro-onnx`, which serve the same packs under the same names.
+
+(This paragraph previously said that table was empty. It was written when it
+was, and outlived the change that filled it — as did the identical comment
+above the table in `utils/speaker_identity.py`. Both are corrected; a stale
+sentence about a safety table reads as an invariant.)
 
 **The verdict can depend on the checkpoint, not just the backend.** One CrispASR
 backend serves several models with different answers: `crispasr:orpheus` runs
@@ -530,18 +604,29 @@ What that cannot settle is the half a listener actually hears — but the
 voicepacks can. The base produces nothing without one, and two of the shipped
 German packs are `df_eva` and `dm_bernd`, carrying the names of two documented
 narrators of the very corpus the backbone is trained on (Bernd, Hokuspokus,
-Friedrich, Eva, Karlsson, Sonja). Those are now classified `real_person` per
-voice, so selecting them prepends the disclosure while the English voicepacks
-do not. `df_victoria` and `dm_martin` come from a different source with no
-published provenance and stay `unknown` — a personal name is not by itself
-evidence of a person.
+Friedrich, Eva, Karlsson, Sonja). Those are classified `real_person` per voice,
+so selecting them prepends the disclosure while the English voicepacks do not.
 
-Note which way that inference runs. Classifying from a name is normally
-refused, because guessing "synthetic" from a filename silently *removes* a
-disclosure. A name matching a named speaker inside the documented training
-corpus, pointing at `real_person`, is the conservative direction — it adds a
-duty rather than dropping one. A test enforces the asymmetry: no per-voice
-entry may be `synthetic`.
+`df_victoria` and `dm_martin` are classified `synthetic`, on the provider's
+statement that their base — `kikiri-german-base-51speakers-synthetic` — was
+"trained entirely on synthetic (TTS-generated) audio". An earlier version of
+this document held them at `unknown` on the grounds that a personal name is not
+by itself evidence of a person, which was the right answer while the name was
+all there was, and was superseded once the card was read.
+
+Note which way that inference runs. Classifying from a name is refused, because
+guessing "synthetic" from a filename silently *removes* a disclosure. A name
+matching a named speaker inside the documented training corpus, pointing at
+`real_person`, is the conservative direction — it adds a duty rather than
+dropping one.
+
+The rule a test enforces is therefore about **what a verdict rests on, not
+which value it takes**: every per-voice entry must cite its evidence. An
+earlier version of that test simply forbade `synthetic` per voice. That was the
+right instinct and the wrong rule — it would have rejected the kikiri card
+along with the guess it was meant to catch. Requiring the source is what
+actually separates the two. (This document described the old rule for several
+releases after the test changed.)
 
 Art. 50(2) marking applies to all of these regardless, and does.
 
@@ -562,8 +647,70 @@ Art. 50 gate in Susurrus rather than leaving it to the binary. The subprocess
 route previously did neither, and was the last synthesis path whose only check
 lived outside this codebase.
 
+**The artistic exception is real, and Susurrus does not implement it.**
+Art. 50(4) mitigates the duty where the content is "evidently artistic,
+creative, satirical, fictional or analogous": disclosure is then limited to
+doing so "in an appropriate manner that does not hamper the display or
+enjoyment of the work". A spoken sentence bolted to the front of a track is
+precisely the kind of thing that provision contemplates relaxing.
+
+Susurrus prepends it anyway, and the narrow flag that suppresses it —
+`--no-spoken-disclaimer`, with the attestation it requires — is the honest
+route for a deployer who qualifies. Since 2.12.0 that combination keeps the
+Art. 50(2) machine-readable marking, which is owed regardless of any artistic
+exception; before it, the attestation dropped every layer, so the only exit
+from an over-strict Art. 50(4) prefix overshot into an Art. 50(2) failure.
+Whether your work qualifies is your judgement, not the software's, and
+over-disclosing is not a breach.
+
 Disclosure to the people who see or hear the output remains a deployer
 obligation that no library can discharge for you.
+
+## Art. 50(5) — how and when the information reaches people
+
+> The information referred to in paragraphs 1 to 4 shall be provided to the
+> natural persons concerned in a clear and distinguishable manner at the latest
+> at the time of the first interaction or exposure. The information shall
+> conform to the applicable accessibility requirements.
+
+This provision was missing from earlier versions of this document — not argued
+and dismissed, simply absent, which is worse, because a map that omits a
+provision reads as a map on which it does not appear.
+
+**Timing.** Susurrus meets this structurally rather than by policy: the spoken
+disclosure is the first thing in the file, so exposure to the audio and
+exposure to the disclosure are the same event. There is no window in which a
+listener has heard the voice but not the notice.
+
+**Accessibility is a genuine gap, and it is the provider's to close.** The
+Art. 50(4) disclosure Susurrus ships is **audible only**. For a d/Deaf or
+hard-of-hearing recipient it conveys nothing, and the machine-readable layers
+are not a substitute — they address parsers, not people. An audio file has
+nowhere to put a caption, so the accessible form has to live in whatever
+carries the audio: a transcript, a caption track, a visible notice on the page
+or player. That is a property of your publication, which is why it cannot be
+shipped in a WAV.
+
+What Susurrus does is hand you the exact sentence, so the accessible form is a
+copy rather than a paraphrase:
+
+```console
+$ susurrus --disclosure-text
+The following audio was generated by artificial intelligence.
+
+$ susurrus --disclosure-text --language de
+Die folgende Aufnahme wurde von künstlicher Intelligenz erzeugt.
+```
+
+It prints on stdout, in the language you pass, so it pipes straight into a
+caption track, a template or a CMS field. It is the same localized
+`disclosure.spoken` string the synthesizer speaks — reachable in-process as
+`utils.spoken_disclosure.disclosure_text(locale)` — so the audible and the
+written disclosure cannot drift apart. The declarative marker's `ICMT` /
+`comment` field carries the machine-readable equivalent.
+
+Placing it is still yours: a caption, a transcript, a visible notice on the page
+or player. If you publish synthetic audio to a general audience, budget for it.
 
 ## Biometrics — speaker enrollment and identification
 
@@ -732,6 +879,111 @@ understand:
   negation, idiom and ambiguous pronoun reference.
 - Synthesized speech is not evidence of anything a real person said.
 
+## Obligations that are not the AI Act's
+
+The AI Act is not the only thing that governs a voice-cloning tool, and a
+compliance map that stops at Regulation (EU) 2024/1689 will mislead by
+omission. These are outside its scope and inside yours.
+
+### Model licences and upstream usage terms
+
+Susurrus ships **no model weights**. It downloads third-party checkpoints on
+demand from their upstream hosts, and the licence on each of those is a matter
+between you and its publisher — the AI Act does nothing to harmonise them, and
+neither does Susurrus's MIT licence, which covers this source tree and nothing
+it fetches.
+
+This matters more here than in most projects, because the same research that
+produced the speaker-identity table kept running into restrictive terms:
+VibeVoice's card is largely architecture and *usage restrictions*; CosyVoice
+documents its training data with a takedown address rather than a provenance
+statement. Several models in this space are research-only or non-commercial,
+and a non-commercial checkpoint does not become commercial because a
+permissively licensed frontend invoked it.
+
+Susurrus does not enforce this and does not attempt to classify it. There is no
+licence table here, and inventing one would repeat precisely the mistake the
+speaker-identity section documents at length: a verdict reached by reasoning
+about names rather than reading the terms is a guess wearing a table entry's
+clothes. What the software does is leave the fetch pointed at the upstream host
+so the terms are one click from the thing you are downloading.
+
+**Before you deploy a backend commercially, read its licence.** Do not infer it
+from this project's licence, from another backend's, or from the fact that the
+download succeeded.
+
+### Personality rights in the cloned voice
+
+A rights attestation satisfies Susurrus. It does not satisfy the law that
+protects the person whose voice it is, which is national and survives untouched
+by the AI Act. In Germany that means the general personality right
+(*allgemeines Persönlichkeitsrecht*), the KUG §§ 22–23 regime applied by
+analogy to voice, and § 201a StGB. Other member states differ.
+
+`--i-have-rights` records that you assert consent or ownership. It is not
+evidence of either, and it is not a defence. Keep whatever actually
+demonstrates consent — a release, a recording of the permission, a contract —
+somewhere that is not a command-line flag.
+
+### Data protection
+
+Susurrus processes audio locally and **sends nothing anywhere**. There is no
+telemetry, no analytics, no crash reporting and no usage beacon in this source
+tree; the only outbound requests are model downloads to the hosts you point it
+at, and API calls to services you explicitly configure. The maintainers
+therefore receive no personal data and are not a controller or processor for
+anything you transcribe or synthesize.
+
+That position is worth protecting deliberately. Adding telemetry — even
+anonymous, even opt-out — would make whoever ships that build a controller with
+the obligations that follow. If you fork and add it, the analysis in this
+document no longer describes your build.
+
+The one feature that creates a controller is the speaker database, and it
+creates one out of *you*, not the maintainers — see the biometrics section
+above.
+
+## If you fork, redistribute, or build on this
+
+The first question is not which obligations apply. It is whether you are a
+**provider** at all, and that turns on your conduct rather than on the code.
+
+Art. 3(10) defines making an AI system available on the market as supplying it
+"in the course of a **commercial activity**, whether in return for payment or
+free of charge". Publishing MIT-licensed source with no commercial activity
+around it is a materially different act from shipping a product, and the
+obligations attach to the second in a way they may well not attach to the
+first. What tends to decide it:
+
+| | Likely reading |
+| --- | --- |
+| Source on a public host, no monetisation, no support offering | Arguably no placing on the market, so no provider obligations attach |
+| Sold, licensed, hosted as a service, or bundled into a paid product | Placing on the market — you are the provider |
+| Published under a company's name, or supported commercially | Placing on the market — you are the provider |
+| Forked and rebranded, then distributed under your own name | You are the provider of *your* system, whatever the original was |
+
+Decide which line you are on before you need the answer, and write the reasoning
+down. If you land on provider, note that Art. 2(12)'s free-and-open-source
+carve-out does **not** rescue you here: it lifts for systems falling under
+Art. 5 or Art. 50, and a TTS suite with voice cloning is an Art. 50 system. The
+transparency obligations are the ones that bite, and they are the ones this
+document describes as implemented.
+
+Three things to get right if you redistribute:
+
+- **Do not claim more than is here.** This document is a representation that
+  people rely on, and a warranty disclaimer in a licence file is not obviously
+  a defence for a compliance claim someone acted on. Say "implements these
+  measures", never "compliant" or "certified".
+- **Re-date and re-version it.** The counts in this document describe a
+  specific release. If you change the backend list or the classification
+  tables, the numbers here become wrong — the test suite will tell you.
+- **Keep the gates.** The marking pipeline, the cloning attestation and the
+  fail-closed behaviour are the substance of the Art. 50 story. A fork that
+  removes them is a fork this document does not describe, and shipping it
+  alongside an unmodified COMPLIANCE.md would be worse than shipping it with
+  none.
+
 ## Intended purpose and limitations
 
 **Intended purpose.** A local-first desktop and command-line tool for
@@ -768,6 +1020,11 @@ for exactly this reason.
 - Mark synthetic audio that leaves your endpoint through something other than
   the marking proxy — a CDN, a re-encoding gateway, or the binary running
   unproxied under `--accept-marking-responsibility`.
+- Provide the Art. 50(5) **accessible** form of the disclosure. What Susurrus
+  ships is audible, which reaches nobody who cannot hear it; the caption,
+  transcript or on-page notice is a property of your publication.
+- Establish whose voice a preset is on the 43 of 59 backends that resolve to
+  `unknown`. It tells you the question is open; answering it is yours.
 
 ## Reporting
 

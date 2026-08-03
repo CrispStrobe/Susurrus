@@ -184,12 +184,16 @@ BACKEND_SPEAKER_IDENTITY = {
 #:
 #: A backend-level answer is wrong for a model that ships some real voices and
 #: some designed ones — SauerkrautTTS is the known example, where Tom and Anna
-#: are studio recordings of people and Max and Lena are not. None of the
-#: backends Susurrus currently exposes is mixed in that way (the Kartoffel
-#: natural/synthetic split is two separate backends, and every Piper voice is
-#: a donor while every Kokoro voice is a blend), so this is empty. It exists
-#: because the alternative for a mixed model is classifying it by its riskiest
-#: voice and prepending a disclosure to the rest.
+#: are studio recordings of people and Max and Lena are not. The alternative
+#: for a mixed model is classifying it by its riskiest voice and prepending a
+#: disclosure to the rest, which is why this table exists.
+#:
+#: ``crispasr:kokoro`` is exactly such a backend, so this table is *not* empty:
+#: ``df_eva`` and ``dm_bernd`` are named HUI narrators while the hexgrad English
+#: packs are designed style vectors. An earlier version of this comment said
+#: "so this is empty" and survived the change that filled it — kept in mind
+#: here because a stale comment about a safety table reads as an invariant.
+#:
 #: ``(backend, voice) -> (identity, evidence)``.
 #:
 #: The evidence travels with the verdict rather than in a comment beside it,
