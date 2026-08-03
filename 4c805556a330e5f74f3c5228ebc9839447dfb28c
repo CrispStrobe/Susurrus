@@ -1,0 +1,10 @@
+Scope correction: this commit also contains the marking-proxy work that
+its message does not mention — endpoint-based classification of synthesis
+responses (utils/marking_proxy.py) and the raw-sample watermarking that closed
+the response_format:f32 hole, plus their tests in test_uncovered_paths.py.
+
+An earlier commit attempt for that work died on a shell timeout mid-run and the
+staged changes were swept into this one. The code and tests are correct and were
+verified against the live CrispASR server; only this message understates what
+landed. Recorded as a note rather than by rewriting published history, since the
+defect is in the description and not in the tree.
