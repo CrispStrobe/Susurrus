@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "susurrus"
-version = "2.11.0"
+version = "2.12.0"
 description = "Audio Transcription, TTS & Translation suite with multiple backends"
 readme = "README.md"
 license = "MIT"
@@ -12,6 +12,17 @@ requires-python = ">=3.9"
 dependencies = [
     "requests>=2.25.1",
     "pydub>=0.25.1",
+    # EU AI Act Art. 50(2) requires marking that is "robust and reliable as far
+    # as is technically feasible", and has no "unless a dependency is missing"
+    # clause. These two are what the in-sample watermark is built from, and
+    # while they sat in the [tts] extra a bare install could apply nothing but
+    # strippable metadata. That mattered for the CrispASR-binary route, which
+    # synthesizes without needing any of the Python TTS stack — so the one
+    # install that could emit audio with metadata-only marking was also the one
+    # that never opted into the marking dependencies. Both ship ubiquitous
+    # wheels; the cost of carrying them is far below the cost of the gap.
+    "soundfile>=0.12.0",
+    "numpy>=1.21",
 ]
 
 [project.optional-dependencies]
@@ -30,16 +41,15 @@ tts = [
     "piper-tts>=1.2.0",
     "kokoro-onnx>=0.4.0",
     "chatterbox-tts>=0.1.2",
-    "soundfile>=0.12.0",
-    # utils/spread_spectrum.py imports numpy directly. soundfile already
-    # requires it, so this changes nothing at install time — but the
-    # dependency-free watermark tier is only "always available" if the
-    # things it is built from are actually declared.
-    "numpy>=1.21",
-    # EU AI Act Art. 50(2) marking travels with the ability to synthesize.
-    # Without these the only marking a TTS install can apply is strippable
-    # metadata, which is a thin reading of "robust and reliable as far as
-    # technically feasible". Both are small next to what TTS already pulls in.
+    # soundfile and numpy moved to the base dependencies — the in-sample
+    # watermark must not be contingent on choosing an extra.
+    #
+    # C2PA stays an extra, and the reason is not that it matters less. It is a
+    # compiled wheel whose platform coverage is narrower than soundfile's, and a
+    # hard dependency that fails to install makes the whole tool uninstallable —
+    # which marks nothing at all. It is pulled in by [tts], recommended
+    # everywhere else, and its absence costs the tamper-evident layer while the
+    # in-sample watermark and the declarative floor still apply.
     "susurrus[c2pa]",
 ]
 text-extraction = [
