@@ -87,8 +87,16 @@ def download_crispasr():
     return None
 
 
-def find_crispasr():
-    """Locate the crispasr binary — search PATH, common locations, then auto-download."""
+def find_crispasr(download=True):
+    """Locate the crispasr binary — search PATH, common locations, then auto-download.
+
+    Args:
+        download: Fetch a release when nothing local matches. Pass False from
+            anything that is *asking a question* rather than doing the work the
+            user requested — a provenance lookup that silently starts a
+            multi-hundred-megabyte download is the kind of surprise this project
+            keeps having to remove.
+    """
     env = os.environ.get("CRISPASR_EXECUTABLE")
     if env and os.path.isfile(env):
         return env
@@ -124,6 +132,9 @@ def find_crispasr():
                 return os.path.normpath(found)
         elif os.path.isfile(c) and os.access(c, os.X_OK):
             return os.path.normpath(c)
+
+    if not download:
+        return None
 
     logger.info("CrispASR not found locally, attempting to download latest release...")
     return download_crispasr()

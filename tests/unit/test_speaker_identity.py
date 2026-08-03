@@ -438,6 +438,89 @@ class TestCheckpointStamp(unittest.TestCase):
         self.assertEqual(si.identity_from_stamp(path), (None, None))
 
 
+class TestBinaryIsAskedFirst(unittest.TestCase):
+    """Susurrus's table is the fourth copy of a verdict, and copies drift.
+
+    The verdicts live in CrispASR's C++, in GGUF stamps, and in its docs.
+    Susurrus restating them has drifted repeatedly — four verdicts wrong, two
+    entries naming backends that do not exist, a kokoro rule rewritten once the
+    packs were understood. ``crispasr --print-speaker-identity FILE`` resolves
+    with the same code the binary's own gate uses, so where it can answer it is
+    asked, and the table becomes the fallback.
+    """
+
+    def setUp(self):
+        si._reset_warnings_for_tests()
+        si._binary_cache.clear()
+
+    def tearDown(self):
+        si._binary_cache.clear()
+
+    def _fake_run(self, stdout, returncode):
+        class Result:
+            pass
+
+        result = Result()
+        result.stdout = stdout
+        result.returncode = returncode
+        return mock.patch("subprocess.run", return_value=result)
+
+    def test_the_binary_answer_wins_over_the_table(self):
+        with mock.patch("utils.crispasr_utils.find_crispasr", return_value="/fake/crispasr"):
+            with self._fake_run("synthetic\n", 0):
+                # The table would say real_person for this backend.
+                self.assertEqual(
+                    si.resolve_speaker_identity(backend="crispasr:piper", model=__file__),
+                    "synthetic",
+                )
+
+    def test_unknown_from_the_binary_falls_through_to_the_table(self):
+        """Exit 3 is a real answer, but not one that should mask a known verdict."""
+        with mock.patch("utils.crispasr_utils.find_crispasr", return_value="/fake/crispasr"):
+            with self._fake_run("unknown\n", 3):
+                self.assertEqual(
+                    si.resolve_speaker_identity(backend="crispasr:piper", model=__file__),
+                    "real_person",
+                )
+
+    def test_no_binary_means_the_table_answers(self):
+        with mock.patch("utils.crispasr_utils.find_crispasr", return_value=None):
+            self.assertEqual(
+                si.resolve_speaker_identity(backend="crispasr:piper", model=__file__),
+                "real_person",
+            )
+
+    def test_it_never_triggers_a_download(self):
+        """A provenance question must not start a several-hundred-MB fetch."""
+        with mock.patch("utils.crispasr_utils.find_crispasr") as finder:
+            finder.return_value = None
+            si.identity_from_binary(__file__)
+        self.assertTrue(finder.called)
+        self.assertEqual(
+            finder.call_args.kwargs.get("download"),
+            False,
+            "asked for the binary in a way that could download it",
+        )
+
+    def test_a_crashing_binary_is_not_an_answer(self):
+        with mock.patch("utils.crispasr_utils.find_crispasr", return_value="/fake/crispasr"):
+            with self._fake_run("", 137):
+                self.assertIsNone(si.identity_from_binary(__file__))
+
+    def test_garbage_output_is_not_trusted(self):
+        with mock.patch("utils.crispasr_utils.find_crispasr", return_value="/fake/crispasr"):
+            with self._fake_run("wat\n", 0):
+                self.assertIsNone(si.identity_from_binary(__file__))
+
+    def test_the_answer_is_cached_per_file(self):
+        """Asked once per synthesis; a subprocess per call would be silly."""
+        with mock.patch("utils.crispasr_utils.find_crispasr", return_value="/fake/crispasr"):
+            with self._fake_run("synthetic\n", 0) as runner:
+                si.identity_from_binary(__file__)
+                si.identity_from_binary(__file__)
+        self.assertEqual(runner.call_count, 1)
+
+
 class TestVoicePackIsAPresetUnlessItSaysOtherwise(unittest.TestCase):
     """The gate over-fired on preset voice packs, which is its own failure.
 

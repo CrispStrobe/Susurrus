@@ -229,6 +229,14 @@ class TestUpstreamWait(unittest.TestCase):
     """
 
     def test_process_death_short_circuits_the_long_timeout(self):
+        """The process is reaped *before* timing starts.
+
+        Timing the subprocess spawn as well made this fail on a loaded machine
+        — it took >15 s under a 16-minute suite run and passed in 1.5 s alone.
+        The claim under test is that wait_for_upstream notices a dead process
+        within a poll interval, not that Python can start one quickly, so the
+        measurement now covers only the former.
+        """
         import subprocess
         import sys
         import time
@@ -236,6 +244,8 @@ class TestUpstreamWait(unittest.TestCase):
         from utils.marking_proxy import find_free_port, wait_for_upstream
 
         dead = subprocess.Popen([sys.executable, "-c", "raise SystemExit(3)"])
+        dead.wait()
+
         start = time.time()
         result = wait_for_upstream(
             "127.0.0.1", find_free_port(), timeout=3600, process=dead, interval=0.05

@@ -341,6 +341,70 @@ def identity_from_stamp(model):
     return result
 
 
+_binary_cache = {}
+
+
+def identity_from_binary(model):
+    """Ask the CrispASR binary what this checkpoint's speaker identity is.
+
+    ``crispasr --print-speaker-identity FILE`` resolves with the same code the
+    binary's own disclosure gate uses — the GGUF stamp first, then CrispASR's
+    researched table — and exits 3 when the answer is ``unknown``.
+
+    Susurrus's table is, in CrispASR's phrase, the fourth copy of a verdict that
+    already lives in C++, in stamps and in docs; and a fourth copy is the one
+    that silently drifts. This project has proved that the hard way — four
+    verdicts wrong, two entries naming backends that do not exist, and a
+    kokoro rule that needed rewriting once the packs were understood. So where
+    the binary can answer, it is asked, and the local table becomes the
+    fallback for installs without it and for the Python-native backends it
+    knows nothing about.
+
+    Never downloads: a provenance question must not turn into a several-hundred
+    megabyte fetch. Returns None when there is no binary, no answer, or the file
+    is not something it recognises.
+    """
+    if not model:
+        return None
+
+    import os
+
+    try:
+        stat = os.stat(model)
+        cache_key = (model, stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        return None
+
+    if cache_key in _binary_cache:
+        return _binary_cache[cache_key]
+
+    verdict = None
+    try:
+        from utils.crispasr_utils import find_crispasr
+
+        exe = find_crispasr(download=False)
+        if exe:
+            import subprocess
+
+            proc = subprocess.run(
+                [exe, "--print-speaker-identity", model],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            # Exit 3 means "unknown", which is a real answer and not an error.
+            if proc.returncode in (0, 3):
+                answer = (proc.stdout or "").strip().splitlines()
+                candidate = answer[-1].strip().lower() if answer else ""
+                if candidate in SPEAKER_IDENTITY_VALUES:
+                    verdict = candidate
+    except Exception as e:  # subprocess, OSError, timeout — all mean "no answer"
+        logger.debug("Could not ask the binary about %s: %s", model, e)
+
+    _binary_cache[cache_key] = verdict
+    return verdict
+
+
 def identity_for_model(backend, model):
     """Return a model-specific verdict for *backend*, or None if no rule hits."""
     if not backend or not model:
@@ -390,6 +454,15 @@ def resolve_speaker_identity(backend=None, override=None, voice=None, model=None
         per_voice = entry[0] if isinstance(entry, tuple) else entry
         if per_voice in SPEAKER_IDENTITY_VALUES:
             return per_voice
+
+    # The binary answers with the same code its own gate uses — stamp first,
+    # then CrispASR's researched table — so it subsumes both of the steps
+    # below and is preferred over them. It cannot answer for the Python-native
+    # backends, and it is absent on installs without the binary, which is what
+    # the rest of this chain is for.
+    from_binary = identity_from_binary(model)
+    if from_binary in SPEAKER_IDENTITY_VALUES and from_binary != "unknown":
+        return from_binary
 
     # A stamp inside the checkpoint beats every guess about it: it is written
     # by whoever converted the weights and survives a rename. It sits below the

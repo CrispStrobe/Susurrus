@@ -470,6 +470,18 @@ fine-tune (`real_person`), and `crispasr:kokoro` runs both hexgrad's English
 voicepacks (`synthetic`) and a German fine-tune whose backbone is a corpus of
 named narrators. Those are resolved by matching the loaded model's name.
 
+**Where the CrispASR binary can answer, it is asked first.**
+`crispasr --print-speaker-identity FILE` resolves with the same code the
+binary's own disclosure gate uses — the GGUF stamp, then CrispASR's researched
+table — and exits 3 on `unknown`. Susurrus asks it rather than restating the
+verdict, because a restated verdict is the copy that drifts, and this project
+has proved that: four verdicts wrong, two table entries naming backends that do
+not exist, and a Kokoro rule rewritten once the voicepacks were understood. The
+local table remains the fallback for installs without the binary and for the
+Python-native backends it knows nothing about. An `unknown` from the binary
+does not mask a known local verdict, and the lookup never triggers a download —
+a provenance question must not become a several-hundred-megabyte fetch.
+
 **Where the checkpoint says so itself, that wins.** CrispASR now stamps
 `crispasr.voice.speaker_identity` (with a companion `…_evidence`) into the GGUF
 metadata, so the answer travels with the weights and survives a rename.
@@ -487,7 +499,8 @@ a known answer back into a question; it cannot turn `real_person` into
 `synthetic`.
 
 Full precedence: `--speaker-identity` override, then the voicepack, then the
-checkpoint's stamp, then the filename rule, then the backend, then `unknown`.
+binary's answer, then the checkpoint's stamp, then the filename rule, then the
+backend, then `unknown`.
 The voicepack sits above the stamp deliberately — a stamp describes the model,
 and for a base-plus-voicepack architecture the pack is what a listener hears.
 
