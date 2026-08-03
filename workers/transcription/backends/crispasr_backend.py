@@ -321,6 +321,19 @@ class CrispasrBackend(TranscriptionBackend):
             if candidate and os.path.isfile(candidate):
                 return candidate
 
+        # A bare name plus --voice-dir resolves to <dir>/<name>.wav or .gguf on
+        # several backends — a reference recording or a baked voice pack, both
+        # clones. Mirrors TTSBackend.voice_dir_reference.
+        voice_dir = self.kwargs.get("voice_dir")
+        if voice_dir:
+            for candidate in candidates:
+                if not candidate or os.sep in str(candidate) or os.path.splitext(str(candidate))[1]:
+                    continue
+                for extension in (".wav", ".gguf"):
+                    path = os.path.join(str(voice_dir), f"{candidate}{extension}")
+                    if os.path.isfile(path):
+                        return path
+
         # A voice-bank entry is selected by name and resolves to no file, so
         # ``isfile`` cannot see that it is a clone. See VOICE_BANK_BACKENDS.
         from workers.tts.backends.base import VOICE_BANK_BACKENDS

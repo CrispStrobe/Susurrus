@@ -322,7 +322,16 @@ a preset voice name is not, so stock voices need no attestation.
 What the attestation means: *this is my own voice, or the speaker consented to
 having their voice cloned.*
 
-**A clone does not have to be a file.** `cosyvoice3` and `kugelaudio` keep
+**A clone does not have to look like a path.** Several backends resolve a bare
+`--voice` name against `--voice-dir`: qwen3-tts, vibevoice and pocket-tts all
+read `<voice-dir>/<name>.wav` (a reference recording) or `<name>.gguf` (a baked
+voice pack). Susurrus tested the bare name with `os.path.isfile`, found nothing,
+and called it a preset — so the documented ergonomic way to clone was also the
+way to skip the attestation and the disclosure. That one can be answered
+exactly, by asking the filesystem, so it gates on a file that genuinely exists
+and a name that resolves to nothing is still a preset.
+
+**A clone does not have to be a file at all.** `cosyvoice3` and `kugelaudio` keep
 their voices in a bundle beside the model, and `--voice` selects one *by name*.
 The gate resolved that bare name to no file on disk, concluded "preset", and
 let a zero-shot voice clone through with no attestation and no Art. 50(4)

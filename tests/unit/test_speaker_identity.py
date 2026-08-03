@@ -438,6 +438,86 @@ class TestCheckpointStamp(unittest.TestCase):
         self.assertEqual(si.identity_from_stamp(path), (None, None))
 
 
+class TestVoiceDirCloneGate(unittest.TestCase):
+    """`--voice-dir DIR --voice alice` is cloning, and the name is not a path.
+
+    qwen3-tts, vibevoice and pocket-tts all resolve a bare --voice name to
+    ``<voice-dir>/<name>.wav`` (a reference recording) or ``.gguf`` (a baked
+    voice pack). Susurrus's gate tested the bare name with os.path.isfile,
+    found nothing, and called it a preset — so the documented ergonomic way to
+    clone was also the way to skip the attestation and the Art. 50(4)
+    disclosure. More likely to be hit than the voice-bank case, because it is
+    what the docs tell people to do.
+    """
+
+    def setUp(self):
+        import os
+        import tempfile
+        import wave
+
+        self.tmpdir = tempfile.mkdtemp()
+        self.reference = os.path.join(self.tmpdir, "alice.wav")
+        with wave.open(self.reference, "wb") as handle:
+            handle.setnchannels(1)
+            handle.setsampwidth(2)
+            handle.setframerate(16000)
+            handle.writeframes(b"\x00\x01" * 1000)
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _backend(self, **kwargs):
+        from workers.tts.backends.base import TTSBackend
+
+        class Dummy(TTSBackend):
+            def synthesize(self, text, output_path, voice=None):
+                return output_path
+
+        return Dummy(model_id="auto", **kwargs)
+
+    def test_a_resolvable_bare_name_is_cloning(self):
+        backend = self._backend(voice_dir=self.tmpdir)
+        self.assertEqual(backend.resolve_reference_audio("alice"), self.reference)
+        self.assertTrue(backend.is_cloning("alice"))
+
+    def test_it_is_refused_without_the_attestation(self):
+        backend = self._backend(voice_dir=self.tmpdir)
+        with self.assertRaises(PermissionError):
+            backend.require_clone_consent(backend.resolve_reference_audio("alice"))
+
+    def test_a_name_that_resolves_to_nothing_stays_a_preset(self):
+        """Exact, not conservative: the filesystem can answer this one."""
+        backend = self._backend(voice_dir=self.tmpdir)
+        self.assertFalse(backend.is_cloning("nobody"))
+
+    def test_no_voice_dir_changes_nothing(self):
+        self.assertFalse(self._backend().is_cloning("alice"))
+
+    def test_a_gguf_voice_pack_counts_too(self):
+        import os
+
+        pack = os.path.join(self.tmpdir, "bob.gguf")
+        with open(pack, "wb") as handle:
+            handle.write(b"GGUF")
+        backend = self._backend(voice_dir=self.tmpdir)
+        self.assertEqual(backend.resolve_reference_audio("bob"), pack)
+
+    def test_the_disclosure_synthesis_does_not_recurse(self):
+        backend = self._backend(voice_dir=self.tmpdir)
+        backend._synthesizing_disclosure = True
+        self.assertIsNone(backend.resolve_reference_audio("alice"))
+
+    def test_the_transcription_route_resolves_it_too(self):
+        from workers.transcription.backends.crispasr_backend import CrispasrBackend
+
+        backend = CrispasrBackend(model_id="auto", device="cpu", voice_dir=self.tmpdir)
+        self.assertEqual(backend.resolve_reference_audio("alice"), self.reference)
+        with self.assertRaises(PermissionError):
+            backend.require_clone_consent(backend.resolve_reference_audio("alice"))
+
+
 class TestVoiceBankCloneGate(unittest.TestCase):
     """A clone that never touches the filesystem still has to be gated.
 

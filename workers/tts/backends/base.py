@@ -110,11 +110,46 @@ class TTSBackend(ABC):
             if candidate and os.path.isfile(candidate):
                 return candidate
 
+        # A bare --voice name plus --voice-dir is the documented ergonomic way
+        # to clone: qwen3-tts, vibevoice and pocket-tts all resolve
+        # ``<voice-dir>/<name>.wav`` (a reference recording) or ``.gguf`` (a
+        # baked voice pack). The name on its own is not a path, so the isfile
+        # check above cannot see it — and this is far likelier to be hit than
+        # the bank case below, because it is what the docs tell people to do.
+        resolved = self.voice_dir_reference(voice)
+        if resolved:
+            return resolved
+
         # A voice-bank selection is a clone that never touches the filesystem,
         # so ``isfile`` cannot see it. Returning the name keeps one code path:
         # the consent gate, is_cloning() and the Art. 50(4) disclosure all read
         # this one answer, and none of them needs to learn about banks.
         return self.voice_bank_selection(voice)
+
+    def voice_dir_reference(self, voice=None):
+        """Resolve a bare voice name against ``--voice-dir``, or return None.
+
+        Unlike the voice-bank case this can be answered exactly, by asking the
+        filesystem, so it gates on a file that genuinely exists rather than on
+        the backend's identity. A name that resolves to nothing stays a preset.
+        """
+        import os
+
+        if getattr(self, "_synthesizing_disclosure", False):
+            return None
+
+        voice_dir = self.kwargs.get("voice_dir")
+        if not voice_dir:
+            return None
+
+        for candidate in (voice, self.kwargs.get("voice"), self.kwargs.get("tts_voice")):
+            if not candidate or os.sep in str(candidate) or os.path.splitext(str(candidate))[1]:
+                continue
+            for extension in (".wav", ".gguf"):
+                path = os.path.join(str(voice_dir), f"{candidate}{extension}")
+                if os.path.isfile(path):
+                    return path
+        return None
 
     def voice_bank_selection(self, voice=None):
         """Return the bank entry this synthesis would clone, or None.

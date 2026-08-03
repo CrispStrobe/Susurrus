@@ -114,6 +114,12 @@ BACKEND_SPEAKER_IDENTITY = {
     # all about where the speaker voices came from.
     "crispasr:vibevoice": "unknown",
     "crispasr:vibevoice-1.5b": "unknown",
+    # Zero-shot models: the voice comes from a reference the operator supplies,
+    # so there is no preset whose provenance could be classified. Both cards
+    # were read and neither documents the training voices either. The cloning
+    # gate is what matters on these routes, not this table.
+    "crispasr:f5-tts": "unknown",
+    "crispasr:indextts": "unknown",
     # sesame: "a base generation model ... has not been fine-tuned on any
     # specific voice". That is the provider answering the Art. 3(60) question
     # for the preset path directly, so it is taken as evidence rather than held
