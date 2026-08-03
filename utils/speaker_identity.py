@@ -120,6 +120,19 @@ BACKEND_SPEAKER_IDENTITY = {
     # gate is what matters on these routes, not this table.
     "crispasr:f5-tts": "unknown",
     "crispasr:indextts": "unknown",
+    # Zonos: "trained on more than 200k hours of varied multilingual speech",
+    # and nothing about whose. Clones from a reference clip, which is the
+    # gated path.
+    "crispasr:zonos": "unknown",
+    "crispasr:zonos-tts": "unknown",
+    # OuteTTS: "~60k hours of audio", no sourcing or consent detail. Ships
+    # named default profiles (EN-FEMALE-1-NEUTRAL) whose origin is undocumented.
+    "crispasr:outetts": "unknown",
+    # CosyVoice: zero-shot cloning, and on training data only "Some examples
+    # are sourced from the internet. If any content infringes on your rights,
+    # please contact us to request its removal" — which is a takedown notice,
+    # not provenance. Its voice *bank* is separately gated as cloning.
+    "crispasr:cosyvoice3-tts": "unknown",
     # sesame: "a base generation model ... has not been fine-tuned on any
     # specific voice". That is the provider answering the Art. 3(60) question
     # for the preset path directly, so it is taken as evidence rather than held

@@ -316,9 +316,13 @@ class CrispasrBackend(TranscriptionBackend):
             return None
         # The CLI maps --voice onto the ``tts_voice`` kwarg for this backend;
         # ``voice`` is what the GUI and direct callers use.
+        from workers.tts.backends.base import TTSBackend
+
         candidates = (voice, self.kwargs.get("tts_voice"), self.kwargs.get("voice"))
         for candidate in candidates:
-            if candidate and os.path.isfile(candidate):
+            # A .gguf voice pack is a preset unless it is stamped as baked from
+            # a recording — see TTSBackend.file_is_a_clone.
+            if candidate and os.path.isfile(candidate) and TTSBackend.file_is_a_clone(candidate):
                 return candidate
 
         # A bare name plus --voice-dir resolves to <dir>/<name>.wav or .gguf on

@@ -438,6 +438,92 @@ class TestCheckpointStamp(unittest.TestCase):
         self.assertEqual(si.identity_from_stamp(path), (None, None))
 
 
+class TestVoicePackIsAPresetUnlessItSaysOtherwise(unittest.TestCase):
+    """The gate over-fired on preset voice packs, which is its own failure.
+
+    Susurrus treated every existing file as a clone, so
+    ``--voice kokoro-voice-af_heart.gguf`` — a designed voice, shipped, in the
+    documented examples — demanded a speaker-consent attestation nobody can
+    give honestly. An attestation that is always required is one that stops
+    meaning anything, so this is not a harmless over-gate.
+
+    CrispASR's bakers stamp ``crispasr.voice.cloned_from_recording`` into packs
+    derived from a recording. Packs are presets unless they say otherwise.
+    """
+
+    def setUp(self):
+        import tempfile
+
+        self.tmpdir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _pack(self, name, kv):
+        import os
+        import struct
+
+        def encoded(text):
+            raw = text.encode("utf-8")
+            return struct.pack("<Q", len(raw)) + raw
+
+        blob = b"GGUF" + struct.pack("<I", 3) + struct.pack("<Q", 0) + struct.pack("<Q", len(kv))
+        for key, value in kv.items():
+            blob += encoded(key) + struct.pack("<I", 8) + encoded(value)
+        path = os.path.join(self.tmpdir, name)
+        with open(path, "wb") as handle:
+            handle.write(blob)
+        return path
+
+    def _backend(self, **kwargs):
+        from workers.tts.backends.base import TTSBackend
+
+        class Dummy(TTSBackend):
+            def synthesize(self, text, output_path, voice=None):
+                return output_path
+
+        return Dummy(model_id="auto", **kwargs)
+
+    def test_an_unstamped_pack_is_a_preset(self):
+        pack = self._pack("kokoro-voice-af_heart.gguf", {"general.architecture": "kokoro"})
+        self.assertFalse(self._backend().is_cloning(pack))
+
+    def test_a_stamped_pack_is_a_clone(self):
+        pack = self._pack("baked.gguf", {"crispasr.voice.cloned_from_recording": "true"})
+        backend = self._backend()
+        self.assertTrue(backend.is_cloning(pack))
+        with self.assertRaises(PermissionError):
+            backend.require_clone_consent(backend.resolve_reference_audio(pack))
+
+    def test_a_recording_is_always_a_clone(self):
+        """No stamp required: passing someone's WAV is the plainest case."""
+        import os
+        import wave
+
+        path = os.path.join(self.tmpdir, "victim.wav")
+        with wave.open(path, "wb") as handle:
+            handle.setnchannels(1)
+            handle.setsampwidth(2)
+            handle.setframerate(16000)
+            handle.writeframes(b"\x00\x01" * 100)
+        self.assertTrue(self._backend().is_cloning(path))
+
+    def test_a_stamp_that_says_false_is_a_preset(self):
+        pack = self._pack("p.gguf", {"crispasr.voice.cloned_from_recording": "false"})
+        self.assertFalse(self._backend().is_cloning(pack))
+
+    def test_the_transcription_route_agrees(self):
+        from workers.transcription.backends.crispasr_backend import CrispasrBackend
+
+        preset = self._pack("preset.gguf", {"general.architecture": "kokoro"})
+        cloned = self._pack("cloned.gguf", {"crispasr.voice.cloned_from_recording": "true"})
+        backend = CrispasrBackend(model_id="auto", device="cpu")
+        self.assertIsNone(backend.resolve_reference_audio(preset))
+        self.assertEqual(backend.resolve_reference_audio(cloned), cloned)
+
+
 class TestVoiceDirCloneGate(unittest.TestCase):
     """`--voice-dir DIR --voice alice` is cloning, and the name is not a path.
 

@@ -28,6 +28,11 @@ VOICE_BANK_BACKENDS = frozenset(
     }
 )
 
+#: GGUF key a CrispASR voice baker stamps into a pack derived from someone's
+#: recording. Its absence means "preset", not "cannot say" — see
+#: :func:`TTSBackend.pack_is_a_clone`.
+CLONED_FROM_RECORDING_KEY = "crispasr.voice.cloned_from_recording"
+
 #: Raised when voice cloning is attempted without a rights attestation.
 CLONE_CONSENT_ERROR = (
     "Voice cloning requires a rights attestation. Pass --i-have-rights (CLI) "
@@ -107,7 +112,7 @@ class TTSBackend(ABC):
             self.kwargs.get("voice"),
             self.kwargs.get("reference_audio"),
         ):
-            if candidate and os.path.isfile(candidate):
+            if candidate and os.path.isfile(candidate) and self.file_is_a_clone(candidate):
                 return candidate
 
         # A bare --voice name plus --voice-dir is the documented ergonomic way
@@ -125,6 +130,43 @@ class TTSBackend(ABC):
         # the consent gate, is_cloning() and the Art. 50(4) disclosure all read
         # this one answer, and none of them needs to learn about banks.
         return self.voice_bank_selection(voice)
+
+    @staticmethod
+    def file_is_a_clone(path):
+        """Is this voice file a clone of someone, or a shipped preset?
+
+        A recording is always a clone: passing ``victim.wav`` is the plainest
+        case there is. A **voice pack** is not, by default — kokoro, qwen3-tts,
+        vibevoice and miotts all ship synthetic or upstream-licensed presets as
+        ``.gguf``, and a pack baked from a recording is indistinguishable from
+        one of those by suffix alone. Susurrus used to treat every existing file
+        as a clone, which meant ``--voice kokoro-voice-af_heart.gguf`` demanded a
+        speaker-consent attestation for a designed voice: a refusal nobody can
+        satisfy honestly, on a documented example, which teaches operators to
+        pass --i-have-rights reflexively. An attestation that is always required
+        is an attestation that means nothing.
+
+        So packs are presets unless they say otherwise. CrispASR's bakers stamp
+        ``crispasr.voice.cloned_from_recording`` into packs derived from a user
+        recording, and this reads it back.
+
+        The honest limitation, inherited: a pack baked before that stamp existed
+        carries no provenance and reads as a preset. Re-bake it to gate it. The
+        cases where provenance is *knowable without asking the file* — a
+        recording passed directly, a bank selection, a voice-dir resolution —
+        do not depend on the stamp at all.
+        """
+        import os
+
+        if os.path.splitext(str(path))[1].lower() != ".gguf":
+            return True  # a recording, or anything else handed over directly
+
+        from utils.gguf_metadata import read_string_keys
+
+        stamped = read_string_keys(path, (CLONED_FROM_RECORDING_KEY,)).get(
+            CLONED_FROM_RECORDING_KEY, ""
+        )
+        return str(stamped).strip().lower() in {"true", "1", "yes"}
 
     def voice_dir_reference(self, voice=None):
         """Resolve a bare voice name against ``--voice-dir``, or return None.

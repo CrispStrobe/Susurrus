@@ -406,9 +406,19 @@ in the GUI's TTS settings, when you know better than the table — for a voice
 pack you added, or a multi-voice backend where one voice differs from the rest.
 
 **Coverage is partial, and the gap is loud rather than silent.** Susurrus
-exposes 59 TTS backends; 34 are classified from provider documentation, four
-voices are classified individually, and the other 25 backends resolve to
-`unknown` and warn once each. That is the honest state: a
+exposes 59 TTS backends; 40 are classified from provider documentation, 14
+voices are classified individually, and the other 19 backends resolve to
+`unknown` and warn once each.
+
+**`unknown` is the normal state, not the exception.** Of the cards read, most
+say nothing whatsoever about whose voices trained the model — Bark, MeloTTS,
+VibeVoice, Zonos, OuteTTS, CosyVoice, F5-TTS, IndexTTS and Orpheus are all
+silent, several while shipping named preset personas. Zonos documents "more
+than 200k hours of varied multilingual speech" and CosyVoice offers a takedown
+address rather than a provenance statement. So a backend sitting at `unknown`
+usually means the industry does not publish this, not that nobody here looked;
+what changes is that the software now says so per backend instead of implying
+the question was settled. That is the honest state: a
 classification nobody researched is not a classification, and the warning names
 the backend so the answer can be supplied rather than assumed. Do not read an
 unclassified backend as safe.
