@@ -149,12 +149,29 @@ class TestGracefulDegradation(unittest.TestCase):
 
 
 class TestProvenanceLayerOrdering(unittest.TestCase):
-    """Watermarking mutates samples; C2PA hashes them. Order is load-bearing."""
+    """Watermarking mutates samples; C2PA hashes them. Order is load-bearing.
+
+    The neural watermark is stubbed for the whole class, for cost rather than
+    correctness: these tests assert the *order* layers run in and the *shape*
+    of the result, and neither needs a real AudioSeal pass. Two of them were
+    running one — 114s and 81s, together 73% of the entire suite — and they
+    were fast only while the neural tier was broken and fell through to the
+    comb in microseconds. Fixing that bug is what made them expensive, which is
+    why the stub belongs here rather than on the two tests that happened to
+    show up in a profile: the next test added to this class would pay it again.
+
+    Tests that care what the watermark does patch it themselves; an inner patch
+    wins over this one. The live round-trip lives in TestLiveRoundTrip.
+    """
 
     def setUp(self):
         self._dir = tempfile.TemporaryDirectory()
         self.path = os.path.join(self._dir.name, "out.wav")
         _write_wav(self.path)
+
+        patcher = mock.patch("utils.audio_watermark.embed_watermark", return_value=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def tearDown(self):
         self._dir.cleanup()
