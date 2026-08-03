@@ -43,6 +43,7 @@ import os
 import sys
 
 from utils.provenance import ProvenanceError
+from workers.tts.backends.base import would_clone
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -327,6 +328,17 @@ def main():
             "it is not validated for"
         ),
     )
+    prov_group.add_argument(
+        "--disclosure-text",
+        action="store_true",
+        help=(
+            "Print the AI-disclosure sentence (in --language, default the UI "
+            "locale) and exit. The spoken disclosure reaches only listeners; "
+            "EU AI Act Art. 50(5) requires the information to meet accessibility "
+            "requirements, so use this for the caption, transcript or on-page "
+            "notice that carries it to everyone else"
+        ),
+    )
 
     # --- Translation-specific ---
     tr_group = parser.add_argument_group("Translation Options")
@@ -570,6 +582,21 @@ def main():
         from utils.i18n import t
 
         print(_html_to_text(t("msg.ai_notice.body")))
+        sys.exit(0)
+
+    # --disclosure-text is a standalone verb: the Art. 50(5) accessible form.
+    # The audible disclosure Susurrus prepends reaches whoever can hear it, and
+    # Art. 50(5) requires the information to conform to accessibility
+    # requirements — which an audio-only notice does not, for a d/Deaf or
+    # hard-of-hearing recipient. An audio file has nowhere to put a caption, so
+    # the accessible form has to live in whatever carries the audio. This emits
+    # the exact sentence that was spoken, on stdout so it can be piped into a
+    # caption track or a template, rather than leaving each deployer to
+    # paraphrase the one thing that should not be paraphrased.
+    if getattr(args, "disclosure_text", False):
+        from utils.spoken_disclosure import disclosure_text
+
+        print(disclosure_text(locale=getattr(args, "language", None)))
         sys.exit(0)
 
     # --audit-log is a standalone verb: read and verify the Art. 12 record
@@ -1216,10 +1243,21 @@ def _run_tts(args):
 
     _require_marking_attestation(args)
 
-    # A path-like --voice is reference audio, which engages Art. 50(4) and so
-    # needs the disclosure path to be available too.
+    # Cloning engages Art. 50(4), so the disclosure path has to be available
+    # too. Asked through the same helper the authoritative gate uses: a
+    # path-like --voice is only one of three ways to clone, and testing for a
+    # file alone made the preflight silently disagree with the real check on
+    # the other two — --voice-dir resolution and voice-bank selection.
     _preflight_marking(
-        args, output_path, is_cloning=bool(args.voice and os.path.isfile(args.voice))
+        args,
+        output_path,
+        is_cloning=bool(
+            would_clone(
+                backend_name=tts_backend,
+                voices=(args.voice, getattr(args, "reference_audio", None)),
+                voice_dir=getattr(args, "voice_dir", None),
+            )
+        ),
     )
 
     # Route to CrispASR TTS or Python TTS backend
