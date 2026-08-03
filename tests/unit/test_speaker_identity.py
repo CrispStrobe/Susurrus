@@ -328,6 +328,116 @@ class TestPerVoiceOverrides(unittest.TestCase):
         self.assertTrue(result["spoken_required"])
 
 
+class TestCheckpointStamp(unittest.TestCase):
+    """A stamp inside the weights beats any guess about the filename.
+
+    Susurrus matched checkpoints by file name, against its own rule about not
+    trusting names, because the alternative was no answer. CrispASR has since
+    stamped ``crispasr.voice.speaker_identity`` into the GGUF, so the
+    authoritative answer travels with the weights and survives a rename.
+    """
+
+    def setUp(self):
+        import tempfile
+
+        si._reset_warnings_for_tests()
+        si._stamp_cache.clear()
+        self.tmpdir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _gguf(self, name, kv):
+        import os
+        import struct
+
+        def encoded(text):
+            raw = text.encode("utf-8")
+            return struct.pack("<Q", len(raw)) + raw
+
+        blob = b"GGUF" + struct.pack("<I", 3) + struct.pack("<Q", 0) + struct.pack("<Q", len(kv))
+        for key, value in kv.items():
+            blob += encoded(key) + struct.pack("<I", 8) + encoded(value)
+
+        path = os.path.join(self.tmpdir, name)
+        with open(path, "wb") as handle:
+            handle.write(blob)
+        return path
+
+    def test_stamp_overrides_the_filename_rule(self):
+        """The case the stamp exists for: name and truth disagree."""
+        path = self._gguf(
+            "kartoffel-orpheus-de-natural-q8_0.gguf",
+            {
+                "crispasr.voice.speaker_identity": "synthetic",
+                "crispasr.voice.speaker_identity_evidence": "re-trained on TTS audio",
+            },
+        )
+        # The filename rule alone would answer real_person here.
+        self.assertEqual(
+            si.identity_for_model("crispasr:orpheus", "kartoffel-orpheus-de-natural-q8_0.gguf"),
+            "real_person",
+        )
+        self.assertEqual(
+            si.resolve_speaker_identity(backend="crispasr:orpheus", model=path), "synthetic"
+        )
+
+    def test_absent_stamp_falls_back_to_the_filename_rule(self):
+        """Most published checkpoints predate stamping."""
+        path = self._gguf(
+            "kartoffel-orpheus-de-natural-x.gguf", {"general.architecture": "orpheus"}
+        )
+        self.assertEqual(
+            si.resolve_speaker_identity(backend="crispasr:orpheus", model=path), "real_person"
+        )
+
+    def test_an_unrecognised_stamp_is_not_trusted(self):
+        path = self._gguf("m.gguf", {"crispasr.voice.speaker_identity": "not-a-value"})
+        with mock.patch.object(si.logger, "warning") as warn:
+            identity = si.resolve_speaker_identity(backend="crispasr:piper", model=path)
+        self.assertEqual(identity, "real_person", "fell through to the backend verdict")
+        self.assertTrue(warn.called, "an unusable stamp should be reported")
+
+    def test_the_evidence_travels_with_the_verdict(self):
+        path = self._gguf(
+            "m.gguf",
+            {
+                "crispasr.voice.speaker_identity": "real_person",
+                "crispasr.voice.speaker_identity_evidence": "voice donor credited in the card",
+            },
+        )
+        identity, evidence = si.identity_from_stamp(path)
+        self.assertEqual(identity, "real_person")
+        self.assertIn("donor", evidence)
+
+    def test_a_voicepack_still_beats_the_stamp(self):
+        """A stamp describes the model; the pack is what a listener hears."""
+        path = self._gguf(
+            "kokoro-de-hui-base.gguf", {"crispasr.voice.speaker_identity": "synthetic"}
+        )
+        self.assertEqual(
+            si.resolve_speaker_identity(backend="crispasr:kokoro", voice="df_eva", model=path),
+            "real_person",
+        )
+
+    def test_non_gguf_and_missing_files_are_silent(self):
+        """A WAV path or a bare model name must not raise or warn."""
+        self.assertEqual(si.identity_from_stamp("/nonexistent/x.gguf"), (None, None))
+        self.assertEqual(si.identity_from_stamp(__file__), (None, None))
+        self.assertEqual(si.identity_from_stamp("auto"), (None, None))
+
+    def test_the_reader_survives_a_truncated_header(self):
+
+        path = self._gguf("m.gguf", {"crispasr.voice.speaker_identity": "real_person"})
+        with open(path, "rb") as handle:
+            blob = handle.read()
+        with open(path, "wb") as handle:
+            handle.write(blob[: len(blob) // 2])
+        self.assertEqual(si.identity_from_stamp(path), (None, None))
+
+
 class TestVoiceBankCloneGate(unittest.TestCase):
     """A clone that never touches the filesystem still has to be gated.
 

@@ -451,12 +451,26 @@ fine-tune (`real_person`), and `crispasr:kokoro` runs both hexgrad's English
 voicepacks (`synthetic`) and a German fine-tune whose backbone is a corpus of
 named narrators. Those are resolved by matching the loaded model's name.
 
-Matching on a filename is against this project's own "classify by provenance,
-not by filename" rule. It is used anyway because the alternative is no answer
-at all, and because the failure is safe: a renamed checkpoint matches nothing,
+**Where the checkpoint says so itself, that wins.** CrispASR now stamps
+`crispasr.voice.speaker_identity` (with a companion `…_evidence`) into the GGUF
+metadata, so the answer travels with the weights and survives a rename.
+Susurrus reads it — `utils/gguf_metadata.py` walks the key/value block far
+enough to pull those two strings and nothing else — and prefers it over every
+guess about the file. An unrecognised value is refused and reported rather than
+trusted; an unreadable or non-GGUF path yields no stamp and changes nothing.
+
+Matching on a filename remains the fallback, because most published checkpoints
+predate stamping. It is against this project's own "classify by provenance, not
+by filename" rule, and is used anyway because the alternative is no answer at
+all, and because the failure is safe: a renamed checkpoint matches nothing,
 falls back to the backend verdict or to `unknown`, and warns. A rename can turn
 a known answer back into a question; it cannot turn `real_person` into
 `synthetic`.
+
+Full precedence: `--speaker-identity` override, then the voicepack, then the
+checkpoint's stamp, then the filename rule, then the backend, then `unknown`.
+The voicepack sits above the stamp deliberately — a stamp describes the model,
+and for a base-plus-voicepack architecture the pack is what a listener hears.
 
 Four classifications in the first cut of this table were wrong, all from
 reasoning about names rather than reading model cards, and are recorded here

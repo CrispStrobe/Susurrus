@@ -270,6 +270,58 @@ MODEL_RULES = (
 )
 
 
+#: GGUF keys CrispASR stamps into a checkpoint, so the answer travels with the
+#: weights instead of with the filename.
+STAMP_KEY = "crispasr.voice.speaker_identity"
+STAMP_EVIDENCE_KEY = "crispasr.voice.speaker_identity_evidence"
+
+_stamp_cache = {}
+
+
+def identity_from_stamp(model):
+    """Return ``(identity, evidence)`` stamped into *model*, or ``(None, None)``.
+
+    This is the answer to prefer whenever it exists: it is written by whoever
+    converted the checkpoint, it survives a rename, and it does not depend on
+    Susurrus recognising a filename. MODEL_RULES stays as the fallback for the
+    checkpoints published before stamping existed — which is most of them.
+
+    Cached on (path, mtime, size) because the caller asks once per synthesis
+    and the answer only changes if the file does.
+    """
+    if not model:
+        return None, None
+
+    import os
+
+    try:
+        stat = os.stat(model)
+        cache_key = (model, stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        return None, None
+
+    if cache_key in _stamp_cache:
+        return _stamp_cache[cache_key]
+
+    from utils.gguf_metadata import read_string_keys
+
+    kv = read_string_keys(model, (STAMP_KEY, STAMP_EVIDENCE_KEY))
+    value = (kv.get(STAMP_KEY) or "").strip().lower()
+    evidence = kv.get(STAMP_EVIDENCE_KEY) or ""
+
+    if value and value not in SPEAKER_IDENTITY_VALUES:
+        logger.warning(
+            "Checkpoint %s stamps an unrecognised speaker identity %r; ignoring it.",
+            model,
+            value,
+        )
+        value = ""
+
+    result = (value or None, evidence or None)
+    _stamp_cache[cache_key] = result
+    return result
+
+
 def identity_for_model(backend, model):
     """Return a model-specific verdict for *backend*, or None if no rule hits."""
     if not backend or not model:
@@ -319,6 +371,14 @@ def resolve_speaker_identity(backend=None, override=None, voice=None, model=None
         per_voice = entry[0] if isinstance(entry, tuple) else entry
         if per_voice in SPEAKER_IDENTITY_VALUES:
             return per_voice
+
+    # A stamp inside the checkpoint beats every guess about it: it is written
+    # by whoever converted the weights and survives a rename. It sits below the
+    # per-voice answer because a stamp describes the model, and for a
+    # base-plus-voicepack architecture the pack is what a listener hears.
+    stamped, _evidence = identity_from_stamp(model)
+    if stamped in SPEAKER_IDENTITY_VALUES:
+        return stamped
 
     # Before the backend table: a checkpoint-specific answer is more precise
     # than a blanket one, and for backends that serve several models it is the

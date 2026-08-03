@@ -690,13 +690,18 @@ all of them mine, all from reasoning about a name instead of a model card.
 
 Structural first, environmental second.
 
-- **25 of 59 TTS backends are unclassified for speaker identity.** They resolve
+- **23 of 59 TTS backends are unclassified for speaker identity.** They resolve
   to `unknown` and warn once each, which is honest rather than safe: a
   classification nobody researched is not a classification. Reading cards moved
   five of CrispASR's open questions (`parler-tts` → real_person, `dia` →
   synthetic, `bark`/`vibevoice`/`csm` → checked-and-still-unknown), and
   *downgraded* `bark` from an inherited `synthetic`. Do not read an
   unclassified backend as synthetic.
+- **Filename matching survives only as a fallback.** CrispASR now stamps the
+  verdict into the GGUF, and `utils/gguf_metadata.py` reads it; but most
+  published checkpoints predate stamping, so the filename rules stay for them.
+  They are the weakest link in the chain and the one to delete first once the
+  stamps are widespread.
 - **The German Kokoro verdict is half-settled.** The upstream card resolves the
   architecture — "This is a base model, not a voice", speaker-neutral over 51
   HUI speakers with a per-speaker cap so none dominates. It cannot resolve the
