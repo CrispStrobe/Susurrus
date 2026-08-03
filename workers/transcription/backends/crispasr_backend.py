@@ -316,9 +316,20 @@ class CrispasrBackend(TranscriptionBackend):
             return None
         # The CLI maps --voice onto the ``tts_voice`` kwarg for this backend;
         # ``voice`` is what the GUI and direct callers use.
-        for candidate in (voice, self.kwargs.get("tts_voice"), self.kwargs.get("voice")):
+        candidates = (voice, self.kwargs.get("tts_voice"), self.kwargs.get("voice"))
+        for candidate in candidates:
             if candidate and os.path.isfile(candidate):
                 return candidate
+
+        # A voice-bank entry is selected by name and resolves to no file, so
+        # ``isfile`` cannot see that it is a clone. See VOICE_BANK_BACKENDS.
+        from workers.tts.backends.base import VOICE_BANK_BACKENDS
+
+        backend_name = (self.kwargs.get("tts_backend_name") or "").strip().lower()
+        if backend_name in VOICE_BANK_BACKENDS:
+            for candidate in candidates:
+                if candidate:
+                    return str(candidate)
         return None
 
     def require_clone_consent(self, reference_audio):

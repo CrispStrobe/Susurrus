@@ -1226,6 +1226,12 @@ def _run_tts(args):
     if tts_backend.startswith("crispasr"):
         model = args.model or "auto"
         kwargs = _build_crispasr_kwargs(args)
+        # The backend has to know its own name to answer two questions: whose
+        # voice a preset is, and whether --voice selects from a baked voice
+        # bank (which is a clone that never touches the filesystem). Without
+        # this the CrispASR TTS route could answer neither.
+        kwargs["tts_backend_name"] = tts_backend
+        kwargs["speaker_identity"] = getattr(args, "speaker_identity", None)
         BackendClass = get_backend_class(tts_backend)
         backend = BackendClass(model_id=model, device=args.device, language=args.language, **kwargs)
         try:

@@ -98,9 +98,11 @@ BACKEND_SPEAKER_IDENTITY = {
     # zoe. Checked the HF card, the GitHub repo and the web.
     "crispasr:orpheus": "unknown",
     "crispasr:lex-au-orpheus-de": "unknown",
-    # No training-data documentation found at all.
-    "crispasr:bananamind-tts": "unknown",
-    "crispasr:bananamind-tts-de": "unknown",
+    # Banaxi-Tech's card, found since: en-us on LJSpeech (Linda Johnson again),
+    # de-de on ThorstenVoice credited "Voice: Thorsten Müller" — the same donor
+    # as piper's de_DE-thorsten, reached by a second route.
+    "crispasr:bananamind-tts": "real_person",
+    "crispasr:bananamind-tts-de": "real_person",
     # Was "synthetic" here, inherited from a sibling project. Checked the card
     # at huggingface.co/suno/bark: it says *nothing* about where the 100+
     # speaker presets came from — not that they are designed, not that they are
@@ -112,16 +114,15 @@ BACKEND_SPEAKER_IDENTITY = {
     # all about where the speaker voices came from.
     "crispasr:vibevoice": "unknown",
     "crispasr:vibevoice-1.5b": "unknown",
-    # "a base generation model ... capable of producing a variety of voices,
-    # but it has not been fine-tuned on any specific voice" — which addresses
-    # the default path but is weaker than Dia's "different voices every time",
-    # and the card says nothing about the provenance of the underlying voice
-    # characteristics. Held at unknown rather than read as a claim. The
-    # intended route is prompting with audio context, which is cloning and
-    # already forces the disclosure.
-    "crispasr:csm": "unknown",
-    "crispasr:csm-tts": "unknown",
-    "crispasr:sesame": "unknown",
+    # sesame: "a base generation model ... has not been fine-tuned on any
+    # specific voice". That is the provider answering the Art. 3(60) question
+    # for the preset path directly, so it is taken as evidence rather than held
+    # at unknown — the wording is weaker than Dia's "different voices every
+    # time", but it says the thing that matters. The intended route is
+    # prompting with audio context, which is cloning and discloses anyway.
+    "crispasr:csm": "synthetic",
+    "crispasr:csm-tts": "synthetic",
+    "crispasr:sesame": "synthetic",
     # Qwen3-TTS ships named preset personas (Cherry — "a sunny, positive,
     # friendly and natural young woman" — Ethan, Chelsie, Serena …) over 5M+
     # hours of multilingual speech, and documents neither who recorded them nor
@@ -138,17 +139,15 @@ BACKEND_SPEAKER_IDENTITY = {
     "crispasr:qwen3-tts-1.7b-customvoice": "unknown",
     "crispasr:qwen3-tts-1.7b-voicedesign": "unknown",
     "crispasr:irodori-tts-voicedesign": "unknown",
-    # Explicitly NOT researched. The name says "synthetic" and that is exactly
-    # why it is not classified from it: this project's rule is provenance, not
-    # filename, and guessing "synthetic" is the error that silently *removes* a
-    # disclosure. CrispASR holds the same checkpoint at unknown.
-    "crispasr:kartoffel-orpheus-de-synthetic": "unknown",
-    # CrispASR ships fastpitch-en (NVIDIA, English), not the German NeMo model
-    # whose HUI narrators are named. Different weights, so that verdict does
-    # not port. NVIDIA's English FastPitch is conventionally LJSpeech — one
-    # identifiable narrator — which is a strong hypothesis, deliberately not
-    # asserted without reading the card.
-    "crispasr:fastpitch": "unknown",
+    # Now read rather than inferred: the card says "trained on synthetic German
+    # speech". It was held at unknown while only the repo name said so — the
+    # name was never the evidence, and it still isn't; the card is.
+    "crispasr:kartoffel-orpheus-de-synthetic": "synthetic",
+    # Card read since: nvidia/tts_en_fastpitch is "trained on LJSpeech" —
+    # 13,100 clips of one LibriVox narrator, Linda Johnson. Susurrus held this
+    # at unknown while the hypothesis was only conventional wisdom; the card
+    # settles it.
+    "crispasr:fastpitch": "real_person",
     # microsoft/speecht5_tts takes its 512-d speaker x-vector from the operator
     # via --voice, so the identity is per-invocation and no backend-level
     # verdict can be right. Distinct from the Python-native speecht5 above,
@@ -172,27 +171,69 @@ BACKEND_SPEAKER_IDENTITY = {
 #: a donor while every Kokoro voice is a blend), so this is empty. It exists
 #: because the alternative for a mixed model is classifying it by its riskiest
 #: voice and prepending a disclosure to the rest.
+#: ``(backend, voice) -> (identity, evidence)``.
+#:
+#: The evidence travels with the verdict rather than in a comment beside it,
+#: because the rule this table has to obey is about *what the verdict rests
+#: on*, not about which value it takes. Classifying a voice ``synthetic`` from
+#: its name silently removes a disclosure; classifying it ``synthetic`` because
+#: the provider says the base was "trained entirely on synthetic (TTS-generated)
+#: audio" is a documented fact. Only the second is allowed, and a test enforces
+#: it by requiring every entry to cite something.
+#:
+#: This is where the kokoro-de-hui question actually lives. The checkpoint is
+#: documented speaker-neutral — "This is a base model, not a voice" — so the
+#: voice a listener hears is the pack's, and the pack is what gets classified.
 VOICE_SPEAKER_IDENTITY = {
-    # The German Kokoro voicepacks, which is where the kokoro-de-hui question
-    # actually lives: the base is documented speaker-neutral, so the voice a
-    # listener hears is the pack's.
-    #
-    # ``df_eva`` and ``dm_bernd`` carry the names of two documented narrators
-    # of HUI-Audio-Corpus-German (Bernd, Hokuspokus, Friedrich, Eva, Karlsson,
-    # Sonja) — the corpus this backbone is trained on. A name matching a named
-    # speaker *inside the documented training corpus* is materially stronger
-    # evidence than a filename guess, and note which way it points: this is the
-    # inference direction that ADDS a disclosure. The project's rule against
-    # classifying from names exists because guessing "synthetic" silently
-    # removes one; it is not a reason to refuse conservative evidence.
-    ("crispasr:kokoro", "df_eva"): "real_person",
-    ("crispasr:kokoro", "dm_bernd"): "real_person",
-    ("kokoro-onnx", "df_eva"): "real_person",
-    ("kokoro-onnx", "dm_bernd"): "real_person",
-    # ``df_victoria`` and ``dm_martin`` come from kikiri-tts rather than the
-    # HUI corpus, and their provenance is not documented — a personal name is
-    # not by itself evidence of a person. Left unknown, which warns.
+    ("crispasr:kokoro", "df_eva"): (
+        "real_person",
+        "per-speaker pack from HUI-Audio-Corpus-German carrying the narrator's "
+        "own name; HUI is built from librivox.org recordings",
+    ),
+    ("crispasr:kokoro", "dm_bernd"): (
+        "real_person",
+        "per-speaker pack from HUI-Audio-Corpus-German carrying the narrator's "
+        "own name; HUI is built from librivox.org recordings",
+    ),
+    # Person-shaped names, and the answer is still synthetic — because the
+    # evidence is the base's training data, not the name. Susurrus held these
+    # at unknown while only the name was known, which was right then and is
+    # superseded now.
+    ("crispasr:kokoro", "df_victoria"): (
+        "synthetic",
+        "kikiri fine-tune over kikiri-german-base-51speakers-synthetic, "
+        '"trained entirely on synthetic (TTS-generated) audio"',
+    ),
+    ("crispasr:kokoro", "dm_martin"): (
+        "synthetic",
+        "kikiri fine-tune over kikiri-german-base-51speakers-synthetic, "
+        '"trained entirely on synthetic (TTS-generated) audio"',
+    ),
+    ("crispasr:kokoro", "af_heart"): (
+        "synthetic",
+        "hexgrad/Kokoro-82M voicepack; upstream documents these as designed "
+        "style vectors rather than any one person",
+    ),
+    ("crispasr:kokoro", "ef_dora"): (
+        "synthetic",
+        "hexgrad/Kokoro-82M voicepack; upstream documents these as designed "
+        "style vectors rather than any one person",
+    ),
+    ("crispasr:kokoro", "ff_siwis"): (
+        "synthetic",
+        "hexgrad/Kokoro-82M voicepack; upstream documents these as designed "
+        "style vectors rather than any one person",
+    ),
 }
+
+# The Python-native kokoro-onnx backend serves the same packs by the same
+# names, so it answers identically rather than maintaining a second list.
+VOICE_SPEAKER_IDENTITY.update(
+    {
+        ("kokoro-onnx", voice): value
+        for (_backend, voice), value in list(VOICE_SPEAKER_IDENTITY.items())
+    }
+)
 
 #: ``(backend, model-name substring) -> identity``, checked before the
 #: backend-level table.
@@ -274,7 +315,8 @@ def resolve_speaker_identity(backend=None, override=None, voice=None, model=None
     key = str(backend).strip().lower() if backend else None
 
     if key and voice:
-        per_voice = VOICE_SPEAKER_IDENTITY.get((key, str(voice).strip().lower()))
+        entry = VOICE_SPEAKER_IDENTITY.get((key, str(voice).strip().lower()))
+        per_voice = entry[0] if isinstance(entry, tuple) else entry
         if per_voice in SPEAKER_IDENTITY_VALUES:
             return per_voice
 

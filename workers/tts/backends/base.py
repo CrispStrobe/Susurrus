@@ -6,6 +6,28 @@ from abc import ABC, abstractmethod
 
 logger = logging.getLogger(__name__)
 
+#: Backends whose ``--voice`` selects an entry from a baked voice *bank* rather
+#: than naming a preset.
+#:
+#: cosyvoice3 and kugelaudio keep their voices inside a bundle discovered
+#: alongside the model, and ``--voice`` picks one **by name**. So the gate below
+#: received a bare string that resolved to no file on disk, concluded "preset",
+#: and let a zero-shot voice clone through with no attestation and no Art. 50(4)
+#: disclosure. ``--voice victim.wav`` on the same backend *was* gated, which is
+#: exactly why this looked covered. CrispASR found it in its own gate and calls
+#: these bundles "baked voice-clone bundles" in the backend's own header.
+#:
+#: Susurrus cannot open the bundle to tell a cloned entry from a designed one,
+#: so it treats every selection from one as cloning. That over-gates a bank
+#: entry that happens to be synthetic; the alternative under-gates a real
+#: person's cloned voice, and only one of those is a compliance failure.
+VOICE_BANK_BACKENDS = frozenset(
+    {
+        "crispasr:cosyvoice3-tts",
+        "crispasr:kugelaudio",
+    }
+)
+
 #: Raised when voice cloning is attempted without a rights attestation.
 CLONE_CONSENT_ERROR = (
     "Voice cloning requires a rights attestation. Pass --i-have-rights (CLI) "
@@ -87,6 +109,26 @@ class TTSBackend(ABC):
         ):
             if candidate and os.path.isfile(candidate):
                 return candidate
+
+        # A voice-bank selection is a clone that never touches the filesystem,
+        # so ``isfile`` cannot see it. Returning the name keeps one code path:
+        # the consent gate, is_cloning() and the Art. 50(4) disclosure all read
+        # this one answer, and none of them needs to learn about banks.
+        return self.voice_bank_selection(voice)
+
+    def voice_bank_selection(self, voice=None):
+        """Return the bank entry this synthesis would clone, or None.
+
+        See :data:`VOICE_BANK_BACKENDS` for why a bare name counts as cloning
+        on these backends.
+        """
+        if getattr(self, "_synthesizing_disclosure", False):
+            return None
+        if self.speaker_backend_name() not in VOICE_BANK_BACKENDS:
+            return None
+        for candidate in (voice, self.kwargs.get("voice")):
+            if candidate:
+                return str(candidate)
         return None
 
     def is_cloning(self, voice=None):

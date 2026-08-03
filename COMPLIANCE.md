@@ -311,6 +311,19 @@ a preset voice name is not, so stock voices need no attestation.
 What the attestation means: *this is my own voice, or the speaker consented to
 having their voice cloned.*
 
+**A clone does not have to be a file.** `cosyvoice3` and `kugelaudio` keep
+their voices in a bundle beside the model, and `--voice` selects one *by name*.
+The gate resolved that bare name to no file on disk, concluded "preset", and
+let a zero-shot voice clone through with no attestation and no Art. 50(4)
+disclosure — while `--voice victim.wav` on the same backend *was* gated, which
+is exactly why it looked covered. Selecting from one of those bundles now
+counts as cloning on every route.
+
+Susurrus cannot open the bundle to tell a cloned entry from a designed one, so
+it treats every selection from one as cloning. That over-gates a bank entry
+that happens to be synthetic; the alternative under-gates a real person's
+cloned voice, and only one of those is a compliance failure.
+
 Marking (above) satisfies the machine-readable half of disclosure. On top of
 that, **every** backend prepends an audible spoken disclaimer to cloned audio —
 CrispASR does it in-binary, and the Python-native backends synthesize the
@@ -381,7 +394,9 @@ the backend so the answer can be supplied rather than assumed. Do not read an
 unclassified backend as safe.
 
 Reading the cards moves verdicts in both directions, which is the point of
-reading them rather than guessing:
+reading them rather than guessing. Several below were settled by porting
+CrispASR's completed research, which closed its own backlog after this table
+was first written:
 
 - **Parler-TTS → `real_person`.** The card names its speakers — "trained on 34
   speakers, characterized by name (e.g. Jon, Lea, Gary, Jenna, Mike, Laura)" —
@@ -394,10 +409,22 @@ reading them rather than guessing:
   100+ speaker presets came from — not that they are designed, not that they
   are actors. An undocumented voice is a question, and inheriting a verdict is
   not the same as having evidence for it.
-- **VibeVoice, CSM/Sesame → `unknown`, checked.** CSM says it "has not been
-  fine-tuned on any specific voice", which addresses the default path but is
-  weaker than Dia's statement and silent on provenance; its intended route is
-  prompting with audio context, which is cloning and already discloses.
+- **VibeVoice → `unknown`, checked.** Architecture and usage restrictions,
+  nothing about where the voices came from.
+- **CSM/Sesame → `synthetic`.** "A base generation model … has not been
+  fine-tuned on any specific voice" is the provider answering Art. 3(60) for
+  the preset path. Susurrus first held this at `unknown` on the grounds that
+  the wording is weaker than Dia's; it says the thing that matters, so it is
+  now read as evidence.
+- **FastPitch → `real_person`.** nvidia/tts_en_fastpitch is "trained on
+  LJSpeech" — 13,100 clips of one LibriVox narrator, Linda Johnson.
+- **BananaMind → `real_person`.** en-us on LJSpeech, de-de on ThorstenVoice
+  credited "Voice: Thorsten Müller" — the same donor as piper's de_DE-thorsten,
+  reached by a second route.
+- **Kartoffel-Orpheus "synthetic" → `synthetic`, finally on evidence.** The
+  card says "trained on synthetic German speech". It was held at `unknown`
+  while only the repo *name* said so, because a name is not a source. Reading
+  the card is what changed it, not the name agreeing with it.
 
 Where a single backend mixes real and designed voices — SauerkrautTTS ships two
 studio-recorded people and two synthetic voices — a per-voice entry overrides

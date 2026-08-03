@@ -142,16 +142,30 @@ class TestModelAwareVerdicts(unittest.TestCase):
             "unknown",
         )
 
-    def test_synthetic_in_a_name_is_not_evidence(self):
-        """The costly error: a name-derived 'synthetic' removes a disclosure."""
+    def test_a_name_only_becomes_a_verdict_once_the_card_agrees(self):
+        """Held at unknown while only the repo name said "synthetic".
+
+        The provider's card has since been read — "trained on synthetic German
+        speech" — so the verdict is now synthetic on evidence that happens to
+        agree with the name. The name was never the evidence and still isn't;
+        this asserts the endpoint, and the comment beside the entry carries
+        the reason it moved.
+        """
         self.assertEqual(
             si.resolve_speaker_identity(backend="crispasr:kartoffel-orpheus-de-synthetic"),
-            "unknown",
+            "synthetic",
         )
 
     def test_a_sibling_projects_verdict_does_not_port_across_weights(self):
-        """crispasr:fastpitch is NVIDIA English, not the German NeMo model."""
-        self.assertEqual(si.resolve_speaker_identity(backend="crispasr:fastpitch"), "unknown")
+        """It did not port — but reading the right card settled it anyway.
+
+        crispasr:fastpitch is NVIDIA English, not the German NeMo model, so a
+        sibling project's verdict for the latter was correctly refused. The
+        English card then turned out to say "trained on LJSpeech": 13,100 clips
+        of one LibriVox narrator, Linda Johnson. Same answer, arrived at from
+        the evidence for *this* checkpoint.
+        """
+        self.assertEqual(si.resolve_speaker_identity(backend="crispasr:fastpitch"), "real_person")
 
     def test_operator_supplied_speaker_cannot_have_a_backend_verdict(self):
         """crispasr:speecht5 takes its x-vector from --voice, per invocation.
@@ -227,39 +241,52 @@ class TestPerVoiceOverrides(unittest.TestCase):
                 "real_person",
                 f"{voice} matches a named narrator of the documented training corpus",
             )
+        # Person-shaped name, synthetic answer — on the base's documented
+        # training data, not on the name.
         self.assertEqual(
             si.resolve_speaker_identity(
                 backend="crispasr:kokoro", voice="df_victoria", model="kokoro-de-hui-base-q8_0.gguf"
             ),
-            "unknown",
-            "a personal name is not by itself evidence of a person",
+            "synthetic",
         )
 
-    def test_name_evidence_is_only_accepted_when_it_adds_a_duty(self):
-        """Direction matters, and the table must not drift on this.
+    def test_every_per_voice_verdict_cites_its_evidence(self):
+        """The rule is about what a verdict rests on, not which value it takes.
 
-        Classifying from a name is normally refused because guessing
-        "synthetic" silently removes a disclosure. Accepting a name match that
-        points at real_person is the conservative direction — so every
-        per-voice entry must be real_person, never synthetic.
+        An earlier version of this test simply forbade ``synthetic`` per voice,
+        on the grounds that a name-derived synthetic silently removes a
+        disclosure. That was the right instinct and the wrong rule: df_victoria
+        and dm_martin *are* synthetic, on the provider's evidence that their
+        base was "trained entirely on synthetic (TTS-generated) audio" — a
+        documented fact that happens to point the same way the name does.
+        Forbidding the value would have rejected the evidence along with the
+        guess. Requiring the evidence is what actually separates them.
         """
-        for key, value in si.VOICE_SPEAKER_IDENTITY.items():
-            self.assertNotEqual(
-                value,
-                "synthetic",
-                f"{key} classifies a voice as synthetic from its name, which "
-                "removes a disclosure on name evidence alone",
+        for key, entry in si.VOICE_SPEAKER_IDENTITY.items():
+            self.assertIsInstance(entry, tuple, f"{key} has no evidence attached")
+            identity, evidence = entry
+            self.assertIn(identity, si.SPEAKER_IDENTITY_VALUES, key)
+            self.assertTrue(
+                evidence and len(evidence) > 20,
+                f"{key} -> {identity!r} cites no evidence; a verdict with no "
+                "source is a guess wearing a table entry's clothes",
             )
 
     def test_per_voice_entry_beats_the_backend(self):
-        si.VOICE_SPEAKER_IDENTITY[("kokoro-onnx", "tom")] = "real_person"
+        si.VOICE_SPEAKER_IDENTITY[("kokoro-onnx", "tom")] = (
+            "real_person",
+            "test fixture with stated evidence",
+        )
         self.assertEqual(
             si.resolve_speaker_identity(backend="kokoro-onnx", voice="Tom"), "real_person"
         )
         self.assertEqual(si.resolve_speaker_identity(backend="kokoro-onnx"), "synthetic")
 
     def test_override_still_beats_per_voice(self):
-        si.VOICE_SPEAKER_IDENTITY[("kokoro-onnx", "tom")] = "real_person"
+        si.VOICE_SPEAKER_IDENTITY[("kokoro-onnx", "tom")] = (
+            "real_person",
+            "test fixture with stated evidence",
+        )
         self.assertEqual(
             si.resolve_speaker_identity(backend="kokoro-onnx", voice="tom", override="synthetic"),
             "synthetic",
@@ -272,7 +299,10 @@ class TestPerVoiceOverrides(unittest.TestCase):
 
         from utils.provenance import apply_provenance
 
-        si.VOICE_SPEAKER_IDENTITY[("kokoro-onnx", "tom")] = "real_person"
+        si.VOICE_SPEAKER_IDENTITY[("kokoro-onnx", "tom")] = (
+            "real_person",
+            "test fixture with stated evidence",
+        )
         tmpdir = tempfile.mkdtemp()
         path = os.path.join(tmpdir, "o.wav")
         with wave.open(path, "wb") as w:
@@ -296,6 +326,77 @@ class TestPerVoiceOverrides(unittest.TestCase):
         )
         self.assertEqual(result["speaker_identity"], "real_person")
         self.assertTrue(result["spoken_required"])
+
+
+class TestVoiceBankCloneGate(unittest.TestCase):
+    """A clone that never touches the filesystem still has to be gated.
+
+    cosyvoice3 and kugelaudio keep their voices in a bundle beside the model,
+    and ``--voice`` selects one by name. The gate resolved that bare name to no
+    file, concluded "preset", and let a zero-shot clone through with no rights
+    attestation and no Art. 50(4) disclosure — while ``--voice victim.wav`` on
+    the same backend *was* gated, which is why it looked covered. Found by
+    CrispASR in its own gate; Susurrus had the identical pattern and ships both
+    affected backends.
+    """
+
+    def _backend(self, name, **kwargs):
+        from workers.tts.backends.base import TTSBackend
+
+        class Dummy(TTSBackend):
+            def synthesize(self, text, output_path, voice=None):
+                return output_path
+
+        return Dummy(model_id="auto", tts_backend_name=name, **kwargs)
+
+    def test_bank_selection_counts_as_cloning(self):
+        backend = self._backend("crispasr:cosyvoice3-tts")
+        self.assertTrue(backend.is_cloning("some_speaker"))
+
+    def test_bank_selection_without_attestation_is_refused(self):
+        backend = self._backend("crispasr:cosyvoice3-tts")
+        with self.assertRaises(PermissionError):
+            backend.require_clone_consent(backend.resolve_reference_audio("some_speaker"))
+
+    def test_bank_selection_with_attestation_is_allowed(self):
+        backend = self._backend("crispasr:kugelaudio", i_have_rights=True)
+        backend.require_clone_consent(backend.resolve_reference_audio("some_speaker"))
+
+    def test_a_preset_backend_is_unaffected(self):
+        """Over-gating every named voice everywhere would be its own bug."""
+        backend = self._backend("crispasr:kokoro")
+        self.assertFalse(backend.is_cloning("af_heart"))
+        backend.require_clone_consent(backend.resolve_reference_audio("af_heart"))
+
+    def test_no_voice_selected_is_not_cloning(self):
+        self.assertFalse(self._backend("crispasr:cosyvoice3-tts").is_cloning(None))
+
+    def test_the_disclosure_synthesis_does_not_recurse(self):
+        """The guard that stops a disclosure being spoken in the cloned voice."""
+        backend = self._backend("crispasr:cosyvoice3-tts")
+        backend._synthesizing_disclosure = True
+        self.assertIsNone(backend.resolve_reference_audio("some_speaker"))
+
+    def test_the_transcription_route_gates_it_too(self):
+        """CrispasrBackend has its own resolver and needed the same fix."""
+        from workers.transcription.backends.crispasr_backend import CrispasrBackend
+
+        backend = CrispasrBackend(
+            model_id="auto", device="cpu", tts_backend_name="crispasr:cosyvoice3-tts"
+        )
+        self.assertEqual(backend.resolve_reference_audio("some_speaker"), "some_speaker")
+        with self.assertRaises(PermissionError):
+            backend.require_clone_consent(backend.resolve_reference_audio("some_speaker"))
+
+    def test_the_cli_tells_the_backend_its_name(self):
+        """Without the name the bank check can never fire on this route."""
+        import inspect
+
+        import cli
+
+        source = inspect.getsource(cli._run_tts)
+        crispasr_branch = source.split('if tts_backend.startswith("crispasr")')[1]
+        self.assertIn("tts_backend_name", crispasr_branch)
 
 
 class TestGuiControl(unittest.TestCase):
