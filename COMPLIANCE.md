@@ -373,11 +373,30 @@ in the GUI's TTS settings, when you know better than the table — for a voice
 pack you added, or a multi-voice backend where one voice differs from the rest.
 
 **Coverage is partial, and the gap is loud rather than silent.** Susurrus
-exposes 59 TTS backends; 20 are classified from provider documentation and the
-other 39 resolve to `unknown` and warn once each. That is the honest state: a
+exposes 59 TTS backends; 28 are classified from provider documentation and the
+other 31 resolve to `unknown` and warn once each. That is the honest state: a
 classification nobody researched is not a classification, and the warning names
 the backend so the answer can be supplied rather than assumed. Do not read an
 unclassified backend as safe.
+
+Reading the cards moves verdicts in both directions, which is the point of
+reading them rather than guessing:
+
+- **Parler-TTS → `real_person`.** The card names its speakers — "trained on 34
+  speakers, characterized by name (e.g. Jon, Lea, Gary, Jenna, Mike, Laura)" —
+  over LibriTTS-R, which derives from LibriVox narrators.
+- **Dia → `synthetic`.** The card answers Art. 3(60) directly: "the model was
+  not fine-tuned on a specific voice. Hence, you will get different voices
+  every time you run the model."
+- **Bark → `unknown`, downgraded from `synthetic`.** That verdict had been
+  inherited from a sibling project. Suno's card says *nothing* about where the
+  100+ speaker presets came from — not that they are designed, not that they
+  are actors. An undocumented voice is a question, and inheriting a verdict is
+  not the same as having evidence for it.
+- **VibeVoice, CSM/Sesame → `unknown`, checked.** CSM says it "has not been
+  fine-tuned on any specific voice", which addresses the default path but is
+  weaker than Dia's statement and silent on provenance; its intended route is
+  prompting with audio context, which is cloning and already discloses.
 
 Where a single backend mixes real and designed voices — SauerkrautTTS ships two
 studio-recorded people and two synthetic voices — a per-voice entry overrides
@@ -416,11 +435,18 @@ because the same mistakes are easy to repeat:
 - `crispasr:kokoro` was a blanket `synthetic`, which is wrong for the German
   HUI fine-tune.
 
-The German Kokoro case is an open **conflict**, not a settled answer: CrispTTS
-classifies Kokoro `synthetic` and is right about the English voicepacks, while
-the German backbone is trained on the same named-narrator corpus that both
-projects cite when marking FastPitch German `real_person`. It is held at
-`unknown` rather than inheriting either neighbouring verdict.
+The German Kokoro case is **half-settled**, and stays at `unknown` for the
+half that is not. The upstream card resolves the architecture question: "This
+is a base model, not a voice" — a speaker-neutral Stage-1 multispeaker base
+over the HUI corpus's 51 speakers, with a per-speaker duration cap specifically
+so that none of them dominates. It does not reproduce an individual on its own.
+
+What that cannot settle is the half a listener actually hears. The base
+produces nothing without a voicepack, and the voice is the voicepack's — a
+separate artifact with its own provenance, at least one of which ships under a
+name (`df_eva`) matching a named HUI narrator. So the pairing stays a question
+until the packs are researched, and it is a *per-voice* question rather than a
+per-model one.
 
 Art. 50(2) marking applies to all of these regardless, and does.
 

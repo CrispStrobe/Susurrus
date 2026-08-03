@@ -66,14 +66,23 @@ BACKEND_SPEAKER_IDENTITY = {
     # lectures, OER — with its 19 speakers extracted from those recordings.
     # Real people who spoke in public.
     "crispasr:kartoffel-orpheus-de-natural": "real_person",
+    # The card names its speakers: "trained on 34 speakers, characterized by
+    # name (e.g. Jon, Lea, Gary, Jenna, Mike, Laura)", over mls_eng and
+    # libritts_r_filtered — LibriTTS-R derives from LibriVox, whose narrators
+    # are real people. Named speakers from real recordings.
+    "crispasr:parler-tts": "real_person",
     # -- designed voices ---------------------------------------------------
     # hexgrad/Kokoro-82M's voicepacks are style vectors, documented upstream as
     # designed/blended rather than any one person. The German HUI fine-tune is
     # the exception and is handled by MODEL_RULES below, not here.
     "kokoro-onnx": "synthetic",
     "crispasr:kokoro": "synthetic",
-    "crispasr:bark": "synthetic",
-    "crispasr:bark-tts": "synthetic",
+    # The card answers the Art. 3(60) question directly: "the model was not
+    # fine-tuned on a specific voice. Hence, you will get different voices
+    # every time you run the model." A voice that is different on every run
+    # cannot resemble one existing person.
+    "crispasr:dia": "synthetic",
+    "crispasr:dia-tts": "synthetic",
     # -- checked, genuinely undocumented -----------------------------------
     # Recorded so the same dead ends are not re-searched. Each of these was
     # looked for and not found; none is a shrug.
@@ -92,6 +101,27 @@ BACKEND_SPEAKER_IDENTITY = {
     # No training-data documentation found at all.
     "crispasr:bananamind-tts": "unknown",
     "crispasr:bananamind-tts-de": "unknown",
+    # Was "synthetic" here, inherited from a sibling project. Checked the card
+    # at huggingface.co/suno/bark: it says *nothing* about where the 100+
+    # speaker presets came from — not that they are designed, not that they are
+    # actors. An undocumented voice is a question, not a synthetic one, and
+    # inheriting a verdict is not the same as having evidence for it.
+    "crispasr:bark": "unknown",
+    "crispasr:bark-tts": "unknown",
+    # Card checked: technical architecture and usage restrictions, nothing at
+    # all about where the speaker voices came from.
+    "crispasr:vibevoice": "unknown",
+    "crispasr:vibevoice-1.5b": "unknown",
+    # "a base generation model ... capable of producing a variety of voices,
+    # but it has not been fine-tuned on any specific voice" — which addresses
+    # the default path but is weaker than Dia's "different voices every time",
+    # and the card says nothing about the provenance of the underlying voice
+    # characteristics. Held at unknown rather than read as a claim. The
+    # intended route is prompting with audio context, which is cloning and
+    # already forces the disclosure.
+    "crispasr:csm": "unknown",
+    "crispasr:csm-tts": "unknown",
+    "crispasr:sesame": "unknown",
     # Explicitly NOT researched. The name says "synthetic" and that is exactly
     # why it is not classified from it: this project's rule is provenance, not
     # filename, and guessing "synthetic" is the error that silently *removes* a
@@ -143,14 +173,19 @@ VOICE_SPEAKER_IDENTITY = {}
 #: unknown, and warns. A rename can turn a known answer back into a question;
 #: it cannot turn ``real_person`` into ``synthetic``.
 MODEL_RULES = (
-    # CONFLICT, held at unknown rather than inheriting either neighbour.
-    # CrispTTS classifies kokoro synthetic, which is right for the English
-    # voicepacks. The German backbone is kokoro-de-hui-base, trained on
-    # HUI-Audio-Corpus-German — the same corpus, with the same named narrators
-    # (Bernd, Hokuspokus, Friedrich, Eva, Karlsson, Sonja), that CrispTTS
-    # itself cites when marking the NeMo FastPitch German model real_person.
-    # Whether a style vector derived from that corpus is recognisably one of
-    # them is a real question, and it is not answered here.
+    # Held at unknown, but for a narrower reason than before. The upstream card
+    # (huggingface.co/cstr/kokoro-de-hui-base-GGUF) settles half of it: "This is
+    # a base model, not a voice" — a speaker-neutral Stage-1 multispeaker base
+    # over the HUI corpus's 51 speakers, with a per-speaker duration cap
+    # specifically so no one of them dominates. It does not reproduce an
+    # individual on its own.
+    #
+    # What it cannot settle is the half that reaches a listener: the base
+    # produces nothing without a voicepack, and the voice you hear is the
+    # voicepack's. Those are separate artifacts with their own provenance, and
+    # at least one shipped name (``df_eva``) matches a named HUI narrator. So
+    # the pairing stays a question until the packs are researched — which is a
+    # per-voice answer, not a per-model one. See VOICE_SPEAKER_IDENTITY.
     ("crispasr:kokoro", "hui", "unknown"),
     ("kokoro-onnx", "hui", "unknown"),
     # One backend, several checkpoints, different answers.

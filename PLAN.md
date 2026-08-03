@@ -690,18 +690,19 @@ all of them mine, all from reasoning about a name instead of a model card.
 
 Structural first, environmental second.
 
-- **39 of 59 TTS backends are unclassified for speaker identity.** They resolve
+- **31 of 59 TTS backends are unclassified for speaker identity.** They resolve
   to `unknown` and warn once each, which is honest rather than safe: a
-  classification nobody researched is not a classification. CrispASR's own
-  table has the same backlog (`bark`, `csm`, `parler-tts`, "and the rest"), so
-  this is a shared research debt, not a Susurrus oversight. Do not read an
+  classification nobody researched is not a classification. Reading cards moved
+  five of CrispASR's open questions (`parler-tts` → real_person, `dia` →
+  synthetic, `bark`/`vibevoice`/`csm` → checked-and-still-unknown), and
+  *downgraded* `bark` from an inherited `synthetic`. Do not read an
   unclassified backend as synthetic.
-- **The German Kokoro verdict is an open conflict, not an answer.** CrispTTS
-  says `synthetic` and is right for the English voicepacks; the German backbone
-  is trained on the named-narrator corpus both projects cite when marking
-  FastPitch German `real_person`. Held at `unknown` rather than inheriting
-  either neighbour. `kokoro-de-hui-base` is in the local model cache, so this
-  is live rather than hypothetical.
+- **The German Kokoro verdict is half-settled.** The upstream card resolves the
+  architecture — "This is a base model, not a voice", speaker-neutral over 51
+  HUI speakers with a per-speaker cap so none dominates. It cannot resolve the
+  voicepack, which is what a listener hears, and one ships as `df_eva` against
+  a named HUI narrator. Now a per-voice question rather than a per-model one.
+  `kokoro-de-hui-base` is in the local model cache, so this is live.
 - **ASR streaming (SSE) cannot be exercised.** Only `qwen3_tts` declares
   `CAP_STREAMING` in the whole CrispASR codebase, so `/v1/audio/transcriptions`
   with `stream=true` always falls back to JSON. The proxy's passthrough relay
