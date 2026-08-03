@@ -210,6 +210,47 @@ class TestPerVoiceOverrides(unittest.TestCase):
         si.VOICE_SPEAKER_IDENTITY.clear()
         si.VOICE_SPEAKER_IDENTITY.update(self._saved)
 
+    def test_the_shipped_german_kokoro_packs_resolve(self):
+        """The mixed case is real now, not hypothetical.
+
+        The kokoro-de-hui base is documented speaker-neutral, so the voice a
+        listener hears is the voicepack's. ``df_eva`` and ``dm_bernd`` carry the
+        names of two documented HUI-Audio-Corpus-German narrators — the corpus
+        this backbone is trained on — while ``df_victoria`` comes from a
+        different source with no published provenance.
+        """
+        for voice in ("df_eva", "dm_bernd"):
+            self.assertEqual(
+                si.resolve_speaker_identity(
+                    backend="crispasr:kokoro", voice=voice, model="kokoro-de-hui-base-q8_0.gguf"
+                ),
+                "real_person",
+                f"{voice} matches a named narrator of the documented training corpus",
+            )
+        self.assertEqual(
+            si.resolve_speaker_identity(
+                backend="crispasr:kokoro", voice="df_victoria", model="kokoro-de-hui-base-q8_0.gguf"
+            ),
+            "unknown",
+            "a personal name is not by itself evidence of a person",
+        )
+
+    def test_name_evidence_is_only_accepted_when_it_adds_a_duty(self):
+        """Direction matters, and the table must not drift on this.
+
+        Classifying from a name is normally refused because guessing
+        "synthetic" silently removes a disclosure. Accepting a name match that
+        points at real_person is the conservative direction — so every
+        per-voice entry must be real_person, never synthetic.
+        """
+        for key, value in si.VOICE_SPEAKER_IDENTITY.items():
+            self.assertNotEqual(
+                value,
+                "synthetic",
+                f"{key} classifies a voice as synthetic from its name, which "
+                "removes a disclosure on name evidence alone",
+            )
+
     def test_per_voice_entry_beats_the_backend(self):
         si.VOICE_SPEAKER_IDENTITY[("kokoro-onnx", "tom")] = "real_person"
         self.assertEqual(

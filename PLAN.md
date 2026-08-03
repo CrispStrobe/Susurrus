@@ -690,7 +690,7 @@ all of them mine, all from reasoning about a name instead of a model card.
 
 Structural first, environmental second.
 
-- **31 of 59 TTS backends are unclassified for speaker identity.** They resolve
+- **25 of 59 TTS backends are unclassified for speaker identity.** They resolve
   to `unknown` and warn once each, which is honest rather than safe: a
   classification nobody researched is not a classification. Reading cards moved
   five of CrispASR's open questions (`parler-tts` → real_person, `dia` →

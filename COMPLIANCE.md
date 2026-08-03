@@ -373,8 +373,9 @@ in the GUI's TTS settings, when you know better than the table — for a voice
 pack you added, or a multi-voice backend where one voice differs from the rest.
 
 **Coverage is partial, and the gap is loud rather than silent.** Susurrus
-exposes 59 TTS backends; 28 are classified from provider documentation and the
-other 31 resolve to `unknown` and warn once each. That is the honest state: a
+exposes 59 TTS backends; 34 are classified from provider documentation, four
+voices are classified individually, and the other 25 backends resolve to
+`unknown` and warn once each. That is the honest state: a
 classification nobody researched is not a classification, and the warning names
 the backend so the answer can be supplied rather than assumed. Do not read an
 unclassified backend as safe.
@@ -441,12 +442,22 @@ is a base model, not a voice" — a speaker-neutral Stage-1 multispeaker base
 over the HUI corpus's 51 speakers, with a per-speaker duration cap specifically
 so that none of them dominates. It does not reproduce an individual on its own.
 
-What that cannot settle is the half a listener actually hears. The base
-produces nothing without a voicepack, and the voice is the voicepack's — a
-separate artifact with its own provenance, at least one of which ships under a
-name (`df_eva`) matching a named HUI narrator. So the pairing stays a question
-until the packs are researched, and it is a *per-voice* question rather than a
-per-model one.
+What that cannot settle is the half a listener actually hears — but the
+voicepacks can. The base produces nothing without one, and two of the shipped
+German packs are `df_eva` and `dm_bernd`, carrying the names of two documented
+narrators of the very corpus the backbone is trained on (Bernd, Hokuspokus,
+Friedrich, Eva, Karlsson, Sonja). Those are now classified `real_person` per
+voice, so selecting them prepends the disclosure while the English voicepacks
+do not. `df_victoria` and `dm_martin` come from a different source with no
+published provenance and stay `unknown` — a personal name is not by itself
+evidence of a person.
+
+Note which way that inference runs. Classifying from a name is normally
+refused, because guessing "synthetic" from a filename silently *removes* a
+disclosure. A name matching a named speaker inside the documented training
+corpus, pointing at `real_person`, is the conservative direction — it adds a
+duty rather than dropping one. A test enforces the asymmetry: no per-voice
+entry may be `synthetic`.
 
 Art. 50(2) marking applies to all of these regardless, and does.
 

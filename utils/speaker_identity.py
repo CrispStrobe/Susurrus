@@ -122,6 +122,22 @@ BACKEND_SPEAKER_IDENTITY = {
     "crispasr:csm": "unknown",
     "crispasr:csm-tts": "unknown",
     "crispasr:sesame": "unknown",
+    # Qwen3-TTS ships named preset personas (Cherry — "a sunny, positive,
+    # friendly and natural young woman" — Ethan, Chelsie, Serena …) over 5M+
+    # hours of multilingual speech, and documents neither who recorded them nor
+    # that nobody did. Commercial preset voices of this kind are commonly voice
+    # actors, which would make them real people whose identity is simply not
+    # published — so "synthetic" would be a guess in the direction that removes
+    # a disclosure.
+    "crispasr:qwen3-tts": "unknown",
+    "crispasr:qwen3-tts-1.7b-base": "unknown",
+    # CustomVoice takes the speaker from the operator, and VoiceDesign builds
+    # one from a text description. Neither has a fixed preset whose provenance
+    # could be classified; the cloning route already forces the disclosure.
+    "crispasr:qwen3-tts-customvoice": "unknown",
+    "crispasr:qwen3-tts-1.7b-customvoice": "unknown",
+    "crispasr:qwen3-tts-1.7b-voicedesign": "unknown",
+    "crispasr:irodori-tts-voicedesign": "unknown",
     # Explicitly NOT researched. The name says "synthetic" and that is exactly
     # why it is not classified from it: this project's rule is provenance, not
     # filename, and guessing "synthetic" is the error that silently *removes* a
@@ -156,7 +172,27 @@ BACKEND_SPEAKER_IDENTITY = {
 #: a donor while every Kokoro voice is a blend), so this is empty. It exists
 #: because the alternative for a mixed model is classifying it by its riskiest
 #: voice and prepending a disclosure to the rest.
-VOICE_SPEAKER_IDENTITY = {}
+VOICE_SPEAKER_IDENTITY = {
+    # The German Kokoro voicepacks, which is where the kokoro-de-hui question
+    # actually lives: the base is documented speaker-neutral, so the voice a
+    # listener hears is the pack's.
+    #
+    # ``df_eva`` and ``dm_bernd`` carry the names of two documented narrators
+    # of HUI-Audio-Corpus-German (Bernd, Hokuspokus, Friedrich, Eva, Karlsson,
+    # Sonja) — the corpus this backbone is trained on. A name matching a named
+    # speaker *inside the documented training corpus* is materially stronger
+    # evidence than a filename guess, and note which way it points: this is the
+    # inference direction that ADDS a disclosure. The project's rule against
+    # classifying from names exists because guessing "synthetic" silently
+    # removes one; it is not a reason to refuse conservative evidence.
+    ("crispasr:kokoro", "df_eva"): "real_person",
+    ("crispasr:kokoro", "dm_bernd"): "real_person",
+    ("kokoro-onnx", "df_eva"): "real_person",
+    ("kokoro-onnx", "dm_bernd"): "real_person",
+    # ``df_victoria`` and ``dm_martin`` come from kikiri-tts rather than the
+    # HUI corpus, and their provenance is not documented — a personal name is
+    # not by itself evidence of a person. Left unknown, which warns.
+}
 
 #: ``(backend, model-name substring) -> identity``, checked before the
 #: backend-level table.
