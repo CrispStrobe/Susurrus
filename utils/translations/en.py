@@ -255,6 +255,14 @@ STRINGS = {
         "output may be unmarked. EU AI Act Art. 50(2) requires machine-readable "
         "marking of synthetic audio — use .wav or .mp3."
     ),
+    "warn.speaker_identity_unknown": (
+        "WARNING: nobody has established whether '{backend}' produces the voice "
+        "of a real person, so no audible disclosure was added. If the voice is "
+        "an identifiable individual, this output is a deep fake under EU AI Act "
+        "Art. 3(60) and the Art. 50(4) duty to disclose it is yours. Set "
+        "'Preset voice is:' to 'real person' to have Susurrus speak the "
+        "disclosure, or to 'synthetic' once you have checked."
+    ),
     "error.marking_opt_out_needs_attestation": (
         "Disabling the watermark, C2PA signing or the spoken disclaimer "
         "reduces EU AI Act Art. 50 provenance. Tick 'I accept marking "

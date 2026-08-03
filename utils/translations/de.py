@@ -254,6 +254,15 @@ STRINGS = {
         "Kennzeichnung synthetischer Audioinhalte — verwenden Sie .wav "
         "oder .mp3."
     ),
+    "warn.speaker_identity_unknown": (
+        "WARNUNG: Es ist nicht geklärt, ob „{backend}“ die Stimme einer realen "
+        "Person wiedergibt; daher wurde kein hörbarer Hinweis hinzugefügt. "
+        "Handelt es sich um eine identifizierbare Person, ist diese Ausgabe ein "
+        "Deepfake nach EU AI Act Art. 3(60), und die Offenlegungspflicht nach "
+        "Art. 50(4) liegt bei Ihnen. Setzen Sie „Voreingestellte Stimme ist:“ "
+        "auf „reale Person“, damit Susurrus den Hinweis spricht, oder auf "
+        "„synthetisch“, sobald Sie das geprüft haben."
+    ),
     "error.marking_opt_out_needs_attestation": (
         "Das Deaktivieren von Wasserzeichen, C2PA-Signatur oder gesprochenem "
         "Hinweis verringert die Herkunftskennzeichnung nach EU AI Act "

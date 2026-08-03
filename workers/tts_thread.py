@@ -42,6 +42,29 @@ def _describe_disclosure_shortfall(marking):
     return t("warn.disclosure_missing") if disclosure_missing(marking) else None
 
 
+def _describe_unknown_speaker(marking, backend_name):
+    """Return a warning when nobody has established whose voice this is.
+
+    The ``unknown`` policy — warn rather than force a disclosure or assume one
+    away — is defensible only if the operator actually hears the warning, and
+    in the GUI they did not. ``utils.speaker_identity.warn_unknown_once`` writes
+    it with ``logger.warning``, which in a packaged windowed app goes to a
+    stderr nobody can see; the log-viewer handler is attached lazily and only
+    once the user opens Tools > Logs, so synthesizing before opening that dialog
+    left no trace at all. Meanwhile the status line said "Marked as
+    AI-generated" and mentioned nothing. 43 of the 59 exposed backends resolve
+    to ``unknown``, so this is the common path, not a corner of it.
+
+    Cloning runs are excluded: they already get the disclosure, so the preset
+    question is moot and a second warning would only dilute the first.
+    """
+    if marking.get("speaker_identity") != "unknown":
+        return None
+    if marking.get("spoken_required") or marking.get("opted_out"):
+        return None
+    return t("warn.speaker_identity_unknown").format(backend=backend_name)
+
+
 #: Provenance opt-outs that require the responsibility attestation, mirroring
 #: the CLI's ``_MARKING_OPT_OUTS`` and the CrispASR binary's own rule.
 _OPT_OUT_KEYS = ("no_watermark", "no_c2pa", "no_spoken_disclaimer")
@@ -185,6 +208,12 @@ class TTSThread(QThread):
             if shortfall:
                 logging.warning(shortfall)
                 self.progress_signal.emit(shortfall)
+            # The Art. 50(4) question that has no answer yet, said where the
+            # operator is actually looking rather than only in the log.
+            unknown_speaker = _describe_unknown_speaker(marking, backend_name)
+            if unknown_speaker:
+                logging.warning(unknown_speaker)
+                self.progress_signal.emit(unknown_speaker)
             self.progress_signal.emit(_describe_marking(marking))
 
             backend.cleanup()
